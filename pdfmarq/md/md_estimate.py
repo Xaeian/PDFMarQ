@@ -31,7 +31,7 @@ class EstimateMixin:
         1 for j in range(start, end + 1)
         if tokens[j].type == "list_item_open"
       )
-      list_h = n_items * body_line_mm * 1.2 + s.paragraph_spacing
+      list_h = n_items * body_line_mm * 1.2 + s.para_gap
       page_avail = self.pdf.content_height
       if list_h <= page_avail * 0.9:
         return list_h
@@ -45,7 +45,7 @@ class EstimateMixin:
       if lang == "mermaid":
         return 60 # mermaid renders to image - reserve ~60mm
       lines = (t.content or "").count("\n") + 1
-      pad = s.code_block_padding * 2
+      pad = s.code_block_pad * 2
       return min(lines, 6) * (s.code_block_size * s.line_height / MM_TO_PT) + pad
     if ttype == "math_block":
       return s.body_size * 2 / MM_TO_PT

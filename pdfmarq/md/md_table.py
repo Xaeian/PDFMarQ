@@ -59,7 +59,7 @@ class TableMixin:
     self._reset_stroke()
     self._draw_md_table(header_cells, body_rows, aligns)
     self._reset_stroke()
-    self.pdf.enter(s.paragraph_spacing)
+    self.pdf.enter(s.para_gap)
     return end + 1
 
   #--------------------------------------------------------------------------------- Layout
@@ -79,7 +79,7 @@ class TableMixin:
     total_w = pdf.content_width - x_start
     ncols = len(header) if header else (len(body[0]) if body else 1)
     h_pad = 2
-    v_pad = s.table_cell_vpad
+    v_pad = s.table_pad
     text_top_offset = s.body_size * 0.30 / MM_TO_PT
 
     def cell_segments(inline_token:Token|None, bold:bool) -> list[RichSegment]:

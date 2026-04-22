@@ -22,14 +22,14 @@ class FootnotesMixin:
     s = self.style
     end = self._find_close(tokens, start, "footnote_block_open", "footnote_block_close")
     # Separator rule above footnotes section (short, GitHub-style)
-    self.pdf.enter(s.paragraph_spacing)
+    self.pdf.enter(s.para_gap)
     x = self._indent_mm
     w = self.pdf.content_width - x
     self.pdf.cursor(x, self.pdf.y)
     self.pdf.stroke_color(*s.hr_color)
-    self.pdf.line(w * 0.3, 0, s.hr_thickness)
+    self.pdf.line(w * 0.3, 0, s.hr_thick)
     self._reset_stroke()
-    self.pdf.enter(s.paragraph_spacing)
+    self.pdf.enter(s.para_gap)
     i = start + 1
     while i < end:
       t = tokens[i]
@@ -60,7 +60,7 @@ class FootnotesMixin:
         self.pdf._canvas.bookmarkPage(f"fn_{label}")
         self.pdf.cursor(x, y)
         h = render_rich(self.pdf, segs, width, x, y, Align.LEFT, s.line_height)
-        self.pdf.cursor(x, y + h + s.list_item_spacing)
+        self.pdf.cursor(x, y + h + s.list_gap)
         i = j
       i += 1
     return end + 1
@@ -93,7 +93,7 @@ class FootnotesMixin:
           h = render_rich(
             self.pdf, segs, width, x, y, Align.LEFT, s.line_height,
           )
-          self.pdf.cursor(x, y + h + s.list_item_spacing)
+          self.pdf.cursor(x, y + h + s.list_gap)
         i = j + 1
       elif t.type == "dd_open":
         # Definition - indented; walk to matching dd_close
@@ -113,5 +113,5 @@ class FootnotesMixin:
         i = j + 1
       else:
         i += 1
-    self.pdf.enter(s.paragraph_spacing)
+    self.pdf.enter(s.para_gap)
     return end + 1

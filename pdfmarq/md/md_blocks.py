@@ -24,17 +24,17 @@ class BlocksMixin:
     # h1 starts a new page when configured; other headings just add top spacing.
     # The frontmatter title is rendered via _render_frontmatter_header so it
     # never goes through this code path - safe to apply unconditionally here.
-    if level == 1 and s.page_break_on_h1 and self.pdf.y > 0.5:
+    if level == 1 and s.h1_page_break and self.pdf.y > 0.5:
       self.pdf.new_page()
     elif self.pdf.y > 0.5:
-      self.pdf.enter(s.heading_spacing_top)
+      self.pdf.enter(s.head_gap_top)
     # Keep-with-next: reserve heading + max(lookahead, 3 body lines)
     heading_block_mm = size / MM_TO_PT * 2
     min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
     self._ensure_space(heading_block_mm + max(lookahead_mm, min_followup_mm))
     base = RichSegment(
-      text="", family=s.heading_family, mode=s.heading_mode,
-      size=size, color=s.heading_color,
+      text="", family=s.head_family, mode=s.head_mode,
+      size=size, color=s.head_color,
     )
     segments = self._inline_to_segments(inline_token, base)
     x = self._indent_mm
@@ -51,10 +51,10 @@ class BlocksMixin:
     if (level == 1 and s.h1_underline) or (level == 2 and s.h2_underline):
       self.pdf.cursor(x, new_y + 0.8)
       self.pdf.stroke_color(*s.hr_color)
-      self.pdf.line(width, 0, s.underline_thickness)
+      self.pdf.line(width, 0, s.underline_thick)
       self._reset_stroke()
       new_y += 2
-    self.pdf.cursor(x, new_y + s.heading_spacing_bot)
+    self.pdf.cursor(x, new_y + s.head_gap_bot)
 
   @staticmethod
   def _slugify_inline(inline_token:Token) -> str:
@@ -105,7 +105,7 @@ class BlocksMixin:
     y = self.pdf.y
     self.pdf.cursor(x, y)
     h = render_rich(self.pdf, segments, width, x, y, Align.LEFT, s.line_height)
-    spacing = s.list_item_spacing if self._list_depth > 0 else s.paragraph_spacing
+    spacing = s.list_gap if self._list_depth > 0 else s.para_gap
     self.pdf.cursor(x, y + h + spacing)
 
   #--------------------------------------------------------------------------------- Code block
@@ -143,7 +143,7 @@ class BlocksMixin:
       except ImportError:
         highlighted = None
     lines = content.split("\n") if content else [""]
-    pad = s.code_block_padding
+    pad = s.code_block_pad
     left_offset = 2
     top_offset = s.code_block_size * 0.35 / MM_TO_PT
     per_line_segs: list[list[RichSegment]] = []
@@ -189,7 +189,7 @@ class BlocksMixin:
         preserve_leading_space=True,
       )
       text_y += line_heights_mm[idx]
-    self.pdf.cursor(x, y + block_h + s.code_block_spacing)
+    self.pdf.cursor(x, y + block_h + s.code_block_gap)
 
   #------------------------------------------------------------------------------------- Images
   
@@ -227,7 +227,7 @@ class BlocksMixin:
       )
       y = pdf.y
       render_rich(pdf, [base], avail_w_mm, x_start, y, Align.LEFT, s.line_height)
-      pdf.cursor(x_start, y + s.body_size * s.line_height / MM_TO_PT + s.paragraph_spacing)
+      pdf.cursor(x_start, y + s.body_size * s.line_height / MM_TO_PT + s.para_gap)
       return
     try:
       from PIL import Image as PILImage
@@ -240,12 +240,12 @@ class BlocksMixin:
         scale = avail_w_mm / nat_w_mm
         nat_w_mm *= scale
         nat_h_mm *= scale
-      self._ensure_space(nat_h_mm + s.paragraph_spacing)
+      self._ensure_space(nat_h_mm + s.para_gap)
       y = pdf.y
       x = x_start + (avail_w_mm - nat_w_mm) / 2
       pdf.cursor(x, y)
       pdf.image(src, nat_w_mm, nat_h_mm)
-      pdf.cursor(x_start, y + nat_h_mm + s.paragraph_spacing)
+      pdf.cursor(x_start, y + nat_h_mm + s.para_gap)
     except Exception:
       pass
 
@@ -258,30 +258,30 @@ class BlocksMixin:
     img_w_mm = w_pt / MM_TO_PT
     img_h_mm = h_pt / MM_TO_PT
     scale_w = avail_w_mm / img_w_mm if img_w_mm > avail_w_mm else 1.0
-    scale_h = s.mermaid_max_height / img_h_mm if img_h_mm > s.mermaid_max_height else 1.0
+    scale_h = s.mermaid_max_h / img_h_mm if img_h_mm > s.mermaid_max_h else 1.0
     scale = min(scale_w, scale_h)
     if scale < 1.0:
       img_w_mm *= scale
       img_h_mm *= scale
-    self._ensure_space(img_h_mm + s.paragraph_spacing)
+    self._ensure_space(img_h_mm + s.para_gap)
     y = pdf.y
     x = x_start + (avail_w_mm - img_w_mm) / 2
     pdf.cursor(x, y)
     pdf.image(png_path, img_w_mm, img_h_mm)
-    pdf.cursor(x_start, y + img_h_mm + s.paragraph_spacing)
+    pdf.cursor(x_start, y + img_h_mm + s.para_gap)
 
   #----------------------------------------------------------------------------------------- HR
   
   def _render_hr(self):
     s = self.style
-    self.pdf.enter(s.paragraph_spacing / 2)
+    self.pdf.enter(s.para_gap / 2)
     x = self._indent_mm
     w = self.pdf.content_width - x
     self.pdf.cursor(x, self.pdf.y)
     self.pdf.stroke_color(*s.hr_color)
-    self.pdf.line(w, 0, s.hr_thickness)
+    self.pdf.line(w, 0, s.hr_thick)
     self._reset_stroke()
-    self.pdf.enter(s.paragraph_spacing)
+    self.pdf.enter(s.para_gap)
 
   #--------------------------------------------------------------------------------- Math block
   
@@ -305,8 +305,8 @@ class BlocksMixin:
     w_pt = drawing.width
     h_pt = drawing.height
     h_mm = h_pt / MM_TO_PT
-    self.pdf.enter(s.math_block_spacing)
-    self._ensure_space(h_mm + s.math_block_spacing)
+    self.pdf.enter(s.math_block_gap)
+    self._ensure_space(h_mm + s.math_block_gap)
     content_w_mm = self.pdf.content_width - self._indent_mm
     content_w_pt = content_w_mm * MM_TO_PT
     x_center_offset_pt = (content_w_pt - w_pt) / 2
@@ -316,7 +316,7 @@ class BlocksMixin:
     x_pt = x_abs_mm * MM_TO_PT + x_center_offset_pt
     y_pt = y_abs_mm * MM_TO_PT
     renderPDF.draw(drawing, self.pdf._canvas, x_pt, y_pt)
-    if s.math_equation_numbering:
+    if s.math_numbering:
       self._eq_counter += 1
       num_seg = RichSegment(
         text=f"({self._eq_counter})", family=s.body_family, mode=s.body_mode,
@@ -327,4 +327,4 @@ class BlocksMixin:
         self.pdf, [num_seg], content_w_mm,
         self._indent_mm, num_y, Align.RIGHT, s.line_height,
       )
-    self.pdf.cursor(self._indent_mm, self.pdf.y + h_mm + s.math_block_spacing)
+    self.pdf.cursor(self._indent_mm, self.pdf.y + h_mm + s.math_block_gap)

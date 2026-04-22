@@ -31,7 +31,7 @@ class MarkdownStyle:
 
   # Font families - Vera Sans has Polish glyphs out of the box
   body_family: str = "Vera"
-  heading_family: str = "Vera"
+  head_family: str = "Vera"
   mono_family: str = "Courier" # keeping Courier for mono; can be overridden
 
   # Modes (Vera has dedicated Italic / BoldItalic TTFs)
@@ -39,7 +39,7 @@ class MarkdownStyle:
   bold_mode: str = "Bold"
   italic_mode: str = "Italic"
   bold_italic_mode: str = "BoldItalic"
-  heading_mode: str = "Bold"
+  head_mode: str = "Bold"
   mono_mode: str = "Regular"
 
   # Font sizes (pt)
@@ -55,15 +55,15 @@ class MarkdownStyle:
 
   # Colors (rgb 0-1) - GitHub light theme
   body_color: tuple = (0.09, 0.11, 0.13) # #1f2328
-  heading_color: tuple = (0.09, 0.11, 0.13)
+  head_color: tuple = (0.09, 0.11, 0.13)
   muted_color: tuple = (0.40, 0.44, 0.50)
   link_color: tuple = (0.03, 0.41, 0.85) # #0969da
-  code_color: tuple = (0.09, 0.11, 0.13)
-  code_bg: tuple = (0.96, 0.97, 0.98) # same as code_block_bg
+  code_inline_color: tuple = (0.09, 0.11, 0.13)
+  code_inline_bg: tuple = (0.96, 0.97, 0.98) # same as code_block_bg
   code_block_bg: tuple = (0.96, 0.97, 0.98) # #f6f8fa
   code_block_border: tuple = (0.82, 0.84, 0.87) # #d0d7de GitHub border
-  blockquote_border: tuple = (0.82, 0.84, 0.87)
-  blockquote_color: tuple = (0.40, 0.44, 0.50)
+  quote_border: tuple = (0.82, 0.84, 0.87)
+  quote_text: tuple = (0.40, 0.44, 0.50)
   hr_color: tuple = (0.82, 0.84, 0.87)
   table_header_bg: tuple = (0.96, 0.97, 0.98)
   table_border: tuple = (0.82, 0.84, 0.87)
@@ -71,22 +71,22 @@ class MarkdownStyle:
 
   # Spacing (mm) - tightened for GitHub feel
   line_height: float = 1.4            # ratio of font size
-  paragraph_spacing: float = 3        # mm between paragraphs
-  heading_spacing_top: float = 5      # mm above headings
-  heading_spacing_bot: float = 1.5    # mm below headings
+  para_gap: float = 3        # mm between paragraphs
+  head_gap_top: float = 5      # mm above headings
+  head_gap_bot: float = 1.5    # mm below headings
   list_indent: float = 6              # mm per list level
-  list_item_spacing: float = 0.5      # mm between items (tight)
+  list_gap: float = 0.5      # mm between items (tight)
   bullet_radius: float = 0.7          # mm - solid disc for bullets
-  code_block_padding: float = 3       # mm inside code blocks
-  code_block_spacing: float = 3       # mm after code blocks
+  code_block_pad: float = 3       # mm inside code blocks
+  code_block_gap: float = 3       # mm after code blocks
   code_block_radius: float = 2        # mm corner radius (GitHub: 6pt ≈ 2.1mm)
   syntax_theme: str = "default"       # pygments style name for highlighting
-  mermaid_max_height: float = 120     # mm - cap on mermaid diagram height
-  blockquote_padding: float = 5       # mm left indent
-  blockquote_border_width: float = 1  # mm thickness of left bar
-  hr_thickness: float = 0.3           # pt line width
-  underline_thickness: float = 0.3    # pt
-  table_cell_vpad: float = 1.5        # mm extra vertical padding inside cells
+  mermaid_max_h: float = 120     # mm - cap on mermaid diagram height
+  quote_pad: float = 5       # mm left indent
+  quote_border_w: float = 1  # mm thickness of left bar
+  hr_thick: float = 0.3           # pt line width
+  underline_thick: float = 0.3    # pt
+  table_pad: float = 1.5        # mm extra vertical padding inside cells
 
   # Math formulas (matplotlib mathtext -> SVG -> vector in PDF).
   # `math_fontset` accepts either a matplotlib preset (`"stix"`, `"stixsans"`,
@@ -96,8 +96,8 @@ class MarkdownStyle:
   # that folder. Default is `"stixsans"` - sans-serif with real italic and
   # full unicode math symbols, bundled with matplotlib (no setup).
   math_fontset: str = "stixsans"
-  math_block_spacing: float = 3            # mm above/below block equations
-  math_equation_numbering: bool = True     # auto (1), (2), (3) for block math
+  math_block_gap: float = 3            # mm above/below block equations
+  math_numbering: bool = True     # auto (1), (2), (3) for block math
 
   # Layout flags
   h1_underline: bool = True
@@ -107,15 +107,15 @@ class MarkdownStyle:
   # YAML frontmatter -> document header.
   # When the document starts with `---\n...\n---`, the YAML block is parsed
   # and rendered as a header layout instead of body text. Set
-  # `render_frontmatter=False` to skip frontmatter without rendering.
-  render_frontmatter: bool = True
+  # `banner_render=False` to skip frontmatter without rendering.
+  banner_render: bool = True
   # If the first body block is `# X` and `X` exactly matches frontmatter
   # `title`, drop that h1 to avoid showing the title twice. Only active
   # when the frontmatter header was actually rendered.
-  skip_duplicate_title: bool = True
+  skip_dup_title: bool = True
   # Mini header on pages 2+ (compact: code | title | page N/M).
   # Disable for single-page-style documents.
-  mini_header_on_continuation: bool = True
+  mini_banner_render: bool = True
   # Date format for created/updated fields. Python strftime syntax.
   # ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
   date_format: str = "%Y-%m-%d"
@@ -126,31 +126,31 @@ class MarkdownStyle:
   page_number_total: bool = True
 
   # Frontmatter header layout (mm)
-  fm_header_pad_top: float = 0    # mm above header block (start near top)
-  fm_header_pad_bot: float = 8    # mm below header block before body
-  fm_logo_max_height: float = 50  # mm - cap on logo height (page 1, big left column)
-  fm_logo_max_width: float = 60   # mm - cap on logo width; overrides height if aspect wide
-  fm_title_size: float = 22       # pt - main title
-  fm_id_size: float = 9           # pt - document id
-  fm_version_size: float = 9      # pt - version
-  fm_meta_size: float = 9         # pt - author/date/entity text
-  fm_rule_thickness: float = 0.3  # pt - matches markdown h1/h2 underlines
-  fm_sign_size: float = 9         # pt - signature label
-  fm_sign_line_width: float = 70  # mm - width of signature line
+  banner_pad_top: float = 0    # mm above header block (start near top)
+  banner_pad_bot: float = 8    # mm below header block before body
+  banner_logo_max_h: float = 50  # mm - cap on logo height (page 1, big left column)
+  banner_logo_max_w: float = 60   # mm - cap on logo width; overrides height if aspect wide
+  banner_title_size: float = 22       # pt - main title
+  banner_id_size: float = 9           # pt - document id
+  banner_version_size: float = 9      # pt - version
+  banner_meta_size: float = 9         # pt - author/date/entity text
+  banner_rule: float = 0.3  # pt - matches markdown h1/h2 underlines
+  banner_sign_size: float = 9         # pt - signature label
+  banner_sign_w: float = 70  # mm - width of signature line
   # Mini header on continuation pages
-  fm_mini_logo_max_height: float = 12  # mm - cap on mini-header logo height (2 lines tall)
-  fm_mini_logo_max_width: float = 24   # mm - cap on mini-header logo width
-  fm_mini_size: float = 10        # pt - text size in mini-header
-  fm_mini_top_offset: float = 12  # mm - distance from page top
-  fm_mini_gap_to_body: float = 8  # mm - gap between mini-header line and content
+  mini_banner_logo_max_h: float = 12  # mm - cap on mini-header logo height (2 lines tall)
+  mini_banner_logo_max_w: float = 24   # mm - cap on mini-header logo width
+  mini_banner_size: float = 10        # pt - text size in mini-header
+  mini_banner_top: float = 12  # mm - distance from page top
+  mini_banner_gap: float = 8  # mm - gap between mini-header line and content
   # Status badge colors (background, text). Keys must be lowercase.
-  fm_status_colors: dict = field(default_factory=_default_status_colors)
+  banner_status_colors: dict = field(default_factory=_default_status_colors)
   # Frontmatter labels - shown as `"{label}: {value}"` (author/created/updated)
   # or as-is (signature). Override for localization or custom wording.
-  fm_label_author: str = "Author"
-  fm_label_created: str = "Created"
-  fm_label_updated: str = "Updated"
-  fm_label_signature: str = "Signature"
+  banner_label_author: str = "Author"
+  banner_label_created: str = "Created"
+  banner_label_updated: str = "Updated"
+  banner_label_signature: str = "Signature"
 
   # Local-link handling. Links like `[x](file.md)` or `[x](folder/doc)` have
   # no schema and no `#` prefix. Without `link_root`, they get the link style
@@ -158,10 +158,8 @@ class MarkdownStyle:
   # When `link_root` is set, they resolve to:
   #   absolute href `/x/y`         -> `{link_root}/x/y`
   #   relative href `file.md`      -> `{link_root}/{link_base}/file.md`
-  # `link_base` can also be set per-document via `base:` in YAML frontmatter,
-  # which overrides the style value for that document only.
   link_root: str|None = None
   link_base: str = ""
   # Page break behavior. h1 page break is OFF by default - matches original
   # behavior where h1 just gets extra top spacing like other headings.
-  page_break_on_h1: bool = False
+  h1_page_break: bool = False

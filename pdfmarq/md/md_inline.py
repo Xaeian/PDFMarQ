@@ -110,7 +110,7 @@ class InlineMixin:
         segments.append(RichSegment(
           text=child.content,
           family=s.mono_family, mode=s.mono_mode, size=code_size,
-          color=s.code_color, bg_color=s.code_bg,
+          color=s.code_inline_color, bg_color=s.code_inline_bg,
           link_url=link_url, link_target=link_target,
         ))
       elif ct == "link_open":
@@ -247,7 +247,7 @@ class InlineMixin:
     root = root.rstrip("/")
     if href.startswith("/"):
       return f"{root}{href}", None
-    base = getattr(self, "_link_base", "") or ""
+    base = self.style.link_base or ""
     base = base.strip("/")
     if base:
       return f"{root}/{base}/{href}", None

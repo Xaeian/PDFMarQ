@@ -119,19 +119,13 @@ class MarkdownRenderer(
     """Parse markdown text and render to PDF."""
     self._frontmatter_data = None
     fm_rendered_title = None
-    # Effective link_base: frontmatter `base:` overrides style.link_base
-    self._link_base = self.style.link_base
-    if self.style.render_frontmatter:
+    if self.style.banner_render:
       data, md_text = self._extract_frontmatter(md_text)
       if data:
-        if "base" in data and data["base"] is not None:
-          self._link_base = str(data["base"])
         self._render_frontmatter_header(data)
         fm_rendered_title = data.get("title")
     else:
-      data, md_text = self._extract_frontmatter(md_text)
-      if data and "base" in data and data["base"] is not None:
-        self._link_base = str(data["base"])
+      _, md_text = self._extract_frontmatter(md_text)
     # Register page chrome callbacks:
     #   on_page       - mini-header on pages 2+ (per-page, no total known)
     #   on_new_page   - cursor offset on pages 2+ for mini-header gap
@@ -144,7 +138,7 @@ class MarkdownRenderer(
     md_text = self._emojize_outside_code(md_text)
     tokens = self._md.parse(md_text)
     self._known_slugs = self._collect_heading_slugs(tokens)
-    if self.style.skip_duplicate_title and fm_rendered_title:
+    if self.style.skip_dup_title and fm_rendered_title:
       tokens = self._skip_matching_h1(tokens, str(fm_rendered_title))
     self._render_tokens(tokens)
     if self._frontmatter_data and self._frontmatter_data.get("sign"):
@@ -261,13 +255,20 @@ def md_to_pdf(
 ) -> PDF:
   """Convert markdown text to PDF file.
 
+  YAML frontmatter fields auto-fill PDF metadata:
+    `title`    -> PDF /Title
+    `author`   -> PDF /Author
+    `subject`  -> PDF /Subject
+    `keywords` -> PDF /Keywords (string, or list joined with ", ")
+  Explicit `metadata={...}` arg overrides YAML values per-key.
+
   Args:
     landscape: Flip page to landscape (swap width/height). When `None`
       (default), reads `landscape: true` from YAML frontmatter. Explicit
       `True`/`False` overrides the frontmatter value.
   """
+  fm = peek_frontmatter(md_text)
   if landscape is None:
-    fm = peek_frontmatter(md_text)
     if fm is not None and fm.get("landscape") is not None:
       landscape = bool(fm["landscape"])
   if landscape:
@@ -276,9 +277,28 @@ def md_to_pdf(
     output_path, width=width, height=height,
     margin=margin, font_dir=font_dir,
   )
+  # Auto-fill PDF metadata from YAML. Explicit `metadata=` kwarg wins per-key.
+  meta = _metadata_from_frontmatter(fm) if fm else {}
   if metadata:
-    pdf.metadata(**metadata)
+    meta.update(metadata)
+  if meta:
+    pdf.metadata(**meta)
   renderer = MarkdownRenderer(pdf, style)
   renderer.render(md_text)
   pdf.save()
   return pdf
+
+def _metadata_from_frontmatter(fm:dict) -> dict:
+  """Map YAML keys to `PDF.metadata()` kwargs. Keys absent in `fm` are skipped."""
+  out: dict = {}
+  for yaml_key, meta_key in (("title", "title"), ("author", "author"), ("subject", "subject")):
+    val = fm.get(yaml_key)
+    if val is not None:
+      out[meta_key] = str(val)
+  kw = fm.get("keywords")
+  if kw is not None:
+    if isinstance(kw, (list, tuple)):
+      out["keywords"] = ", ".join(str(k) for k in kw)
+    else:
+      out["keywords"] = str(kw)
+  return out

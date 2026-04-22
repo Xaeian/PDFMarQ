@@ -1,6 +1,6 @@
 # `pdfmarq.md`
 
-Markdown-to-PDF renderer with YAML frontmatter headers. Requires `pip install pdfmarq[md]`.
+Markdown-to-PDF renderer with YAML frontmatter. Requires `pip install pdfmarq[md]`.
 
 ## `md_to_pdf`
 
@@ -11,24 +11,24 @@ md_to_pdf(open("doc.md").read(), "doc.pdf", font_dir="./fonts")
 md_to_pdf(md_text, "out.pdf", landscape=True)
 ```
 
-## Frontmatter
+## Banner (YAML frontmatter)
 
-YAML block at the top becomes a styled document header on page 1 plus a mini-header on continuation pages.
+YAML block at the top becomes a styled banner on page 1 plus a compact mini-banner on continuation pages.
 
 ```yaml
 ---
 id: TXR-1991-007
 title: Roundhouse kick deployment protocol
 version: 1.3.2
+author: Walker, Texas Ranger
 status: approved
 entity: Texas Ranger Division
 address: 1 Lone Star Boulevard, Dallas TX 75201
-logo: ./ranger-badge.svg
-author: Walker, Texas Ranger
 created: 1993-04-21
 updated: 2026-03-15
 sign: true
 landscape: false
+logo: ./ranger-badge.svg
 ---
 
 # Document body starts here
@@ -38,21 +38,24 @@ landscape: false
 | ----------- | ------------------------------------------------------------------------------------ |
 | `id`        | Document code in code-style box (e.g. `MD-001`)                                      |
 | `title`     | Main title, centered, large                                                          |
-| `info`      | Metadata only, not rendered                                                          |
 | `version`   | Version in code-style box (no `v` prefix added)                                      |
+| `author`    | Author name, shown as `{banner_label_author}: ...`                                   |
 | `status`    | Badge: `draft` / `review` / `approved` / `deprecated` / `archived`                   |
-| `entity`    | Organization (left of header, bold)                                                  |
-| `address`   | Address (right of header, muted)                                                     |
-| `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware _(tall logos take less horizontal space)_ |
-| `author`    | Author name, shown as `{fm_label_author}: ...`                                       |
+| `entity`    | Organization (left of banner, bold)                                                  |
+| `address`   | Address (right of banner, muted)                                                     |
 | `created`   | ISO date, formatted via `style.date_format`                                          |
 | `updated`   | Same                                                                                 |
 | `sign`      | `true` adds a dashed signature line + label at the end                               |
 | `landscape` | `true` flips page to landscape orientation                                           |
+| `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware _(tall logos take less horizontal space)_ |
+| `subject`   | Written to PDF metadata `/Subject`, not rendered                                     |
+| `keywords`  | Written to PDF metadata `/Keywords`, string or YAML list                             |
 
 Aliases: `code` → `id`, `company` → `entity` _(legacy)_.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Disable with `skip_duplicate_title=False`.
+PDF metadata _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ is auto-filled from matching YAML keys. Pass `metadata={...}` to `md_to_pdf()` to override per-key.
+
+If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Disable with `skip_dup_title=False`.
 
 ## Internal links
 
@@ -67,6 +70,21 @@ See the [Notify characteristic](#bluetooth-low-energy) section.
 
 Each heading auto-registers a GitHub-style slug _(lowercase, spaces → hyphens, unicode preserved)_. Links to non-existent slugs render as plain text rather than crashing the build. Footnote refs `[^1]` jump to their definitions the same way.
 
+## Local links
+
+Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get the link style _(blue + underline)_ but no clickable action by default - a PDF can't follow a filesystem link. Set `link_root` to make them real URLs:
+
+```py
+MarkdownStyle(
+  link_root="https://docs.company.com",  # root to prepend
+  link_base="projects/foo",              # subfolder this doc sits in
+)
+```
+
+Resolution:
+- `[x](file.md)` → `https://docs.company.com/projects/foo/file.md`
+- `[x](/abs/path)` → `https://docs.company.com/abs/path` _(absolute ignores base)_
+
 ## Style
 
 ```py
@@ -74,39 +92,39 @@ from pdfmarq.md import MarkdownStyle
 style = MarkdownStyle(
   body_family="IBMPlexSans",
   mono_family="IBMPlexMono",
-  heading_family="Sora",
+  head_family="Sora",
   page_number_label="Strona",  # "Strona 1/5" footer; None to disable
   page_number_total=True,      # False → "Strona 1" without total
   date_format="%d.%m.%Y",      # strftime pattern
-  page_break_on_h1=False,      # True for chaptered documents
-  mini_header_on_continuation=True,
-  render_frontmatter=True,
-  skip_duplicate_title=True,   # drop `# X` if it matches frontmatter title
-  mermaid_max_height=120,      # mm - cap tall diagrams (default 120)
+  h1_page_break=False,         # True for chaptered documents
+  mini_banner_render=True,     # mini-banner on pages 2+
+  banner_render=True,          # page 1 full banner
+  skip_dup_title=True,         # drop `# X` if it matches frontmatter title
+  mermaid_max_h=120,           # mm - cap tall diagrams (default 120)
 )
 md_to_pdf(md_text, "out.pdf", style=style)
 ```
 
-### Frontmatter labels (i18n)
+### Banner labels (i18n)
 
-All labels in the document header are style fields - defaults are English.
+Labels in the banner are style fields - defaults are English.
 
 ```py
 # Polish
 MarkdownStyle(
   page_number_label="Strona",
-  fm_label_author="Autor",
-  fm_label_created="Utworzono",
-  fm_label_updated="Zaktualizowano",
-  fm_label_signature="Podpis",
+  banner_label_author="Autor",
+  banner_label_created="Utworzono",
+  banner_label_updated="Zaktualizowano",
+  banner_label_signature="Podpis",
 )
 # German
 MarkdownStyle(
   page_number_label="Seite",
-  fm_label_author="Autor",
-  fm_label_created="Erstellt",
-  fm_label_updated="Aktualisiert",
-  fm_label_signature="Unterschrift",
+  banner_label_author="Autor",
+  banner_label_created="Erstellt",
+  banner_label_updated="Aktualisiert",
+  banner_label_signature="Unterschrift",
 )
 ```
 
@@ -114,10 +132,10 @@ MarkdownStyle(
 
 ```py
 MarkdownStyle(
-  fm_logo_max_height=50,       # mm - big logo on page 1 (default 50)
-  fm_logo_max_width=60,        # mm - caps wide logos (default 60)
-  fm_mini_logo_max_height=12,  # mm - mini-header logo (default 12)
-  fm_mini_logo_max_width=24,   # mm - caps wide mini logos (default 24)
+  banner_logo_max_h=50,       # mm - big logo on page 1 (default 50)
+  banner_logo_max_w=60,       # mm - caps wide logos (default 60)
+  mini_banner_logo_max_h=12,  # mm - mini-banner logo (default 12)
+  mini_banner_logo_max_w=24,  # mm - caps wide mini logos (default 24)
 )
 ```
 
@@ -138,7 +156,7 @@ MarkdownStyle(table_zebra=True, table_zebra_bg=(0.985, 0.99, 0.995))
 ### Status badge palette
 
 ```py
-MarkdownStyle(fm_status_colors={
+MarkdownStyle(banner_status_colors={
   "draft":      ((0.93, 0.93, 0.95), (0.40, 0.44, 0.50)),
   "review":     ((1.00, 0.95, 0.78), (0.62, 0.40, 0.05)),
   "approved":   ((0.86, 0.96, 0.87), (0.10, 0.45, 0.18)),
@@ -196,8 +214,8 @@ pdf = PDF("out.pdf", font_dir="./fonts")
 # Hand-crafted cover page
 pdf.font("Helvetica", 36, "Bold").cursor(0, 80).text("Title", 170, align="C")
 pdf.new_page()
-# Markdown body
-renderer = MarkdownRenderer(pdf, MarkdownStyle(render_frontmatter=False))
+# Markdown body (no banner - we already have a custom cover)
+renderer = MarkdownRenderer(pdf, MarkdownStyle(banner_render=False))
 renderer.render(open("body.md").read())
 # Custom signature
 pdf.enter(20).cursor(110, pdf.y).line(70, 0, 0.5, dash=(2, 2))

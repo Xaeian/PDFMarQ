@@ -50,7 +50,7 @@ class FontsMixin:
     default_style = MarkdownStyle()
     if sans_name and self.style.body_family == default_style.body_family:
       self.style.body_family = sans_name
-      self.style.heading_family = sans_name
+      self.style.head_family = sans_name
     if mono_name and self.style.mono_family == default_style.mono_family:
       self.style.mono_family = mono_name
 

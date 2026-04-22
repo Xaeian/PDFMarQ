@@ -25,7 +25,7 @@ class ListMixin:
         1 for j in range(start, end + 1)
         if tokens[j].type == "list_item_open"
       )
-      list_h = n_items * body_line_mm * 1.2 + s.paragraph_spacing
+      list_h = n_items * body_line_mm * 1.2 + s.para_gap
       page_avail = self.pdf.content_height
       if list_h <= page_avail * 0.9 and list_h > (page_avail - self.pdf.y):
         self.pdf.new_page()
@@ -54,7 +54,7 @@ class ListMixin:
         j += 1
     self._list_depth -= 1
     if self._list_depth == 0:
-      self.pdf.enter(max(0, s.paragraph_spacing - s.list_item_spacing))
+      self.pdf.enter(max(0, s.para_gap - s.list_gap))
     return end + 1
 
   def _render_list_item(self, prefix:str, item_tokens:list[Token], bullet:bool=False):
