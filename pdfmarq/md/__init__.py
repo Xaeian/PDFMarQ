@@ -43,9 +43,12 @@ __extras__ = ("md", [
 
 from .markdown_style import MarkdownStyle
 from .markdown import MarkdownRenderer, md_to_pdf
+from .presets import lang_style, LANG_PRESETS
 
 __all__ = [
   "MarkdownStyle",
   "MarkdownRenderer",
   "md_to_pdf",
+  "lang_style",
+  "LANG_PRESETS",
 ]

@@ -6,11 +6,22 @@ Inline token → RichSegment conversion for MarkdownRenderer.
 Walks children of a `markdown_it` inline token and produces a flat list of
 styled `RichSegment`s, handling: bold/italic/strike, sub/sup/mark, inline
 code (with heading-size scaling), links, inline math, emoji, inline
-images, footnote refs, task-list checkboxes, and soft/hard breaks.
+images, footnote refs, task-list checkboxes, soft/hard breaks, and the
+small whitelist of inline HTML tags defined in `md_html`.
 """
 
 from markdown_it.token import Token
 from ..inline import RichSegment
+from . import md_html
+
+#----------------------------------------------------------------------------- Helpers
+
+def _mono_inline_size(s, base_size:float) -> float:
+  """Mono size (pt) for inline code embedded at `base_size`.
+  Heading-sized contexts use a 0.95 factor to avoid line-box overflow;
+  body-size uses the configured `mono_size`/`body_size` ratio."""
+  if base_size >= 14: return base_size * 0.95
+  return base_size * (s.mono_size / s.body_size)
 
 #---------------------------------------------------------------------------------- InlineMixin
 
@@ -22,6 +33,7 @@ class InlineMixin:
     segments: list[RichSegment] = []
     is_bold = is_italic = is_strike = False
     is_sub = is_sup = is_mark = False
+    is_html_code = False  # `<code>...</code>` inline html — distinct from md `code_inline`
     link_url = None
     link_target = None
     # `in_link` tracks visual link styling independently of actionable target.
@@ -37,14 +49,23 @@ class InlineMixin:
       size = base.size
       color = s.link_color if in_link else base.color
       bg = None
+      family = base.family
+      mode = resolve_mode()
+      if is_html_code:
+        # Mirrors `code_inline` styling: mono family, code colors, scaled size
+        family = s.mono_family
+        mode = s.mono_mode
+        color = s.code_inline_color
+        bg = s.code_inline_bg
+        size = _mono_inline_size(s, base.size)
       if is_sub or is_sup:
         size = base.size * 0.7
       if is_mark:
-        bg = s.mark_bg if hasattr(s, "mark_bg") else (1.0, 0.93, 0.3)
+        bg = s.mark_bg
       return RichSegment(
         text=text,
-        family=base.family,
-        mode=resolve_mode(),
+        family=family,
+        mode=mode,
         size=size,
         color=color,
         bg_color=bg,
@@ -101,15 +122,9 @@ class InlineMixin:
       elif ct == "mark_open": is_mark = True
       elif ct == "mark_close": is_mark = False
       elif ct == "code_inline":
-        # Scale mono to match heading size (factor 0.95 for large bases avoids
-        # line-box overflow; body-size uses default mono_size ratio)
-        if base.size >= 14:
-          code_size = base.size * 0.95
-        else:
-          code_size = base.size * (s.mono_size / s.body_size)
         segments.append(RichSegment(
           text=child.content,
-          family=s.mono_family, mode=s.mono_mode, size=code_size,
+          family=s.mono_family, mode=s.mono_mode, size=_mono_inline_size(s, base.size),
           color=s.code_inline_color, bg_color=s.code_inline_bg,
           link_url=link_url, link_target=link_target,
         ))
@@ -152,11 +167,12 @@ class InlineMixin:
         if emoji_ch:
           make_text_with_emoji(emoji_ch)
       elif ct == "image":
-        src = (child.attrs or {}).get("src", "") if isinstance(child.attrs, dict) else ""
+        img_attrs = child.attrs if isinstance(child.attrs, dict) else dict(child.attrs or [])
+        src = img_attrs.get("src", "")
         alt = child.content or ""
         img_drawing = None
         if src and not src.startswith(("http://", "https://")):
-          img_drawing = self._load_inline_image(src, base.size)
+          img_drawing = self._load_inline_image(src, base.size, attrs=img_attrs)
         if img_drawing is not None:
           segments.append(RichSegment(
             text="",
@@ -183,8 +199,9 @@ class InlineMixin:
           link_target=f"fn_{label}",
         ))
       elif ct == "html_inline":
-        # Only the task-list-checkbox escape hatch is rendered; drop rest
         html = child.content or ""
+        tag = html.strip().lower()
+        # Task-list checkbox escape hatch (legacy GFM extension marker)
         if "task-list-item-checkbox" in html:
           checked = "checked" in html
           drawing = _make_checkbox(base.size, checked, base.color, s.link_color)
@@ -194,9 +211,18 @@ class InlineMixin:
             color=base.color,
             math_drawing=drawing,
             math_width_pt=float(drawing.width),
-            # Center the box on the cap-height (same trick as emoji)
             math_baseline_from_bottom_pt=base.size * 0.10,
           ))
+        # Whitelisted style toggles (depth-1, no nested same-tag tracking).
+        # Tag set defined in md_html.
+        elif tag in md_html.BOLD_OPEN: is_bold = True
+        elif tag in md_html.BOLD_CLOSE: is_bold = False
+        elif tag in md_html.ITALIC_OPEN: is_italic = True
+        elif tag in md_html.ITALIC_CLOSE: is_italic = False
+        elif tag in md_html.CODE_OPEN: is_html_code = True
+        elif tag in md_html.CODE_CLOSE: is_html_code = False
+        elif tag in md_html.BREAK: segments.append(make("\n"))
+        # Anything else (raw HTML we don't recognize) is silently dropped.
       elif ct == "softbreak":
         segments.append(make(" "))
       elif ct == "hardbreak":

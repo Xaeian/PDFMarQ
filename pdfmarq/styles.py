@@ -61,6 +61,8 @@ class TableStyle:
   border_width_outer: float = 0.2
   padding: float = 0.5 # horizontal cell padding (mm)
   cell_vpad: float = 0.5 # extra vertical padding per cell (mm)
+  header_extra: float = 0.5 # extra header height beyond `cell_vpad` (mm)
+  header_gap: float = 0.2 # blank gap between header bottom border and body (mm)
   header_repeat: bool = True
 
 #-------------------------------------------------------------------------------------- Presets

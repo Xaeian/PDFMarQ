@@ -7,6 +7,7 @@ Source text preprocessors for markdown rendering.
 - `_normalize_list_indent` - 2-space list indent → 4-space (markdown-it needs 4)
 - `_emojize_outside_code` - `:shortcode:` → Unicode emoji, respecting code blocks
 """
+import re
 
 #------------------------------------------------------------------------------ PreprocessMixin
 
@@ -38,7 +39,6 @@ class PreprocessMixin:
   @staticmethod
   def _normalize_list_indent(md_text:str) -> str:
     """2-space list indents → 4-space (markdown-it needs 4 for nesting)."""
-    import re
     list_item_re = re.compile(r"^(\s*)([-*+]|\d+\.)\s")
     out: list[str] = []
     for line, is_content in PreprocessMixin._iter_content_lines(md_text):

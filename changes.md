@@ -1,5 +1,13 @@
 # Changes `pdfmarq`
 
+## `0.2.0` HTML, Table IMG & Lang
+
+- Improved image handling in tables
+- Basic HTML tags: `<b>`, `<i>`, `<code>`, `<br>`, `<hr>`
+- Headerless tables _(single-row card layout)_
+- Callout _(Note/Tip/Important/Warning/Caution)_ labels
+- Language presets: `en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`
+
 ## `0.1.1` Names
 
 Shortened variable names and metadata

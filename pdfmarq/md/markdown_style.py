@@ -68,6 +68,7 @@ class MarkdownStyle:
   table_header_bg: tuple = (0.96, 0.97, 0.98)
   table_border: tuple = (0.82, 0.84, 0.87)
   table_zebra_bg: tuple = (0.985, 0.99, 0.995) # very subtle - lighter than header_bg
+  mark_bg: tuple = (1.0, 0.93, 0.3)    # `==text==` highlight background
 
   # Spacing (mm) - tightened for GitHub feel
   line_height: float = 1.4            # ratio of font size
@@ -81,12 +82,22 @@ class MarkdownStyle:
   code_block_gap: float = 3       # mm after code blocks
   code_block_radius: float = 2        # mm corner radius (GitHub: 6pt ≈ 2.1mm)
   syntax_theme: str = "default"       # pygments style name for highlighting
-  mermaid_max_h: float = 120     # mm - cap on mermaid diagram height
+  # Image sizing rules — see `md_images.py` for the full algorithm
+  image_max_h: float = 120         # mm - cap image height (block + table cells)
+  image_dpi: int = 96              # fallback DPI for rasters without metadata
+  inline_image_max_h: float = 5.5  # mm - cap inline mid-paragraph icons (~2ex @ 11pt)
+  cell_image_max_w: float = 60     # mm - absolute cap on col_max
+  cell_image_scale: float = 0.5    # render image cells at this fraction of natural
+  cell_image_balance_bias: float = 0.7  # target image_h = text_h × bias (<1 = smaller image)
+  svg_block_fill_width: bool = True  # SVG block images fill page width
   quote_pad: float = 5       # mm left indent
   quote_border_w: float = 1  # mm thickness of left bar
   hr_thick: float = 0.3           # pt line width
   underline_thick: float = 0.3    # pt
   table_pad: float = 1.5        # mm extra vertical padding inside cells
+  table_h_pad: float = 2          # mm horizontal cell padding
+  table_border_thick: float = 0.3 # pt - table line thickness
+  table_header_thick: float = 0.5 # pt - thicker line under header row
 
   # Math formulas (matplotlib mathtext -> SVG -> vector in PDF).
   # `math_fontset` accepts either a matplotlib preset (`"stix"`, `"stixsans"`,
@@ -151,6 +162,13 @@ class MarkdownStyle:
   banner_label_created: str = "Created"
   banner_label_updated: str = "Updated"
   banner_label_signature: str = "Signature"
+  # GitHub callout titles (`> [!NOTE]`, `> [!TIP]`, ...). Override for
+  # localization or custom wording. Color + icon stay constant per type.
+  callout_label_note:      str = "Note"
+  callout_label_tip:       str = "Tip"
+  callout_label_important: str = "Important"
+  callout_label_warning:   str = "Warning"
+  callout_label_caution:   str = "Caution"
 
   # Local-link handling. Links like `[x](file.md)` or `[x](folder/doc)` have
   # no schema and no `#` prefix. Without `link_root`, they get the link style

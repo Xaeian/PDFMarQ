@@ -100,31 +100,30 @@ style = MarkdownStyle(
   mini_banner_render=True,     # mini-banner on pages 2+
   banner_render=True,          # page 1 full banner
   skip_dup_title=True,         # drop `# X` if it matches frontmatter title
-  mermaid_max_h=120,           # mm - cap tall diagrams (default 120)
+  image_max_h=120,             # mm - cap tall images and diagrams (default 120)
 )
 md_to_pdf(md_text, "out.pdf", style=style)
 ```
 
 ### Banner labels (i18n)
 
-Labels in the banner are style fields - defaults are English.
+Labels in the banner, footer, and callouts are style fields — defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
 ```py
-# Polish
+from pdfmarq.md import lang_style, md_to_pdf
+style = lang_style("pl", body_family="IBMPlexSans")
+md_to_pdf(md_text, "out.pdf", style=style)
+```
+
+Built-in presets ship in `pdfmarq/md/presets.py` and currently cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated / signature)_, and callout labels _(note / tip / important / warning / caution)_. Extend by adding entries to `LANG_PRESETS`.
+
+For ad-hoc overrides without a preset, set fields directly:
+
+```py
 MarkdownStyle(
-  page_number_label="Strona",
-  banner_label_author="Autor",
-  banner_label_created="Utworzono",
-  banner_label_updated="Zaktualizowano",
-  banner_label_signature="Podpis",
-)
-# German
-MarkdownStyle(
-  page_number_label="Seite",
-  banner_label_author="Autor",
-  banner_label_created="Erstellt",
-  banner_label_updated="Aktualisiert",
-  banner_label_signature="Unterschrift",
+  page_number_label="Page",
+  banner_label_author="Author",
+  callout_label_warning="Heads up",
 )
 ```
 
@@ -204,6 +203,38 @@ Footnotes[^1] and emoji :rocket: :sparkles:
 ````
 
 Paragraphs and tables pre-measure their height and break to a new page when they don't fit - no orphaned first lines across page breaks.
+
+## HTML support
+
+A small whitelist of raw HTML tags is recognized inside markdown. Everything else _(`<table>`, `<div>`, `<span>`, `<style>`, attributes)_ is dropped silently.
+
+| Tag                  | Effect                                            |
+| -------------------- | ------------------------------------------------- |
+| `<b>`, `<strong>`    | Bold                                              |
+| `<i>`, `<em>`        | Italic                                            |
+| `<code>`             | Inline code _(mono family, code colors)_          |
+| `<br>`               | Hard line break                                   |
+| `<hr>`               | Horizontal rule _(block-level)_                   |
+
+Tag set lives in `pdfmarq/md/md_html.py` if you need to extend it.
+
+### Headerless tables
+
+Markdown tables require a header row per spec, but a single-row "card" layout is a common pattern. A table with header but no body is rendered as headerless — useful for label/value blocks and contact cards:
+
+```md
+| ![](logo.svg) | Pocket Diagnostics Poland sp. z o.o<br>80-890 Gdańsk<br>Jana Heweliusza 11/811 |
+| --- | --- |
+```
+
+### Setext-heading-with-image recovery
+
+```md
+![diagram](schema.svg)
+---
+```
+
+CommonMark parses this as a setext h2 with the image as heading text — a common footgun that would render the image at heading-inline size _(thumbnail)_. `pdfmarq` detects the image-only setext case and renders it as a block image followed by an `<hr>`, matching the user's actual intent.
 
 ## Mixing with core API
 

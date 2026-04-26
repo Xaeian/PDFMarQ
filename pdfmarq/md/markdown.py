@@ -57,7 +57,7 @@ class MarkdownRenderer(
     self.style = style or MarkdownStyle()
     # Auto-register default sans/mono fonts before the first draw
     self._ensure_default_font()
-    md = MarkdownIt("commonmark", {"html": False, "breaks": False})
+    md = MarkdownIt("commonmark", {"html": True, "breaks": False})
     md.enable(["table", "strikethrough"])
     self._load_plugins(md)
     self._md = md
@@ -178,8 +178,23 @@ class MarkdownRenderer(
       ttype = t.type
       if ttype == "heading_open":
         level = int(t.tag[1])
+        inline = tokens[i+1]
+        # Setext heading whose only inline content is an image is virtually
+        # always user error: `![alt](src)\n---` was meant as block image + HR,
+        # but markdown-it consumed `---` as setext h2 markup, sinking the image
+        # into a heading where it'd render at inline cap (thumbnail). Recover
+        # the original intent. `markup` is `-`/`=` for setext, `#...` for ATX.
+        if t.markup and t.markup[0] in ("-", "=") and self._is_image_only_inline(inline):
+          img = next(c for c in inline.children if c.type == "image")
+          img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
+          src = img_attrs.get("src", "")
+          if src and not src.startswith(("http://", "https://")):
+            self._render_block_image(src, img.content or "", attrs=img_attrs)
+            self._render_hr()
+            i += 3
+            continue
         lookahead_mm = self._estimate_next_block(tokens, i + 3)
-        self._render_heading(level, tokens[i+1], lookahead_mm=lookahead_mm)
+        self._render_heading(level, inline, lookahead_mm=lookahead_mm)
         i += 3
       elif ttype == "paragraph_open":
         self._render_paragraph(tokens[i+1])
@@ -203,6 +218,14 @@ class MarkdownRenderer(
       elif ttype == "hr":
         self._render_hr()
         i += 1
+      elif ttype == "html_block":
+        # Whitelist: only standalone <hr> is recognized as a block element.
+        # Anything else (raw HTML blocks like <table>, <div>, <script>) is
+        # silently dropped — pdfmarq doesn't render arbitrary HTML.
+        from . import md_html
+        if md_html.is_hr_block(t.content or ""):
+          self._render_hr()
+        i += 1
       elif ttype == "table_open":
         i = self._render_table(tokens, i)
       elif ttype == "footnote_block_open":
@@ -213,6 +236,15 @@ class MarkdownRenderer(
         i += 1
 
   #----------------------------------------------------------------------------- Shared helpers
+  
+  @staticmethod
+  def _is_image_only_inline(inline:Token) -> bool:
+    """True when an inline token's only meaningful child is a single image
+    (softbreaks/hardbreaks ignored). Used to detect the setext-heading-with-
+    image misparse and the paragraph-with-image block-image promotion."""
+    children = inline.children or []
+    non_trivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
+    return len(non_trivial) == 1 and non_trivial[0].type == "image"
   
   @staticmethod
   def _find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> int:

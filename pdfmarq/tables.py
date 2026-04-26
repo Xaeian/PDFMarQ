@@ -75,7 +75,7 @@ class TableBuilder:
     font_size: float = 11,
   ) -> TableData:
     """Prepare table data for rendering. Pure - does not mutate builder state."""
-    width = self._width or available_width
+    width = self._width if self._width is not None else available_width
     padding = self.style.padding
     fallback_h = font_size * 1.2  # pt: used when `box_fit` flags overflow
     # Local column config - don't mutate self across repeated `build` calls
@@ -106,7 +106,7 @@ class TableBuilder:
       data.header = self._header
       data.header_fitted = fit["text"]
       h = _max_height(fit["height"], fallback_h)
-      data.header_height = (h / MM_TO_PT) + self.style.cell_vpad + 0.5
+      data.header_height = (h / MM_TO_PT) + self.style.cell_vpad + self.style.header_extra
     data.body = self._body
     for row in self._body:
       fit = self.metrics.box_fit_array(

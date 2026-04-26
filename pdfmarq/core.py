@@ -499,12 +499,15 @@ class PDF:
     padding = style.padding
     # Draw background boxes
     if data.header:
-      self.color_grey(style.header_bg[0], style.header_bg[3] if len(style.header_bg) > 3 else 0.5)
+      bg = style.header_bg
+      a = bg[3] if len(bg) > 3 else 0.5
+      self.color(bg[0], bg[1], bg[2], a)
       self.rect(data.total_width, data.header_height)
-      self.enter(data.header_height).enter(0.2)
+      self.enter(data.header_height).enter(style.header_gap)
     for i, h in enumerate(data.body_heights):
       bg = style.row_bg_odd if i % 2 else style.row_bg_even
-      self.color_grey(bg[0], bg[3] if len(bg) > 3 else 0.5)
+      a = bg[3] if len(bg) > 3 else 0.5
+      self.color(bg[0], bg[1], bg[2], a)
       self.rect(data.total_width, h)
       self.enter(h)
     self.color_black()
@@ -515,14 +518,14 @@ class PDF:
     if data.header:
       self.enter(data.header_height)
       self.line(data.total_width, 0, style.border_width_header)
-      self.enter(0.2)
+      self.enter(style.header_gap)
     for h in data.body_heights:
       self.line(data.total_width, 0, style.border_width)
       self.enter(h)
     self.line(data.total_width, 0, style.border_width)
     # Draw vertical lines
     self.cursor(x_start, y_start)
-    total_h = (data.header_height + 0.2 + sum(data.body_heights)) if data.header else sum(data.body_heights)
+    total_h = (data.header_height + style.header_gap + sum(data.body_heights)) if data.header else sum(data.body_heights)
     self.line(0, total_h, style.border_width_outer)
     x_col = x_start
     for w in data.column_widths:
@@ -542,7 +545,7 @@ class PDF:
         align = data.column_aligns[idx] if idx < len(data.column_aligns) else Align.LEFT
         self.text(txt, data.column_widths[idx], data.header_height, align, padding)
       self.font(mode=old_mode)
-      self.enter().enter(0.2)
+      self.enter().enter(style.header_gap)
     # Draw body text
     for i, row in enumerate(data.body_fitted):
       for idx, txt in enumerate(row):

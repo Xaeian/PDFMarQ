@@ -7,7 +7,7 @@ and custom bullet glyphs drawn via `canvas.circle`.
 
 from markdown_it.token import Token
 from reportlab.lib.colors import Color
-from ..inline import RichSegment, render_rich
+from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
 
 #------------------------------------------------------------------------------------ ListMixin
@@ -59,8 +59,15 @@ class ListMixin:
 
   def _render_list_item(self, prefix:str, item_tokens:list[Token], bullet:bool=False):
     s = self.style
-    # Keep-with-next: reserve 2 lines so bullet doesn't orphan
-    self._ensure_space(s.body_size * s.line_height / MM_TO_PT * 2)
+    # Pre-measure first paragraph so the prefix (number/bullet) doesn't get
+    # orphaned on the previous page when the content wraps to a new one.
+    # Without this, `_render_paragraph` triggers its own page-break AFTER the
+    # prefix is already drawn — leaving "4." alone on the last line.
+    needed = self._measure_item_first_para(item_tokens)
+    page_avail = self.pdf.content_height
+    if needed <= page_avail * 0.9 and needed > (page_avail - self.pdf.y):
+      self.pdf.new_page()
+    self._ensure_space(needed)
     x_prefix = self._indent_mm
     y_item = self.pdf.y
     if bullet:
@@ -88,3 +95,32 @@ class ListMixin:
     self._render_tokens(item_tokens)
     self._indent_mm = old_indent
     self.pdf.cursor(self._indent_mm, self.pdf.y)
+
+  def _measure_item_first_para(self, item_tokens:list[Token]) -> float:
+    """Height (mm) of the first paragraph in a list item — used as the
+    keep-together reservation in `_render_list_item`. Falls back to two
+    body lines when the item starts with something other than a paragraph
+    (nested list, code block, etc.) since those have their own break logic."""
+    s = self.style
+    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    for j, t in enumerate(item_tokens):
+      if t.type == "paragraph_open" and j + 1 < len(item_tokens):
+        inline = item_tokens[j + 1]
+        if inline.type == "inline":
+          base = RichSegment(
+            text="", family=s.body_family, mode=s.body_mode,
+            size=s.body_size, color=s.body_color,
+          )
+          try:
+            segs = self._inline_to_segments(inline, base)
+            width = self.pdf.content_width - self._indent_mm - s.list_indent
+            h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
+            return max(h, body_line_mm)
+          except Exception:
+            pass
+        break
+      # Non-paragraph leading content (nested list, fence, etc.) — defer to
+      # that block's own keep logic; reserve minimum two lines here.
+      if t.type not in ("paragraph_close",):
+        break
+    return body_line_mm * 2

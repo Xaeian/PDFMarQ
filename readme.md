@@ -60,7 +60,7 @@ md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block, landscape flag)_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
-- Configurable banner labels for localization _(`banner_label_author`, `banner_label_created`, …)_
+- Built-in language presets _(en/pl/de/fr/es/it/cs/sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
 - Skip-duplicate-title: drops `# X` when it matches frontmatter `title`
 - Auto-slugged headings with clickable `[text](#anchor)` internal links _(unicode-aware, broken targets degrade to plain text)_
 - Local-path links configurable via `link_root` + `link_base` _(or per-doc YAML `base:`)_
@@ -70,6 +70,7 @@ md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")
 - Footnotes, emoji shortcodes `:rocket:`, nested lists, blockquotes, GitHub callouts _(`> [!NOTE]`, `> [!WARNING]`, …)_
 - Zebra-striped tables _(subtle, readability without noise)_
 - Smart page breaks for paragraphs, tables, lists, and blockquotes _(pre-measured, no orphans)_
+- Basic inline HTML pass-through _(`<b>`, `<i>`, `<code>`, `<br>`, `<hr>`)_
 
 ## Modules
 

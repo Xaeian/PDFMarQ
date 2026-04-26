@@ -10,29 +10,35 @@ blockquote fits on one page if possible.
 """
 
 from markdown_it.token import Token
+import re
 from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
+
+#---------------------------------------------------------------------------------- Callout types
+
+# Single source of truth for callout types. Adding a new type means: append
+# here, add a `callout_label_<name>` field to `MarkdownStyle` with default
+# label, done. Marker regex, color lookup, and label lookup are all derived.
+CALLOUT_TYPES = {
+  # name → (color rgb, icon, style-field name)
+  "NOTE":      ((0.035, 0.368, 0.855), "ℹ",  "callout_label_note"),
+  "TIP":       ((0.105, 0.580, 0.250), "💡", "callout_label_tip"),
+  "IMPORTANT": ((0.549, 0.270, 0.780), "❗", "callout_label_important"),
+  "WARNING":   ((0.800, 0.545, 0.000), "⚠",  "callout_label_warning"),
+  "CAUTION":   ((0.819, 0.192, 0.192), "🛑", "callout_label_caution"),
+}
+_CALLOUT_MARKER_RE = re.compile(rf"^\[!({'|'.join(CALLOUT_TYPES)})\]\s*")
 
 #------------------------------------------------------------------------------ BlockquoteMixin
 
 class BlockquoteMixin:
 
-  # GitHub-style callout types - color + title for each type
-  _CALLOUT_STYLES = {
-    "NOTE":      {"color": (0.035, 0.368, 0.855), "title": "Note",      "icon": "ℹ"},
-    "TIP":       {"color": (0.105, 0.580, 0.250), "title": "Tip",       "icon": "💡"},
-    "IMPORTANT": {"color": (0.549, 0.270, 0.780), "title": "Important", "icon": "❗"},
-    "WARNING":   {"color": (0.800, 0.545, 0.000), "title": "Warning",   "icon": "⚠"},
-    "CAUTION":   {"color": (0.819, 0.192, 0.192), "title": "Caution",   "icon": "🛑"},
-  }
-
   def _detect_callout(self, tokens:list[Token], start:int, end:int) -> tuple[str, int]|None:
     """Check if blockquote starts with `[!TYPE]` marker. Returns (type, idx) or None."""
-    import re
     for j in range(start + 1, end):
       if tokens[j].type == "inline":
         content = tokens[j].content or ""
-        m = re.match(r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", content)
+        m = _CALLOUT_MARKER_RE.match(content)
         if m:
           # Strip prefix in-place so it doesn't render
           marker_len = len(m.group(0))
@@ -40,9 +46,7 @@ class BlockquoteMixin:
           if tokens[j].children:
             for c in tokens[j].children:
               if c.type == "text":
-                c.content = re.sub(
-                  r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", "", c.content
-                )
+                c.content = _CALLOUT_MARKER_RE.sub("", c.content)
                 break
           return m.group(1), j
       if tokens[j].type in ("heading_open", "code_block", "fence"):
@@ -73,6 +77,7 @@ class BlockquoteMixin:
     callout = self._detect_callout(tokens, start, end)
     if callout:
       total_h += body_line_mm * 1.2  # title line
+      total_h += s.body_size * (s.line_height - 1.0) / MM_TO_PT  # title→content gap
     total_h += body_line_mm * 0.5  # padding
     page_avail = self.pdf.content_height
     if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
@@ -81,8 +86,7 @@ class BlockquoteMixin:
     y_start = self.pdf.y
     # Callout overrides bar color + adds a bold title line at top
     if callout:
-      cfg = self._CALLOUT_STYLES[callout[0]]
-      bar_color = cfg["color"]
+      bar_color, _icon, _label_field = CALLOUT_TYPES[callout[0]]
       bar_width = s.quote_border_w * 1.5
     else:
       bar_color = s.quote_border[:3]
@@ -93,8 +97,9 @@ class BlockquoteMixin:
     inner_x = self._indent_mm
     inner_w = self.pdf.content_width - inner_x
     if callout:
+      title_text = getattr(s, CALLOUT_TYPES[callout[0]][2])
       title_seg = RichSegment(
-        text=cfg["title"], family=s.body_family, mode=s.bold_mode,
+        text=title_text, family=s.body_family, mode=s.bold_mode,
         size=s.body_size, color=bar_color,
       )
       y_title = self.pdf.y
@@ -102,16 +107,35 @@ class BlockquoteMixin:
         self.pdf, [title_seg], inner_w, inner_x, y_title + top_offset,
         Align.LEFT, s.line_height,
       )
-      self.pdf.cursor(inner_x, y_title + h_title + s.list_gap)
+      # Gap matched to body line_height extra space (≈ leading inside a
+      # paragraph). `list_gap` is too tight — works for one-line callouts
+      # but reads as a glued title against multi-line content.
+      title_content_gap = s.body_size * (s.line_height - 1.0) / MM_TO_PT
+      self.pdf.cursor(inner_x, y_title + h_title + title_content_gap)
     else:
       self.pdf.cursor(inner_x, y_start + top_offset)
+    # Callout is a tightly-bound visual unit (left bar + title bind it as one
+    # card). Inside, use list-style spacing so paragraphs/lists/hardbreaks
+    # don't read as airy as top-level prose. Faked via `_list_depth` because
+    # `_render_paragraph` and `_render_list` already key off it.
+    if callout:
+      self._list_depth += 1
     self._render_tokens(tokens[start+1:end])
+    if callout:
+      self._list_depth -= 1
     self._indent_mm = old_indent
     y_after_content = self.pdf.y
-    bar_h = max(y_after_content - s.para_gap - y_start, s.body_size / MM_TO_PT)
+    # Last child added either `list_gap` (callout, due to faked `_list_depth`)
+    # or `para_gap` (normal blockquote) as trailing spacing. Subtract the
+    # right one so the left bar ends flush with the actual last text line.
+    trailing = s.list_gap if callout else s.para_gap
+    bar_h = max(y_after_content - trailing - y_start, s.body_size / MM_TO_PT)
     self.pdf.cursor(x_start + 1, y_start)
     self.pdf.color(*bar_color)
     self.pdf.rect(bar_width, bar_h)
     self._reset_stroke()
-    self.pdf.cursor(x_start, y_after_content)
+    # Top up trailing for callouts: inside used `list_gap` (tight), but
+    # outside flow expects `para_gap` before the next element.
+    final_y = y_after_content + (s.para_gap - s.list_gap) if callout else y_after_content
+    self.pdf.cursor(x_start, final_y)
     return end + 1

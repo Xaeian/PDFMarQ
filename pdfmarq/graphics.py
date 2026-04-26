@@ -133,15 +133,31 @@ def draw_svg(
   x: float, y: float,
   width: float, height: float,
 ):
-  """Draw SVG on canvas (coordinates in pt)."""
+  """Draw SVG on canvas (coordinates in pt). Uses canvas-level transform
+  (`saveState`/`translate`/`scale`/`restoreState`) so target size is
+  deterministic on every platform/svglib version — internal `Drawing`
+  attributes like `transform` and `scale` are inconsistent across versions,
+  especially on Python 3.13 + Windows. Falls back to the union bounding
+  box when intrinsic dims are missing."""
   drawing = svg2rlg(path)
   if drawing is None:
     raise ValueError(f"Could not load SVG: {path}")
-  scale_x = width / drawing.width
-  scale_y = height / drawing.height
-  scale = min(scale_x, scale_y)
-  drawing.scale(scale, scale)
-  renderPDF.draw(drawing, canvas, x, y)
+  nat_w = float(drawing.width or 0)
+  nat_h = float(drawing.height or 0)
+  if nat_w <= 0 or nat_h <= 0:
+    try:
+      x0, y0, x1, y1 = drawing.getBounds()
+      nat_w = nat_w if nat_w > 0 else max(x1 - x0, 1.0)
+      nat_h = nat_h if nat_h > 0 else max(y1 - y0, 1.0)
+    except Exception:
+      nat_w = nat_w if nat_w > 0 else width
+      nat_h = nat_h if nat_h > 0 else height
+  s = min(width / nat_w, height / nat_h)
+  canvas.saveState()
+  canvas.translate(x, y)
+  canvas.scale(s, s)
+  renderPDF.draw(drawing, canvas, 0, 0)
+  canvas.restoreState()
 
 #------------------------------------------------------------------------------------ Gradients
 

@@ -9,8 +9,10 @@ at the block's top-left corner.
 """
 
 from markdown_it.token import Token
+import re
 from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
+from .md_images import load_image_info, size_block, size_inline, ImageInfo
 
 #---------------------------------------------------------------------------------- BlocksMixin
 
@@ -62,7 +64,6 @@ class BlocksMixin:
     Concatenates text-type children so markdown syntax chars (`*`, `_`, etc.)
     from `.content` don't pollute the slug. Preserves unicode letters (PL/DE/...).
     """
-    import re
     children = inline_token.children or []
     parts = [c.content for c in children if c.type == "text" and c.content]
     text = "".join(parts) if parts else (inline_token.content or "")
@@ -81,10 +82,11 @@ class BlocksMixin:
     non_trivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
     if len(non_trivial) == 1 and non_trivial[0].type == "image":
       img = non_trivial[0]
-      src = (img.attrs or {}).get("src", "") if isinstance(img.attrs, dict) else ""
+      img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
+      src = img_attrs.get("src", "")
       alt = img.content or ""
       if src and not src.startswith(("http://", "https://")):
-        self._render_block_image(src, alt)
+        self._render_block_image(src, alt, attrs=img_attrs)
         return
     base = RichSegment(
       text="", family=s.body_family, mode=s.body_mode,
@@ -193,33 +195,48 @@ class BlocksMixin:
 
   #------------------------------------------------------------------------------------- Images
   
-  def _load_inline_image(self, src:str, fontsize_pt:float):
-    """Load a local image → scaled reportlab Drawing, or None on failure."""
+  def _load_inline_image(self, src:str, fontsize_pt:float, attrs:dict|None=None):
+    """Load a local image → scaled reportlab Drawing, or `None` on failure.
+
+    Used for inline mid-paragraph images: capped at `inline_image_max_h`
+    via `size_inline` so an inline image never blows up line height.
+    """
+    info = load_image_info(src, attrs=attrs, default_dpi=self.style.image_dpi)
+    if info is None:
+      return None
+    # Inline cap derives from font size with a 2.0× factor (LaTeX 2ex idiom).
+    inline_cap_mm = fontsize_pt * 2.0 / MM_TO_PT
+    w_mm, h_mm = size_inline(info, inline_cap_mm)
+    w_pt, h_pt = w_mm * MM_TO_PT, h_mm * MM_TO_PT
     try:
-      import os
       from reportlab.graphics.shapes import Drawing, Image
-      if not os.path.exists(src):
-        return None
-      from PIL import Image as PILImage
-      with PILImage.open(src) as im:
-        px_w, px_h = im.size
-      target_h = fontsize_pt * 2.0
-      scale = target_h / px_h
-      w_pt = px_w * scale
-      d = Drawing(w_pt, target_h)
-      d.add(Image(0, 0, w_pt, target_h, src))
+      if info.is_svg:
+        from svglib.svglib import svg2rlg
+        src_drawing = svg2rlg(src)
+        if src_drawing is None or src_drawing.width <= 0 or src_drawing.height <= 0:
+          return None
+        sx = h_pt / src_drawing.height
+        # Aspect-preserving — for SVGs, width derived from svglib's intrinsic ratio
+        target_w_pt = src_drawing.width * sx
+        src_drawing.transform = (sx, 0, 0, sx, 0, 0)
+        d = Drawing(target_w_pt, h_pt)
+        d.add(src_drawing)
+        return d
+      d = Drawing(w_pt, h_pt)
+      d.add(Image(0, 0, w_pt, h_pt, src))
       return d
     except Exception:
       return None
 
-  def _render_block_image(self, src:str, alt:str):
-    """Render a paragraph-level image centered, scaled to content width."""
-    import os
+  def _render_block_image(self, src:str, alt:str, attrs:dict|None=None):
+    """Render a paragraph-level image, sized via `size_block` rules.
+    Centered horizontally in the available content area."""
     s = self.style
     pdf = self.pdf
     x_start = self._indent_mm
     avail_w_mm = pdf.content_width - x_start
-    if not os.path.exists(src):
+    info = load_image_info(src, attrs=attrs, alt=alt, default_dpi=s.image_dpi)
+    if info is None:
       base = RichSegment(
         text=f"[Image not found: {src}]",
         family=s.body_family, mode=s.italic_mode,
@@ -229,40 +246,32 @@ class BlocksMixin:
       render_rich(pdf, [base], avail_w_mm, x_start, y, Align.LEFT, s.line_height)
       pdf.cursor(x_start, y + s.body_size * s.line_height / MM_TO_PT + s.para_gap)
       return
-    try:
-      from PIL import Image as PILImage
-      with PILImage.open(src) as im:
-        px_w, px_h = im.size
-      dpi = 96
-      nat_w_mm = px_w * 25.4 / dpi
-      nat_h_mm = px_h * 25.4 / dpi
-      if nat_w_mm > avail_w_mm:
-        scale = avail_w_mm / nat_w_mm
-        nat_w_mm *= scale
-        nat_h_mm *= scale
-      self._ensure_space(nat_h_mm + s.para_gap)
-      y = pdf.y
-      x = x_start + (avail_w_mm - nat_w_mm) / 2
-      pdf.cursor(x, y)
-      pdf.image(src, nat_w_mm, nat_h_mm)
-      pdf.cursor(x_start, y + nat_h_mm + s.para_gap)
-    except Exception:
-      pass
+    img_w_mm, img_h_mm = size_block(
+      info, avail_w_mm, s.image_max_h,
+      svg_fill_width=s.svg_block_fill_width,
+    )
+    self._ensure_space(img_h_mm + s.para_gap)
+    y = pdf.y
+    x = x_start + (avail_w_mm - img_w_mm) / 2
+    pdf.cursor(x, y)
+    if info.is_svg:
+      pdf.svg(info.src, img_w_mm, img_h_mm)
+    else:
+      pdf.image(info.src, img_w_mm, img_h_mm)
+    pdf.cursor(x_start, y + img_h_mm + s.para_gap)
 
   def _render_mermaid_image(self, png_path:str, w_pt:float, h_pt:float):
-    """Embed a mermaid PNG, scaled to fit content width + max height, centered."""
+    """Embed a mermaid PNG, scaled to fit content width + max height, centered.
+    Mermaid output has reliable intrinsic dims at 96 DPI from the renderer,
+    so we apply the raster block rule directly without `load_image_info`."""
+    from .md_images import _clamp_no_upscale
     s = self.style
     pdf = self.pdf
     x_start = self._indent_mm
     avail_w_mm = pdf.content_width - x_start
-    img_w_mm = w_pt / MM_TO_PT
-    img_h_mm = h_pt / MM_TO_PT
-    scale_w = avail_w_mm / img_w_mm if img_w_mm > avail_w_mm else 1.0
-    scale_h = s.mermaid_max_h / img_h_mm if img_h_mm > s.mermaid_max_h else 1.0
-    scale = min(scale_w, scale_h)
-    if scale < 1.0:
-      img_w_mm *= scale
-      img_h_mm *= scale
+    nat_w_mm = w_pt / MM_TO_PT
+    nat_h_mm = h_pt / MM_TO_PT
+    img_w_mm, img_h_mm = _clamp_no_upscale(nat_w_mm, nat_h_mm, avail_w_mm, s.image_max_h)
     self._ensure_space(img_h_mm + s.para_gap)
     y = pdf.y
     x = x_start + (avail_w_mm - img_w_mm) / 2
