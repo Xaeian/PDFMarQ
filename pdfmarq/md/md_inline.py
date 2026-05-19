@@ -23,9 +23,38 @@ def _mono_inline_size(s, base_size:float) -> float:
   if base_size >= 14: return base_size * 0.95
   return base_size * (s.mono_size / s.body_size)
 
+# Named highlight colors matching Word's `WD_COLOR_INDEX` palette so the
+# same `mark_bg="yellow"` produces a comparable visual in both libs. PDF
+# rendering uses these RGB values for the rounded background rect drawn
+# behind `==marked==` text.
+_NAMED_HIGHLIGHTS = {
+  "yellow": (1.0, 0.93, 0.3),
+  "green": (0.65, 0.95, 0.50),
+  "cyan": (0.55, 0.95, 0.95),
+  "magenta": (0.95, 0.60, 0.85),
+  "pink": (0.95, 0.60, 0.85),
+  "blue": (0.55, 0.75, 0.98),
+  "red": (0.98, 0.55, 0.55),
+  "grey": (0.78, 0.78, 0.78),
+  "gray": (0.78, 0.78, 0.78),
+}
+
+def _resolve_highlight(color) -> tuple:
+  """Map a named highlight string to an RGB tuple. Pass-through for
+  tuples; unknown names fall back to yellow."""
+  if isinstance(color, str):
+    return _NAMED_HIGHLIGHTS.get(color.lower(), _NAMED_HIGHLIGHTS["yellow"])
+  return color
+
 #---------------------------------------------------------------------------------- InlineMixin
 
 class InlineMixin:
+  """
+  Conversion from markdown-it inline tokens to a list of `RichSegment`
+  for rendering. Handles bold / italic / code / links / math / emoji /
+  images. Mixed into `MarkdownRenderer`.
+  """
+
   def _inline_to_segments(
     self, inline_token:Token, base:RichSegment,
   ) -> list[RichSegment]:
@@ -33,7 +62,7 @@ class InlineMixin:
     segments: list[RichSegment] = []
     is_bold = is_italic = is_strike = False
     is_sub = is_sup = is_mark = False
-    is_html_code = False  # `<code>...</code>` inline html — distinct from md `code_inline`
+    is_html_code = False  # `<code>...</code>` inline html - distinct from md `code_inline`
     link_url = None
     link_target = None
     # `in_link` tracks visual link styling independently of actionable target.
@@ -61,7 +90,7 @@ class InlineMixin:
       if is_sub or is_sup:
         size = base.size * 0.7
       if is_mark:
-        bg = s.mark_bg
+        bg = _resolve_highlight(s.mark_bg)
       return RichSegment(
         text=text,
         family=family,
@@ -70,7 +99,7 @@ class InlineMixin:
         color=color,
         bg_color=bg,
         underline=in_link,
-        strikethrough=is_strike,
+        strike=is_strike,
         link_url=link_url,
         link_target=link_target,
       )
@@ -107,8 +136,7 @@ class InlineMixin:
           segments.append(make(frag))
     for child in (inline_token.children or []):
       ct = child.type
-      if ct == "text":
-        make_text_with_emoji(child.content)
+      if ct == "text": make_text_with_emoji(child.content)
       elif ct == "strong_open": is_bold = True
       elif ct == "strong_close": is_bold = False
       elif ct == "em_open": is_italic = True
@@ -142,6 +170,7 @@ class InlineMixin:
           from .math import render_math_svg_with_baseline
           drawing, baseline_pt = render_math_svg_with_baseline(
             child.content, fontsize=s.body_size, color=s.body_color,
+            config=getattr(self, "_math_config", None),
           )
         except ImportError:
           from .._warn import warn_missing
@@ -223,10 +252,8 @@ class InlineMixin:
         elif tag in md_html.CODE_CLOSE: is_html_code = False
         elif tag in md_html.BREAK: segments.append(make("\n"))
         # Anything else (raw HTML we don't recognize) is silently dropped.
-      elif ct == "softbreak":
-        segments.append(make(" "))
-      elif ct == "hardbreak":
-        segments.append(make("\n"))
+      elif ct == "softbreak": segments.append(make(" "))
+      elif ct == "hardbreak": segments.append(make("\n"))
     return segments
 
   @staticmethod
@@ -290,7 +317,7 @@ def _make_checkbox(fontsize_pt:float, checked:bool, fg:tuple, accent:tuple):
   """
   from reportlab.graphics.shapes import Drawing, Rect, PolyLine
   from reportlab.lib.colors import Color
-  s = fontsize_pt * 0.85          # box edge length, slightly under cap-height
+  s = fontsize_pt * 0.85  # box edge length, slightly under cap-height
   pad_right = fontsize_pt * 0.15  # trailing breathing room before next glyph
   w = s + pad_right
   d = Drawing(w, s)

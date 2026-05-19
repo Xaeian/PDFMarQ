@@ -14,6 +14,32 @@ from reportlab.lib.colors import Color
 from .constants import Align, MM_TO_PT
 from .fonts import is_builtin, builtin_name
 
+#-------------------------------------------------------------------------------- Layout ratios
+
+# Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light
+# look. Centralised here so future visual tweaks don't require code-hunting.
+_ASCENT_RATIO = 0.80  # line-box ascent: positions baseline below top edge
+_BG_DESCENT_RATIO = 0.32  # how far below baseline the inline-code bg starts
+_BG_HEIGHT_RATIO = 1.35  # inline-code bg height in glyph units
+_BG_CORNER_RATIO = 0.20  # rounded-corner radius / bg height
+_STRIKE_Y_RATIO = 0.28  # strikethrough Y above baseline
+_LINK_RECT_DESCENT = 0.25  # link clickable rect: depth below baseline
+_LINK_RECT_ASCENT = 0.85  # link clickable rect: height above baseline
+_UNDERLINE_OFFSET_PT = 1.0  # underline distance below baseline (pt, size-independent)
+
+# Inline-code shaded background padding (pt - not font-size relative).
+_BG_INNER_PAD_PT = 2.5  # bg rect extends this far past glyphs
+_BG_OUTER_GAP_PT = 1.2  # extra gap between bg rect and adjacent text
+
+# Math drawings: tiny breathing room around an inline formula (pt).
+_MATH_INLINE_PAD_PT = 1.0
+
+# Superscript / subscript scaling. Industry-standard: glyph at ~70% size,
+# baseline raised (sup) or lowered (sub) by a fraction of full size.
+_SCRIPT_SIZE_RATIO = 0.70
+_SUP_BASELINE_RATIO = 0.40  # raise baseline by this fraction of full size
+_SUB_BASELINE_RATIO = 0.15  # lower baseline by this fraction of full size
+
 #---------------------------------------------------------------------------------- RichSegment
 
 @dataclass
@@ -22,6 +48,13 @@ class RichSegment:
 
   Multiple segments render on one line with shared baseline. Background
   color draws a filled rect behind the span (used for inline code).
+
+  Two ways to set face weight/slant:
+    - `mode`: explicit reportlab font mode (`"Regular"`/`"Bold"`/`"Italic"`/
+      `"BoldItalic"`). Direct mapping to TTF lookup.
+    - `bold` / `italic`: boolean flags. When set, `__post_init__` derives
+      `mode` from them. Symmetric with `docmarq.RichSegment` so the same
+      construction works in both libraries.
 
   Math mode: if `math_drawing` is set, the segment is a pre-rendered vector
   formula (from matplotlib → svglib). `text` is ignored, `math_width_pt` is
@@ -37,11 +70,31 @@ class RichSegment:
   bg_color: tuple|None = None
   link_url: str|None = None
   link_target: str|None = None # internal bookmark name
+  bold: bool = False
+  italic: bool = False
   underline: bool = False
-  strikethrough: bool = False
+  strike: bool = False
+  # Soft line break BEFORE this segment. Symmetric with docmarq's flag-based
+  # break; an alternative to embedding `\n` in `text`.
+  break_line: bool = False
+  # Vertical script. Render at smaller size with baseline offset. Useful for
+  # footnote refs (sup) and chemical formulae (sub).
+  superscript: bool = False
+  subscript: bool = False
   math_drawing: object|None = None # reportlab Drawing or None
   math_width_pt: float = 0 # total width of the math glyphs
   math_baseline_from_bottom_pt: float = 0 # baseline offset from drawing bottom
+
+  def __post_init__(self):
+    # `bold`/`italic` flags win over `mode` when explicitly set. Lets users
+    # write `RichSegment(text="x", bold=True)` (docmarq-style) without
+    # spelling out the reportlab mode string.
+    if self.bold and self.italic:
+      self.mode = "BoldItalic"
+    elif self.bold:
+      self.mode = "Bold"
+    elif self.italic:
+      self.mode = "Italic"
 
 #---------------------------------------------------------------------------------- _Word token
 @dataclass
@@ -55,10 +108,20 @@ class _Word:
 
 #------------------------------------------------------------------------------------- Tokenize
 
+def _effective_size(seg:RichSegment) -> float:
+  """Glyph size after super/subscript scaling."""
+  if seg.superscript or seg.subscript:
+    return seg.size * _SCRIPT_SIZE_RATIO
+  return seg.size
+
 def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
   """Split segments into word tokens preserving per-segment style."""
   words = []
   for seg in segments:
+    # `break_line` flag emits a hard break before the segment's content,
+    # symmetric with `docmarq.RichSegment.break_line`.
+    if seg.break_line:
+      words.append(_Word("", seg, 0, is_space=False, is_break=True))
     # Math segment - single atomic word (no splitting on spaces)
     if seg.math_drawing is not None:
       words.append(_Word("", seg, seg.math_width_pt, is_space=False))
@@ -66,16 +129,26 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
     if seg.text == "\n":
       words.append(_Word("", seg, 0, is_space=False, is_break=True))
       continue
+    eff_size = _effective_size(seg)
     for part in re.findall(r"\S+|\s+", seg.text):
-      w = metrics.text_width(part, seg.family, seg.mode, seg.size)
+      w = metrics.text_width(part, seg.family, seg.mode, eff_size)
       words.append(_Word(part, seg, w, is_space=part.isspace()))
   return words
 
 #----------------------------------------------------------------------------------------- Wrap
+@dataclass
+class _WrapResult:
+  """Output of `_wrap`. `overflow=True` means at least one non-space word
+  was wider than the wrap width - it was emitted unbroken (extends past
+  the right edge) and the caller should warn or fall back."""
+  lines: list[list["_Word"]]
+  overflow: bool = False
+
 def _wrap(
   words:list[_Word], width_pt:float, preserve_leading_space:bool=False,
-) -> list[list[_Word]]:
-  """Greedy word-wrap honoring hard breaks.
+) -> _WrapResult:
+  """Greedy word-wrap honoring hard breaks. Mirrors `text.box_fit` by
+  also returning an `overflow` flag for words that couldn't be wrapped.
 
   Args:
     preserve_leading_space: If True, leading whitespace on a line is kept
@@ -85,6 +158,7 @@ def _wrap(
   lines: list[list[_Word]] = []
   current: list[_Word] = []
   current_w = 0
+  overflow = False
   def flush(line):
     while line and line[-1].is_space:
       line.pop()
@@ -100,6 +174,10 @@ def _wrap(
       current.append(w)
       current_w += w.width_pt
       continue
+    # Single token wider than wrap width - emit on its own line; it'll
+    # overrun the right edge but the alternative is dropping content.
+    if w.width_pt > width_pt and not w.is_space:
+      overflow = True
     if current_w + w.width_pt > width_pt and current:
       flush(current)
       current, current_w = [w], w.width_pt
@@ -107,7 +185,7 @@ def _wrap(
       current.append(w)
       current_w += w.width_pt
   flush(current)
-  return lines
+  return _WrapResult(lines, overflow)
 
 #------------------------------------------------------------------------------ Metrics helpers
 
@@ -125,7 +203,7 @@ def _run_key(seg:RichSegment) -> tuple:
   """Visual-run key: consecutive words with same key share bg/underline/link.
   Math segments get a unique id so they always form their own run."""
   math_id = id(seg.math_drawing) if seg.math_drawing is not None else None
-  return (seg.bg_color, seg.link_url, seg.link_target, seg.underline, seg.strikethrough,
+  return (seg.bg_color, seg.link_url, seg.link_target, seg.underline, seg.strike,
           seg.family, seg.mode, seg.size, seg.color, math_id)
 
 def _group_runs(line:list[_Word]) -> list[list[_Word]]:
@@ -199,7 +277,8 @@ def measure_rich(
   metrics = pdf._metrics
   width_pt = width_mm * MM_TO_PT
   words = _tokenize(segments, metrics)
-  lines = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  wrapped = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  lines = wrapped.lines
   total_used_mm = 0
   for line in lines:
     if not line:
@@ -242,7 +321,18 @@ def render_rich(
   page = pdf._page
   width_pt = width_mm * MM_TO_PT
   words = _tokenize(segments, metrics)
-  lines = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  wrapped = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  lines = wrapped.lines
+  if wrapped.overflow:
+    # Word too wide for `width_mm` - it'll spill past the right edge. Surface
+    # this once per process so callers (especially `MarkdownRenderer`) know
+    # without breaking the float return contract.
+    import warnings
+    warnings.warn(
+      f"render_rich: word wider than wrap width ({width_mm:.1f}mm); "
+      "content extends past the right edge",
+      RuntimeWarning, stacklevel=2,
+    )
   # Absolute canvas coords for top-left of text block
   x_base_mm = page.margin_lr + x_mm
   y_top_mm = page.height - page.margin_top - y_mm
@@ -260,7 +350,7 @@ def render_rich(
     line_height_pt = max_size * line_gap
     line_height_mm = line_height_pt / MM_TO_PT
     # Line-box ascent - positions baseline at cap+accent distance below top
-    ascent_pt = max_size * 0.8
+    ascent_pt = max_size * _ASCENT_RATIO
     # Baseline canvas y in pt (canvas coords, y grows up)
     baseline_canvas_y_pt = (current_top_mm * MM_TO_PT) - ascent_pt
     # Alignment offset
@@ -281,12 +371,12 @@ def render_rich(
         try:
           from reportlab.graphics import renderPDF
           # Small breathing room before and after math
-          cursor_x_pt += 1
+          cursor_x_pt += _MATH_INLINE_PAD_PT
           draw_x = cursor_x_pt
           # Vertical alignment: match text baseline to formula baseline
           draw_y = baseline_canvas_y_pt - rseg.math_baseline_from_bottom_pt
           renderPDF.draw(rseg.math_drawing, canvas, draw_x, draw_y)
-          cursor_x_pt += rseg.math_width_pt + 1
+          cursor_x_pt += rseg.math_width_pt + _MATH_INLINE_PAD_PT
         except Exception:
           cursor_x_pt += rseg.math_width_pt
         continue
@@ -295,8 +385,8 @@ def render_rich(
       # how far the shaded rect extends past the glyphs; `bg_outer` = extra
       # gap between that rect and the words on either side.
       has_bg = rseg.bg_color is not None
-      bg_pad_x = 2.5 if has_bg else 0
-      bg_outer = 1.2 if has_bg else 0
+      bg_pad_x = _BG_INNER_PAD_PT if has_bg else 0
+      bg_outer = _BG_OUTER_GAP_PT if has_bg else 0
       if has_bg:
         cursor_x_pt += bg_outer + bg_pad_x
       run_start_pt = cursor_x_pt
@@ -304,41 +394,49 @@ def render_rich(
       # Background (inline code) - rounded rect
       if has_bg:
         canvas.setFillColor(Color(*rseg.bg_color[:3]))
-        bg_y_pt = baseline_canvas_y_pt - rseg.size * 0.32
-        bg_h_pt = rseg.size * 1.35
+        bg_y_pt = baseline_canvas_y_pt - rseg.size * _BG_DESCENT_RATIO
+        bg_h_pt = rseg.size * _BG_HEIGHT_RATIO
         canvas.roundRect(
           run_start_pt - bg_pad_x, bg_y_pt,
           run_width_pt + 2 * bg_pad_x, bg_h_pt,
-          radius=bg_h_pt * 0.2,
+          radius=bg_h_pt * _BG_CORNER_RATIO,
           stroke=0, fill=1,
         )
-      # Text - each word in the run (font is the same within a run)
+      # Text - each word in the run (font is the same within a run).
+      # Super/subscript shifts the baseline and renders at scaled size.
+      eff_size = _effective_size(rseg)
+      if rseg.superscript:
+        word_baseline_pt = baseline_canvas_y_pt + rseg.size * _SUP_BASELINE_RATIO
+      elif rseg.subscript:
+        word_baseline_pt = baseline_canvas_y_pt - rseg.size * _SUB_BASELINE_RATIO
+      else:
+        word_baseline_pt = baseline_canvas_y_pt
       canvas.setFillColor(Color(*rseg.color[:3]))
       for w in run:
         if not w.is_space:
           font_name = _font_name(w.seg, pdf._fonts)
-          canvas.setFont(font_name, w.seg.size)
-          canvas.drawString(cursor_x_pt, baseline_canvas_y_pt, w.text)
+          canvas.setFont(font_name, eff_size)
+          canvas.drawString(cursor_x_pt, word_baseline_pt, w.text)
         cursor_x_pt += w.width_pt
       # Underline across whole run
       if rseg.underline:
         canvas.setStrokeColor(Color(*rseg.color[:3]))
         canvas.setLineWidth(0.5)
-        uy = baseline_canvas_y_pt - 1
+        uy = baseline_canvas_y_pt - _UNDERLINE_OFFSET_PT
         canvas.line(run_start_pt, uy, run_start_pt + run_width_pt, uy)
       # Strikethrough through middle of x-height
-      if rseg.strikethrough:
+      if rseg.strike:
         canvas.setStrokeColor(Color(*rseg.color[:3]))
         canvas.setLineWidth(0.5)
-        sy = baseline_canvas_y_pt + rseg.size * 0.28
+        sy = baseline_canvas_y_pt + rseg.size * _STRIKE_Y_RATIO
         canvas.line(run_start_pt, sy, run_start_pt + run_width_pt, sy)
       # Clickable link rect - external URL or internal PDF bookmark
       if rseg.link_url or rseg.link_target:
         rect = (
           run_start_pt,
-          baseline_canvas_y_pt - rseg.size * 0.25,
+          baseline_canvas_y_pt - rseg.size * _LINK_RECT_DESCENT,
           run_start_pt + run_width_pt,
-          baseline_canvas_y_pt + rseg.size * 0.85,
+          baseline_canvas_y_pt + rseg.size * _LINK_RECT_ASCENT,
         )
         if rseg.link_url:
           canvas.linkURL(rseg.link_url, rect, relative=0)

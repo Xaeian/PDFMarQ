@@ -36,7 +36,10 @@ class TableData:
 #--------------------------------------------------------------------------------- TableBuilder
 
 class TableBuilder:
-  """Builds and prepares table for rendering."""
+  """Fluent builder that turns row/column inputs into a `TableData` ready
+  for `PDF._draw_table`. Each setter returns `self` for chaining; call
+  `build()` to finalize."""
+
   def __init__(self, metrics:TextMetrics, style:TableStyle|None=None):
     self.metrics = metrics
     self.style = style or TableStyle()
@@ -47,23 +50,30 @@ class TableBuilder:
     self._width: float|None = None
 
   def header(self, cells:list[str]) -> "TableBuilder":
+    """Set the header row. Overrides any previous header."""
     self._header = cells
     return self
 
   def row(self, cells:list[str]) -> "TableBuilder":
+    """Append a single body row."""
     self._body.append(cells)
     return self
 
   def rows(self, rows:list[list[str]]) -> "TableBuilder":
+    """Append multiple body rows in one call."""
     self._body.extend(rows)
     return self
 
   def columns(self, sizes:list[float], aligns:list[str]|None=None) -> "TableBuilder":
+    """Set relative column widths (proportional) and per-column alignment.
+    `aligns` defaults to all-left; pass `["L","R","C"]` etc. to customize."""
     self._col_sizes = sizes
     self._col_aligns = aligns or [Align.LEFT] * len(sizes)
     return self
 
   def width(self, width:float) -> "TableBuilder":
+    """Force absolute total width in mm. When unset, `build()` fills the
+    `available_width` it's passed."""
     self._width = width
     return self
 
@@ -74,23 +84,29 @@ class TableBuilder:
     font_mode: str = "Regular",
     font_size: float = 11,
   ) -> TableData:
-    """Prepare table data for rendering. Pure - does not mutate builder state."""
+    """Prepare table data for rendering. Pure - does not mutate builder state.
+
+    Uses `style.font_size` when set; otherwise the `font_size` argument.
+    Header runs in bold when `style.header_bold` is true.
+    """
+    s = self.style
     width = self._width if self._width is not None else available_width
-    padding = self.style.padding
-    fallback_h = font_size * 1.2  # pt: used when `box_fit` flags overflow
-    # Local column config - don't mutate self across repeated `build` calls
+    cell_size = s.font_size if s.font_size is not None else font_size
+    fallback_h = cell_size * 1.2
+    header_mode = "Bold" if s.header_bold else font_mode
+    h_pad = s.cell_pad_h
+    v_extra = s.cell_pad_top + s.cell_pad_bot
     col_sizes = list(self._col_sizes)
     if not col_sizes:
       ncols = (len(self._header) if self._header
         else len(self._body[0]) if self._body else 1)
       col_sizes = [1] * ncols
     total_size = sum(col_sizes) or 1
-    col_widths = [width * (s / total_size) for s in col_sizes]
+    col_widths = [width * (s_w / total_size) for s_w in col_sizes]
     col_aligns = list(self._col_aligns)
     while len(col_aligns) < len(col_widths):
       col_aligns.append(Align.LEFT)
-    # mm → pt for text fitting
-    widths_pt = [(w - 2 * padding) * MM_TO_PT for w in col_widths]
+    widths_pt = [(w - 2 * h_pad) * MM_TO_PT for w in col_widths]
     data = TableData(
       column_widths=col_widths,
       column_aligns=col_aligns,
@@ -99,46 +115,23 @@ class TableBuilder:
     if self._header:
       fit = self.metrics.box_fit_array(
         self._header, widths_pt,
-        family=font_family,
-        mode=self.style.header_font_mode,
-        size=font_size,
+        family=font_family, mode=header_mode, size=cell_size,
       )
       data.header = self._header
       data.header_fitted = fit["text"]
       h = _max_height(fit["height"], fallback_h)
-      data.header_height = (h / MM_TO_PT) + self.style.cell_vpad + self.style.header_extra
+      data.header_height = (h / MM_TO_PT) + v_extra
     data.body = self._body
     for row in self._body:
       fit = self.metrics.box_fit_array(
         row, widths_pt,
-        family=font_family, mode=font_mode, size=font_size,
+        family=font_family, mode=font_mode, size=cell_size,
       )
       data.body_fitted.append(fit["text"])
       h = _max_height(fit["height"], fallback_h)
-      data.body_heights.append((h / MM_TO_PT) + self.style.cell_vpad)
+      data.body_heights.append((h / MM_TO_PT) + v_extra)
     data.total_height = data.header_height + sum(data.body_heights)
     return data
-
-#-------------------------------------------------------------------------------- Legacy helper
-
-def prepare_table(
-  body: list[list[str]],
-  header: list[str]|None,
-  col_sizes: list[float],
-  col_aligns: list[str],
-  width: float,
-  metrics: TextMetrics,
-  style: TableStyle|None = None,
-  font_family: str = "Helvetica",
-  font_mode: str = "Regular",
-  font_size: float = 11,
-) -> TableData:
-  """Prepare table data - convenience function."""
-  builder = TableBuilder(metrics, style)
-  if header:
-    builder.header(header)
-  builder.rows(body).columns(col_sizes, col_aligns).width(width)
-  return builder.build(width, font_family, font_mode, font_size)
 
 #-------------------------------------------------------------------------------------- Helpers
 

@@ -104,55 +104,59 @@ class TextMetrics:
 
     Always returns `BoxFitResult`. Check `.overflow` when text cannot fit
     (word too wide to wrap, or height exceeded with no autoscale room).
+
+    Autoscale walks `size -= autoscale` until text fits, a word still won't
+    wrap, or `size <= autoscale`. Iterative - was recursive before and could
+    hit Python's recursion limit for `size=12, autoscale=0.1`.
     """
     if text is None: text = ""
     text = text.replace(link_char, "¶")
-    input_lines = text.split(enter_in)
-    space_width = self.text_width(" ", family, mode, size)
-    output = []
-    line_count = 0
+    current_size = size
     overflow = False
-    for phrase in input_lines:
-      phrase = phrase.strip()
-      phrase_width = self.text_width(phrase, family, mode, size)
-      if phrase_width > width:
-        words = phrase.split(" ")
-        word_widths = [self.text_width(w, family, mode, size) for w in words]
-        if any(w > width for w in word_widths):
-          if autoscale and size > autoscale:
-            return self.box_fit(text, width, height, family, mode,
-              size - autoscale, autoscale, link_char, enter_in, enter_out)
-          # Cannot wrap - emit unwrapped and flag overflow
-          output.append(phrase)
-          line_count += 1
-          overflow = True
-          continue
-        current_line = ""
-        current_width = 0
-        for i, word in enumerate(words):
-          word_w = word_widths[i]
-          if current_width + word_w > width and current_line:
+    while True:
+      input_lines = text.split(enter_in)
+      space_width = self.text_width(" ", family, mode, current_size)
+      output: list[str] = []
+      line_count = 0
+      word_overflow = False
+      for phrase in input_lines:
+        phrase = phrase.strip()
+        phrase_width = self.text_width(phrase, family, mode, current_size)
+        if phrase_width > width:
+          words = phrase.split(" ")
+          word_widths = [self.text_width(w, family, mode, current_size) for w in words]
+          if any(w > width for w in word_widths):
+            word_overflow = True
+            output.append(phrase)
+            line_count += 1
+            continue
+          current_line = ""
+          current_width = 0
+          for i, word in enumerate(words):
+            word_w = word_widths[i]
+            if current_width + word_w > width and current_line:
+              output.append(current_line.strip())
+              line_count += 1
+              current_line = word + " "
+              current_width = word_w + space_width
+            else:
+              current_line += word + " "
+              current_width += word_w + space_width
+          if current_line.strip():
             output.append(current_line.strip())
             line_count += 1
-            current_line = word + " "
-            current_width = word_w + space_width
-          else:
-            current_line += word + " "
-            current_width += word_w + space_width
-        if current_line.strip():
-          output.append(current_line.strip())
+        else:
+          output.append(phrase)
           line_count += 1
-      else:
-        output.append(phrase)
-        line_count += 1
-    result_text = enter_out.join(output)
-    result_height = self.lines_height(line_count, family, mode, size)
-    if height > 0 and result_height > height:
-      if autoscale and size > autoscale:
-        return self.box_fit(text, width, height, family, mode,
-          size - autoscale, autoscale, link_char, enter_in, enter_out)
-      overflow = True
-    return BoxFitResult(result_text, size, result_height, line_count, overflow=overflow)
+      result_height = self.lines_height(line_count, family, mode, current_size)
+      height_overflow = height > 0 and result_height > height
+      can_shrink = bool(autoscale) and current_size > autoscale
+      if (word_overflow or height_overflow) and can_shrink:
+        current_size -= autoscale
+        continue
+      overflow = word_overflow or height_overflow
+      result_text = enter_out.join(output)
+      return BoxFitResult(result_text, current_size, result_height, line_count, overflow=overflow)
 
   def box_fit_array(
     self,

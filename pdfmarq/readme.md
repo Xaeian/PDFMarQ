@@ -1,6 +1,7 @@
 # `pdfmarq`
 
 Fluent PDF generation. Built on reportlab with a cursor-based flow model.
+Sibling library: [`docmarq`](../docmarq/readme.md) - same API shape for DOCX.
 
 ## `PDF` context
 
@@ -8,8 +9,8 @@ Fluent PDF generation. Built on reportlab with a cursor-based flow model.
 from pdfmarq import PDF, A4
 with PDF("out.pdf") as pdf:
   pdf.font("Helvetica", 16, "Bold").text("Hello")
-# Custom page size + margins
-with PDF("out.pdf", width=A4.width, height=A4.height, margin=15) as pdf:
+# Custom page size + margins (CSS-style: scalar / (v,h) / (t,h,b) / (t,r,b,l))
+with PDF("out.pdf", width=A4.width, height=A4.height, margin=20) as pdf:
   pdf.margin(20, 25, 15) # lr, top, bot in mm
 # Units (default mm)
 PDF("out.pdf", unit="pt") # or "cm", "in", "px"
@@ -48,6 +49,7 @@ pdf.new_page()         # page break, cursor reset
 pdf.x, pdf.y           # cursor mm
 pdf.content_width, pdf.content_height # page area minus margins
 pdf.page_num           # current page number
+pdf.output_path        # destination file path
 ```
 
 ## Text
@@ -72,13 +74,19 @@ pdf.table(
   sizes=[1, 5, 2], # relative column widths
   aligns=["C", "L", "R"],
 )
-# Custom style
+# Custom style (shape matches docmarq.TableStyle for cross-lib parity)
 from pdfmarq import TableBuilder, TableStyle
 style = TableStyle(
-  header_bg=(0.3, 0.3, 0.3, 0.8),
-  row_bg_even=(0.95, 0.95, 0.95, 0.5),
-  border_width=0.5,
-  padding=1,
+  header_bg="#f6f8fa",
+  header_color="#1f2328",
+  header_bold=True,
+  row_bg_odd=(0.985, 0.99, 0.995),
+  border_color="#d0d7de",
+  border_size=0.5,
+  cell_pad_h=2.5,
+  cell_pad_top=1.6,
+  cell_pad_bot=0.6,
+  font_size=10,
 )
 builder = TableBuilder(pdf._metrics, style)
 builder.header(["A", "B"]).rows([["a1", "b1"]]).columns([3, 2], ["L", "R"])
@@ -101,12 +109,16 @@ pdf.path([(0, 0), (10, 5), (20, 0)], close=True) # polygon
 ## Colors
 
 ```py
-pdf.color(0.2, 0.4, 0.8)    # RGB 0-1
-pdf.color_hex("#2E75B6")  # hex
-pdf.color_grey(0.5, 0.8)    # grey with alpha
-pdf.color_black()           # reset
-pdf.color_rand()            # random pastel
-pdf.stroke_color(0, 0, 0)   # stroke/line color
+pdf.color(0.2, 0.4, 0.8)   # RGB 0-1
+pdf.color_hex("#2E75B6")   # hex
+pdf.color_grey(0.5, 0.8)   # grey with alpha
+pdf.color_black()          # reset
+pdf.color_rand()           # random pastel
+pdf.stroke_color(0, 0, 0)  # stroke/line color
+# Conversion helpers (symmetric with docmarq)
+from pdfmarq import parse_color, color_hex
+parse_color("#1f2328")     # → (0.121, 0.137, 0.156) floats 0-1
+color_hex((0.03, 0.41, 0.85))  # → "0969D9" (uppercase, no '#')
 ```
 
 ## Images and SVG
@@ -138,13 +150,14 @@ pdf.on_final_page(footer)
 ## Metadata, bookmarks, links
 
 ```py
-pdf.metadata(title="Report", author="Xaeian")
+pdf.metadata(title="Report", author="Xaeian", subject="Q4", keywords="report,q4")
 pdf.bookmark("Chapter 1", level=0)
 pdf.bookmark("Section 1.1", level=1)
 pdf.link("https://github.com/Xaeian/PDFMarQ", width=40, height=5)
 ```
 
-Bookmarks are resolved to their actual page at save time, so outline entries point to the correct page even when content reflows across pages.
+Bookmarks are resolved to their actual page at save time, so outline
+entries point to the correct page even when content reflows across pages.
 
 ## Page sizes
 
@@ -159,18 +172,43 @@ PDF("out.pdf", width=landscape.width, height=landscape.height)
 
 ```py
 from pdfmarq import Styles
-Styles.BOLD      # font_mode="Bold"
-Styles.ITALIC    # font_mode="Italic"
-Styles.HEADING1  # size=24, Bold
-Styles.HEADING2  # size=18, Bold
-Styles.SMALL     # size=10
-Styles.CAPTION   # size=9, Italic
+Styles.BOLD      # bold=True
+Styles.ITALIC    # italic=True
+Styles.HEADING1  # font_size=20, bold
+Styles.HEADING2  # font_size=16, bold
+Styles.HEADING3  # font_size=13, bold
+Styles.HEADING4  # font_size=11, bold
+Styles.SMALL     # font_size=9
+Styles.CAPTION   # font_size=9, italic, muted grey
+Styles.CODE      # font_family="Courier", font_size=10
 ```
+
+## Markdown
+
+```py
+from pdfmarq.md import md_to_pdf, MarkdownStyle, lang_style
+
+md_to_pdf(open("doc.md").read(), "doc.pdf")
+# With localization preset
+style = lang_style("pl", body_size=11, footnote_label="Bibliografia")
+md_to_pdf(text, "doc.pdf", style=style)
+# Relative image paths resolved against base_dir
+md_to_pdf(text, "doc.pdf", base_dir="./assets")
+# Landscape via YAML frontmatter (`landscape: true`) or explicit kwarg
+md_to_pdf(text, "doc.pdf", landscape=True)
+```
+
+Supported markdown: headings, paragraphs, lists, tables, code blocks
+(with syntax highlighting via Pygments), blockquotes, GitHub callouts
+(`> [!NOTE]`), footnotes, math (`$x^2$` via matplotlib mathtext),
+mermaid diagrams (via local `mmdc` or mermaid.ink fallback), images,
+YAML frontmatter with banner rendering.
 
 ## Compression
 
 ```py
 pdf.save().compress(quality="ebook") # screen / ebook / printer / prepress
+pdf.save().compress(quality="ebook", raise_on_error=True) # raise if `gs` missing
 ```
 
 Requires ghostscript installed on the system.

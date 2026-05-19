@@ -14,6 +14,11 @@ from ..constants import MM_TO_PT
 #-------------------------------------------------------------------------------- EstimateMixin
 
 class EstimateMixin:
+  """
+  Block height estimation used by the heading-lookahead page-break logic
+  to avoid widowed headings. Mixed into `MarkdownRenderer`.
+  """
+
   def _estimate_next_block(self, tokens:list[Token], start:int) -> float:
     """Estimate minimum height (mm) of next block - used by heading lookahead."""
     if start >= len(tokens):
@@ -23,7 +28,7 @@ class EstimateMixin:
     t = tokens[start]
     ttype = t.type
     if ttype == "paragraph_open":
-      # Measure actual wrapped height — `body_line_mm * 2` was a flat lower
+      # Measure actual wrapped height - `body_line_mm * 2` was a flat lower
       # bound that under-reserved for long paragraphs and pushed headings
       # apart from their following content.
       if start + 1 < len(tokens) and tokens[start+1].type == "inline":
@@ -60,13 +65,11 @@ class EstimateMixin:
       return min(n_rows, 5) * 8
     if ttype in ("fence", "code_block"):
       lang = (t.info or "").strip().split()[0] if t.info else ""
-      if lang == "mermaid":
-        return 60 # mermaid renders to image - reserve ~60mm
+      if lang == "mermaid": return 60 # mermaid renders to image - reserve ~60mm
       lines = (t.content or "").count("\n") + 1
       pad = s.code_block_pad * 2
       return min(lines, 6) * (s.code_block_size * s.line_height / MM_TO_PT) + pad
-    if ttype == "math_block":
-      return s.body_size * 2 / MM_TO_PT
+    if ttype == "math_block": return s.body_size * 2 / MM_TO_PT
     if ttype == "blockquote_open":
       end = self._find_close(tokens, start, "blockquote_open", "blockquote_close")
       n_inline = sum(
@@ -74,14 +77,12 @@ class EstimateMixin:
       )
       # Each inline ≈ 1 line; add 1 extra for callout title + padding
       return max(body_line_mm * (n_inline + 1) * 1.1, body_line_mm * 3)
-    if ttype == "dl_open":
-      return body_line_mm * 2
-    if ttype == "hr":
-      return 3
+    if ttype == "dl_open": return body_line_mm * 2
+    if ttype == "hr": return 3
     return body_line_mm * 2
 
   def _estimate_list_height(self, tokens:list[Token], start:int, end:int) -> float:
-    """Sum estimated height of each list item — used for heading lookahead.
+    """Sum estimated height of each list item - used for heading lookahead.
     Each item's first paragraph is measured by `measure_rich`; nested blocks
     fall back to a flat 2-line approximation. Used only for break planning,
     not for actual layout."""
@@ -107,8 +108,7 @@ class EstimateMixin:
             except Exception:
               pass
             break
-          if tokens[k].type == "list_item_close":
-            break
+          if tokens[k].type == "list_item_close": break
         total += item_h + s.list_gap
       j += 1
     return total + s.para_gap

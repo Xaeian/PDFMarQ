@@ -52,9 +52,14 @@ class MarkdownRenderer(
 ):
   """Render a markdown-it token stream onto a `PDF` instance."""
 
-  def __init__(self, pdf:PDF, style:MarkdownStyle|None=None):
+  def __init__(self, pdf:PDF, style:MarkdownStyle|None=None,
+      base_dir:str|None=None):
+    import os
     self.pdf = pdf
     self.style = style or MarkdownStyle()
+    # Root for resolving relative `![alt](./img.png)` paths. Defaults to the
+    # process cwd. Mirrors `docmarq.MarkdownRenderer.base_dir`.
+    self.base_dir = base_dir or os.getcwd()
     # Auto-register default sans/mono fonts before the first draw
     self._ensure_default_font()
     md = MarkdownIt("commonmark", {"html": True, "breaks": False})
@@ -65,12 +70,14 @@ class MarkdownRenderer(
     self._list_depth = 0
     self._eq_counter = 0
     self._known_slugs: set = set()  # populated in render() pre-scan
-    # Configure matplotlib math fonts. The fontset is either a matplotlib
-    # preset (`"stix"`, `"cm"`, etc.) or a font family name resolved against
-    # `<font_dir>/<family>/<family>-<Mode>.ttf`.
+    # Per-renderer math font config. Settings are NOT pushed to matplotlib's
+    # global rcParams until each math render call (`MathFontConfig.apply()`),
+    # so two renderers with different fontsets coexist without clobbering
+    # each other's state mid-render.
+    self._math_config = None
     try:
       from .math import configure_math_fonts
-      configure_math_fonts(
+      self._math_config = configure_math_fonts(
         fontset=self.style.math_fontset,
         font_dir=str(self.pdf._fonts.font_dir),
       )
@@ -116,6 +123,7 @@ class MarkdownRenderer(
   #-------------------------------------------------------------------------------------- Entry
   
   def render(self, md_text:str):
+  
     """Parse markdown text and render to PDF."""
     self._frontmatter_data = None
     fm_rendered_title = None
@@ -179,6 +187,7 @@ class MarkdownRenderer(
       if ttype == "heading_open":
         level = int(t.tag[1])
         inline = tokens[i+1]
+        close_i = self._find_close(tokens, i, "heading_open", "heading_close")
         # Setext heading whose only inline content is an image is virtually
         # always user error: `![alt](src)\n---` was meant as block image + HR,
         # but markdown-it consumed `---` as setext h2 markup, sinking the image
@@ -191,47 +200,57 @@ class MarkdownRenderer(
           if src and not src.startswith(("http://", "https://")):
             self._render_block_image(src, img.content or "", attrs=img_attrs)
             self._render_hr()
-            i += 3
+            i = close_i + 1
             continue
-        lookahead_mm = self._estimate_next_block(tokens, i + 3)
+        lookahead_mm = self._estimate_next_block(tokens, close_i + 1)
         self._render_heading(level, inline, lookahead_mm=lookahead_mm)
-        i += 3
+        i = close_i + 1
       elif ttype == "paragraph_open":
+        close_i = self._find_close(tokens, i, "paragraph_open", "paragraph_close")
         self._render_paragraph(tokens[i+1])
-        i += 3
+        i = close_i + 1
       elif ttype == "fence" or ttype == "code_block":
         lang = (t.info or "").strip().split()[0] if t.info else ""
-        if lang == "math":
-          self._render_math_block(t.content)
+        if lang == "math": self._render_math_block(t.content)
         else:
           self._render_code_block(t.content, lang)
         i += 1
       elif ttype == "math_block":
         self._render_math_block(t.content)
         i += 1
-      elif ttype == "bullet_list_open":
-        i = self._render_list(tokens, i, ordered=False)
-      elif ttype == "ordered_list_open":
-        i = self._render_list(tokens, i, ordered=True)
-      elif ttype == "blockquote_open":
-        i = self._render_blockquote(tokens, i)
+      elif ttype == "bullet_list_open": i = self._render_list(tokens, i, ordered=False)
+      elif ttype == "ordered_list_open": i = self._render_list(tokens, i, ordered=True)
+      elif ttype == "blockquote_open": i = self._render_blockquote(tokens, i)
       elif ttype == "hr":
         self._render_hr()
         i += 1
       elif ttype == "html_block":
-        # Whitelist: only standalone <hr> is recognized as a block element.
-        # Anything else (raw HTML blocks like <table>, <div>, <script>) is
-        # silently dropped — pdfmarq doesn't render arbitrary HTML.
+        # Whitelist: `<hr>` block, `<!-- pagebreak -->`, `<!-- group --> ...
+        # <!-- /group -->` directives. Everything else (raw `<table>`, `<div>`,
+        # `<script>`, ...) is silently dropped.
         from . import md_html
-        if md_html.is_hr_block(t.content or ""):
+        content = t.content or ""
+        if md_html.is_hr_block(content):
           self._render_hr()
+        elif md_html.is_pagebreak_directive(content):
+          if self.pdf.y > 0.5:  # skip if we're already at page top
+            self.pdf.new_page()
+        elif md_html.is_group_open_directive(content):
+          end_i = self._find_group_close(tokens, i)
+          self._render_group(tokens[i+1:end_i])
+          i = end_i + 1
+          continue
+        elif md_html.is_group_close_directive(content):
+          # Stray close - log and skip
+          import warnings
+          warnings.warn(
+            "stray `<!-- /group -->` directive (no matching open)",
+            RuntimeWarning, stacklevel=2,
+          )
         i += 1
-      elif ttype == "table_open":
-        i = self._render_table(tokens, i)
-      elif ttype == "footnote_block_open":
-        i = self._render_footnote_block(tokens, i)
-      elif ttype == "dl_open":
-        i = self._render_deflist(tokens, i)
+      elif ttype == "table_open": i = self._render_table(tokens, i)
+      elif ttype == "footnote_block_open": i = self._render_footnote_block(tokens, i)
+      elif ttype == "dl_open": i = self._render_deflist(tokens, i)
       else:
         i += 1
 
@@ -272,50 +291,171 @@ class MarkdownRenderer(
     c.setFillColor(Color(0, 0, 0))
     c.setLineWidth(1)
 
+  def _resolve_image_path(self, src:str) -> str:
+    """Join `src` with `base_dir` when relative. Absolute paths and URLs
+    pass through unchanged. Symmetric with docmarq's path resolution."""
+    import os
+    if not src or src.startswith(("http://", "https://", "data:")):
+      return src
+    if os.path.isabs(src):
+      return src
+    return os.path.normpath(os.path.join(self.base_dir, src))
+
+  #-------------------------------------------------------------------------------- Directives
+
+  def _find_group_close(self, tokens:list[Token], start:int) -> int:
+    """Find index of matching `<!-- /group -->` for the open at `start`.
+    Tracks depth to support naive nesting - inner directives are silent
+    markers (no extra keep-together behavior) but their close still
+    matches their open so the outer group close lands correctly.
+    Returns `len(tokens)` for unclosed groups (warns + renders to EOF).
+    """
+    from . import md_html
+    depth = 1
+    for j in range(start + 1, len(tokens)):
+      t = tokens[j]
+      if t.type != "html_block": continue
+      content = t.content or ""
+      if md_html.is_group_open_directive(content): depth += 1
+      elif md_html.is_group_close_directive(content):
+        depth -= 1
+        if depth == 0: return j
+    import warnings
+    warnings.warn(
+      "unclosed `<!-- group -->` directive - rendering to end of document",
+      RuntimeWarning, stacklevel=2,
+    )
+    return len(tokens)
+
+  def _estimate_group_height(self, tokens:list[Token]) -> float:
+    """Sum estimated heights of top-level blocks inside a group. Reuses
+    `_estimate_next_block` per block and adds `para_gap` between them.
+    Conservative - the real layout may be tighter or looser; precision
+    isn't needed because the decision is just `fits remaining or not`."""
+    s = self.style
+    total = 0.0
+    paired = {
+      "paragraph_open": "paragraph_close",
+      "heading_open": "heading_close",
+      "bullet_list_open": "bullet_list_close",
+      "ordered_list_open": "ordered_list_close",
+      "blockquote_open": "blockquote_close",
+      "table_open": "table_close",
+      "footnote_block_open": "footnote_block_close",
+      "dl_open": "dl_close",
+    }
+    leaf = {"fence", "code_block", "math_block", "hr"}
+    i = 0
+    while i < len(tokens):
+      t = tokens[i]
+      ttype = t.type
+      if ttype in paired:
+        close_i = self._find_close(tokens, i, ttype, paired[ttype])
+        total += self._estimate_next_block(tokens, i) + s.para_gap
+        i = close_i + 1
+      elif ttype in leaf:
+        total += self._estimate_next_block(tokens, i) + s.para_gap
+        i += 1
+      else:
+        i += 1
+    return total
+
+  def _render_group(self, tokens:list[Token]):
+    """Render group content, breaking page first if it doesn't fit and
+    a fresh page would help. Existing auto-pagebreak (`_ensure_space`,
+    heading lookahead) stays active during inner rendering - this is
+    pure pre-emptive break, not a replacement.
+
+    Skip the break when:
+      - group fits in the remaining space, OR
+      - group is larger than a full page (break would just emit an empty
+        page top followed by the same overflow), OR
+      - we're already at page top.
+    """
+    if not tokens: return
+    total_h = self._estimate_group_height(tokens)
+    remaining = self.pdf.content_height - self.pdf.y
+    page_avail = self.pdf.content_height
+    if total_h > remaining and total_h <= page_avail and self.pdf.y > 0.5:
+      self.pdf.new_page()
+    self._render_tokens(tokens)
+
 #------------------------------------------------------------------------------------ md_to_pdf
 
 def md_to_pdf(
   md_text: str,
   output_path: str,
   style: MarkdownStyle|None = None,
-  width: float = 210,
-  height: float = 297,
-  margin: float|tuple = 20,
+  width: float|None = None,
+  height: float|None = None,
+  margin: float|tuple|None = None,
   font_dir: str = "./fonts",
   metadata: dict|None = None,
   landscape: bool|None = None,
+  base_dir: str|None = None,
 ) -> PDF:
   """Convert markdown text to PDF file.
 
-  YAML frontmatter fields auto-fill PDF metadata:
-    `title`    -> PDF /Title
-    `author`   -> PDF /Author
-    `subject`  -> PDF /Subject
-    `keywords` -> PDF /Keywords (string, or list joined with ", ")
+  YAML frontmatter top-level fields auto-fill PDF metadata:
+    `title`    → PDF /Title
+    `author`   → PDF /Author
+    `subject`  → PDF /Subject
+    `keywords` → PDF /Keywords (string, or list joined with ", ")
   Explicit `metadata={...}` arg overrides YAML values per-key.
 
+  YAML frontmatter `render:` sub-block controls page geometry, fonts,
+  chrome, and locale. See `pdfmarq.md.render.RenderConfig`.
+
+  Precedence: `MarkdownStyle()` defaults < `render.lang` preset <
+  other `render:` keys < caller's `style=` non-default fields.
+
   Args:
-    landscape: Flip page to landscape (swap width/height). When `None`
-      (default), reads `landscape: true` from YAML frontmatter. Explicit
-      `True`/`False` overrides the frontmatter value.
+    width / height: Page dimensions in mm. `None` (default) reads
+      `render.page` from frontmatter, falling back to A4.
+    margin: Page margins in mm. `None` (default) reads `render.margin`,
+      falling back to 20.
+    landscape: Flip page to landscape. `None` (default) reads
+      `render.landscape`. Top-level `landscape:` is no longer honored
+      (warns and migrates).
+    base_dir: Root for resolving relative image paths. `None` uses cwd.
   """
+  from .render import (
+    parse_render_block, build_style, warn_top_level_landscape,
+  )
   fm = peek_frontmatter(md_text)
+  warn_top_level_landscape(fm)
+  render = parse_render_block(fm)
+  # Resolve page geometry: caller > render block > A4 default.
+  if width is None:
+    width = render.page.width if render.page else 210
+  if height is None:
+    height = render.page.height if render.page else 297
+  if margin is None:
+    margin = render.margin if render.margin is not None else 20
   if landscape is None:
-    if fm is not None and fm.get("landscape") is not None:
-      landscape = bool(fm["landscape"])
+    landscape = bool(render.landscape)
   if landscape:
     width, height = height, width
+  # Build effective style by layering defaults → lang → render → caller.
+  eff_style = build_style(fm, style, render)
   pdf = PDF(
     output_path, width=width, height=height,
     margin=margin, font_dir=font_dir,
   )
+  # Gutter from render block is added to left margin uniformly. Mirrors
+  # docmarq's native gutter for single-sided documents; book-style alternating
+  # gutters not supported in this MVP.
+  if render.gutter:
+    pdf._page.margin_left += render.gutter
   # Auto-fill PDF metadata from YAML. Explicit `metadata=` kwarg wins per-key.
   meta = _metadata_from_frontmatter(fm) if fm else {}
   if metadata:
     meta.update(metadata)
   if meta:
     pdf.metadata(**meta)
-  renderer = MarkdownRenderer(pdf, style)
+  renderer = MarkdownRenderer(pdf, eff_style)
+  if base_dir is not None:
+    renderer.base_dir = base_dir
   renderer.render(md_text)
   pdf.save()
   return pdf

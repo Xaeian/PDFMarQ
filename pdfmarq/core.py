@@ -14,7 +14,7 @@ from .fonts import FontManager, is_builtin, builtin_name
 from .styles import Style, TableStyle
 from .layout import Cursor, PageGeometry
 from .text import TextMetrics
-from .tables import TableBuilder, TableData, prepare_table
+from .tables import TableBuilder, TableData
 from .structure import Metadata, BookmarkManager, LinkManager
 from . import graphics as gfx
 
@@ -46,6 +46,7 @@ class NumberedCanvas(canvas.Canvas):
     self._replaying = False
   
   def showPage(self):
+  
     """Buffer current page state instead of emitting."""
     self._saved_pages.append(dict(self.__dict__))
     self._startPage()
@@ -58,6 +59,7 @@ class NumberedCanvas(canvas.Canvas):
     return None
   
   def save(self):
+  
     """Replay buffered pages, running final-page callbacks with known total."""
     # Buffer any pending content from the last page (caller may not have
     # called showPage on the final page - matches Canvas.save() behavior).
@@ -102,17 +104,18 @@ class PDF:
     font_dir: str = "./fonts",
     debug: bool = False,
   ):
-    self.path = path
+    self._path = path
     self.debug = debug
     self.unit = unit
     # Page setup
-    lr, top, bot = parse_margin(margin)
+    top, right, bot, left = parse_margin(margin)
     self._page = PageGeometry(
       width=to_mm(width, unit),
       height=to_mm(height, unit),
-      margin_lr=to_mm(lr, unit),
       margin_top=to_mm(top, unit),
+      margin_right=to_mm(right, unit),
       margin_bot=to_mm(bot, unit),
+      margin_left=to_mm(left, unit),
     )
     # Canvas - NumberedCanvas buffers pages so deferred footer (with total
     # page count) can be drawn at save() time.
@@ -143,43 +146,59 @@ class PDF:
       self.save()
 
   #--------------------------------------------------------------------------------- Properties
-  
+
   @property
   def x(self) -> float:
+    """Cursor X position in mm from page left edge."""
     return self._cursor.x
 
   @property
   def y(self) -> float:
+    """Cursor Y position in mm from page top edge (Y grows down)."""
     return self._cursor.y
 
   @property
   def page_width(self) -> float:
+    """Current page width in mm."""
     return self._page.width
 
   @property
   def page_height(self) -> float:
+    """Current page height in mm."""
     return self._page.height
 
   @property
   def content_width(self) -> float:
+    """Drawable width in mm (page width minus left+right margins)."""
     return self._page.content_width
 
   @property
   def content_height(self) -> float:
+    """Drawable height in mm (page height minus top+bottom margins)."""
     return self._page.content_height
 
   @property
   def page_num(self) -> int:
+    """1-based index of the current page (incremented by `new_page`)."""
     return self._page_num
 
   @property
   def c(self):
-    """Direct canvas access for advanced use."""
+    """Direct reportlab `Canvas` access for advanced operations not exposed
+    by the fluent API. Use sparingly - bypasses cursor / page tracking."""
     return self._canvas
+
+  @property
+  def output_path(self) -> str:
+    """Destination file path. Symmetric with `DOCX.output_path`. `pdf.path()`
+    is reserved for the polygon-draw method, so use this for filename
+    inspection."""
+    return self._path
 
   #--------------------------------------------------------------------------------------- Page
   
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
+  
     """Set page size."""
     if width:
       self._page.width = to_mm(width, self.unit)
@@ -200,8 +219,12 @@ class PDF:
     return self
 
   def margin(self, lr:float, top:float|None=None, bot:float|None=None) -> "PDF":
-    """Set page margins."""
-    self._page.margin_lr = to_mm(lr, self.unit)
+    """Set page margins. `lr` sets both left and right symmetrically.
+
+    For asymmetric left/right margins, pass a 4-tuple to the `PDF` constructor:
+    `PDF(..., margin=(top, right, bot, left))`.
+    """
+    self._page.margin_left = self._page.margin_right = to_mm(lr, self.unit)
     self._page.margin_top = to_mm(top if top is not None else lr, self.unit)
     self._page.margin_bot = to_mm(bot if bot is not None else top if top is not None else lr, self.unit)
     return self
@@ -209,6 +232,7 @@ class PDF:
   #-------------------------------------------------------------------------------------- Fonts
   
   def add_font(self, family:str, mode:str="Regular") -> "PDF":
+  
     """Register font for use."""
     self._fonts.register(family, mode)
     return self
@@ -247,6 +271,7 @@ class PDF:
   #------------------------------------------------------------------------------------- Cursor
   
   def cursor(self, x:float|None=None, y:float|None=None, align:str|None=None) -> "PDF":
+  
     """Set cursor position and/or alignment."""
     if x is not None:
       x = to_mm(x, self.unit)
@@ -269,6 +294,7 @@ class PDF:
   #------------------------------------------------------------------------------------- Colors
   
   def color(self, r:float, g:float, b:float, a:float=1) -> "PDF":
+  
     """Set fill color."""
     self._canvas.setFillColor(Color(r, g, b, a))
     self._style.color = (r, g, b, a)
@@ -309,6 +335,7 @@ class PDF:
     align: str|None = None,
     padding: float = 0,
   ) -> "PDF":
+  
     """Draw text at cursor position."""
     if content is None:
       content = ""
@@ -379,6 +406,7 @@ class PDF:
   #----------------------------------------------------------------------------- Lines & Shapes
   
   def line(self, width:float=0, height:float=0, thickness:float=1, dash:tuple|None=None) -> "PDF":
+  
     """Draw line from cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
@@ -441,6 +469,7 @@ class PDF:
   #------------------------------------------------------------------------------------- Images
   
   def image(self, path:str, width:float, height:float) -> "PDF":
+  
     """Draw image at cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
@@ -477,18 +506,21 @@ class PDF:
     width: float|None = None,
     style: TableStyle|None = None,
   ) -> "PDF":
+  
     """Draw table at cursor."""
     style = style or TableStyle()
     width_mm = to_mm(width, self.unit) if width else self.content_width - self._cursor.x
     ncols = len(header) if header else len(body[0]) if body else 1
     sizes = sizes or [1] * ncols
     aligns = aligns or [Align.LEFT] * ncols
-    # Prepare table data
-    data = prepare_table(
-      body, header, sizes, aligns, width_mm, self._metrics, style,
-      self._style.font_family, self._style.font_mode, self._style.font_size
+    builder = TableBuilder(self._metrics, style)
+    if header:
+      builder.header(header)
+    builder.rows(body).columns(sizes, aligns).width(width_mm)
+    data = builder.build(
+      width_mm,
+      self._style.font_family, self._style.font_mode, self._style.font_size,
     )
-    # Draw table
     self._draw_table(data, style)
     return self
 
@@ -496,69 +528,78 @@ class PDF:
     """Internal table rendering."""
     x_start = self._cursor.x
     y_start = self._cursor.y
-    padding = style.padding
-    # Draw background boxes
+    h_pad = style.cell_pad_h
+    header_mode = "Bold" if style.header_bold else self._style.font_mode
+    # Backgrounds: solid GitHub-light subtle colors (no alpha trickery).
     if data.header:
-      bg = style.header_bg
-      a = bg[3] if len(bg) > 3 else 0.5
-      self.color(bg[0], bg[1], bg[2], a)
+      r, g, b = parse_color(style.header_bg)
+      self.color(r, g, b, 1)
       self.rect(data.total_width, data.header_height)
       self.enter(data.header_height).enter(style.header_gap)
     for i, h in enumerate(data.body_heights):
       bg = style.row_bg_odd if i % 2 else style.row_bg_even
-      a = bg[3] if len(bg) > 3 else 0.5
-      self.color(bg[0], bg[1], bg[2], a)
-      self.rect(data.total_width, h)
+      if bg is not None:
+        r, g, b = parse_color(bg)
+        self.color(r, g, b, 1)
+        self.rect(data.total_width, h)
       self.enter(h)
     self.color_black()
-    self.stroke_color(*style.border_color[:3])
-    # Draw horizontal lines
+    br, bg_, bb = parse_color(style.border_color)
+    self.stroke_color(br, bg_, bb)
+    # Horizontal lines
     self.cursor(x_start, y_start)
-    self.line(data.total_width, 0, style.border_width)
+    self.line(data.total_width, 0, style.border_size)
     if data.header:
       self.enter(data.header_height)
-      self.line(data.total_width, 0, style.border_width_header)
+      self.line(data.total_width, 0, style.border_size_header)
       self.enter(style.header_gap)
     for h in data.body_heights:
-      self.line(data.total_width, 0, style.border_width)
+      self.line(data.total_width, 0, style.border_size)
       self.enter(h)
-    self.line(data.total_width, 0, style.border_width)
-    # Draw vertical lines
+    self.line(data.total_width, 0, style.border_size)
+    # Vertical lines
     self.cursor(x_start, y_start)
-    total_h = (data.header_height + style.header_gap + sum(data.body_heights)) if data.header else sum(data.body_heights)
-    self.line(0, total_h, style.border_width_outer)
+    total_h = (data.header_height + style.header_gap + sum(data.body_heights)
+      if data.header else sum(data.body_heights))
+    self.line(0, total_h, style.border_size_outer)
     x_col = x_start
     for w in data.column_widths:
       x_col += w
       self.cursor(x_col, y_start)
-      self.line(0, total_h, style.border_width_outer)
-    # Reset stroke to black for anything drawn after table
+      self.line(0, total_h, style.border_size_outer)
     self.stroke_color(0, 0, 0)
-    # Draw header text
+    # Header text
     self.cursor(x_start, y_start)
     if data.header and data.header_fitted:
       old_mode = self._style.font_mode
-      self.font(mode=style.header_font_mode)
+      old_color = self._style.color
+      if style.header_color is not None:
+        hr_, hg_, hb_ = parse_color(style.header_color)
+        self.color(hr_, hg_, hb_, 1)
+      self.font(mode=header_mode)
       for idx, txt in enumerate(data.header_fitted):
         if txt is None:
           txt = data.header[idx]
         align = data.column_aligns[idx] if idx < len(data.column_aligns) else Align.LEFT
-        self.text(txt, data.column_widths[idx], data.header_height, align, padding)
+        self.text(txt, data.column_widths[idx], data.header_height, align, h_pad)
       self.font(mode=old_mode)
+      if style.header_color is not None:
+        self.color(*old_color)
       self.enter().enter(style.header_gap)
-    # Draw body text
+    # Body text
     for i, row in enumerate(data.body_fitted):
       for idx, txt in enumerate(row):
         if txt is None:
           txt = data.body[i][idx]
         align = data.column_aligns[idx] if idx < len(data.column_aligns) else Align.LEFT
-        self.text(txt, data.column_widths[idx], data.body_heights[i], align, padding)
+        self.text(txt, data.column_widths[idx], data.body_heights[i], align, h_pad)
       self.enter()
     return self
 
   #---------------------------------------------------------------------------------- Structure
   
   def bookmark(self, title:str, level:int=0) -> "PDF":
+  
     """Add bookmark at current position."""
     self._bookmarks.add(title, self._page_num, self._cursor.y, level)
     return self
@@ -570,17 +611,22 @@ class PDF:
     return self
 
   def metadata(self, title:str|None=None, author:str|None=None,
-      subject:str|None=None, keywords:str|None=None) -> "PDF":
-    """Set document metadata."""
+      subject:str|None=None, keywords:str|None=None,
+      comments:str|None=None, category:str|None=None) -> "PDF":
+    """Set document metadata. `comments`/`category` accepted for parity
+    with `DOCX.metadata()` but not emitted to the PDF /Info dict."""
     if title: self._metadata.title = title
     if author: self._metadata.author = author
     if subject: self._metadata.subject = subject
     if keywords: self._metadata.keywords = keywords
+    if comments: self._metadata.comments = comments
+    if category: self._metadata.category = category
     return self
 
   #---------------------------------------------------------------------------- Headers/Footers
   
   def on_page(self, callback:Callable) -> "PDF":
+  
     """Register callback to run on each page (for headers/footers).
 
     Callback receives (pdf, page_num) arguments.
@@ -645,27 +691,47 @@ class PDF:
   #------------------------------------------------------------------------------------- Output
   
   def save(self) -> "PDF":
+  
     """Render and save PDF."""
-    self._finalize_page()          # finalize last page
+    self._finalize_page()  # finalize last page
     self._metadata.apply(self._canvas)
     self._bookmarks.apply_outline(self._canvas)  # add outline entries once, at the end
     self._canvas.save()
     return self
 
-  def compress(self, quality:str="screen") -> "PDF":
+  def compress(self, quality:str="screen", raise_on_error:bool=False) -> "PDF":
     """Compress PDF using ghostscript.
 
-    Quality: screen, ebook, printer, prepress
+    Quality: `screen`, `ebook`, `printer`, `prepress`.
+
+    Returns `self` (fluent). On failure (no `gs` in PATH, gs error):
+      - `raise_on_error=True`: re-raises with a clear message
+      - `raise_on_error=False` (default): emits a warning and leaves the
+        original file untouched. Previously failures were swallowed silently
+        so users couldn't tell whether compression actually happened.
     """
-    temp = self.path + ".tmp"
+    import warnings
+    temp = self._path + ".tmp"
     try:
       subprocess.run([
         "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
         f"-dPDFSETTINGS=/{quality}", "-dNOPAUSE", "-dQUIET", "-dBATCH",
-        f"-sOutputFile={temp}", self.path
+        f"-sOutputFile={temp}", self._path
       ], check=True)
-      shutil.move(temp, self.path)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+      shutil.move(temp, self._path)
+    except FileNotFoundError as e:
       if Path(temp).exists():
         Path(temp).unlink()
+      msg = ("ghostscript (`gs`) not found in PATH - install it to use "
+             f"PDF.compress(): {e}")
+      if raise_on_error:
+        raise FileNotFoundError(msg) from e
+      warnings.warn(msg, RuntimeWarning, stacklevel=2)
+    except subprocess.CalledProcessError as e:
+      if Path(temp).exists():
+        Path(temp).unlink()
+      msg = f"ghostscript failed during compression (exit {e.returncode})"
+      if raise_on_error:
+        raise RuntimeError(msg) from e
+      warnings.warn(msg, RuntimeWarning, stacklevel=2)
     return self

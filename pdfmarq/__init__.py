@@ -25,6 +25,11 @@ __description__ = "PDF generation library with fluent API and optional markdown 
 __author__ = "Xaeian"
 __keywords__ = ["pdf", "reportlab", "document", "generation", "markdown"]
 __dependencies__ = ["reportlab", "Pillow", "svglib"]
+# pip-name → import-name mapping for diagnostics. `Pillow` is the pip
+# package but the import is `from PIL import ...`; without this hint
+# users debugging a missing dep see `No module named 'PIL'` and don't
+# realize they need `pip install Pillow`.
+__import_names__ = {"Pillow": "PIL"}
 
 #----------------------------------------------------------------------------------- Public API
 
@@ -38,7 +43,10 @@ from .text import TextMetrics, BoxFitResult
 from .tables import TableBuilder, TableData, Cell
 from .fonts import FontManager
 from .structure import Metadata, Bookmark, TOCEntry, BookmarkManager, LinkManager
-from .utils import to_mm, to_pt, mm_to_pt, parse_color, color_alpha, parse_margin
+from .utils import (
+  to_mm, to_pt, mm_to_pt, parse_color, color_alpha, color_hex, parse_margin,
+  smaller_size,
+)
 from .inline import RichSegment, render_rich
 from .core import PDF
 
@@ -52,6 +60,7 @@ __all__ = [
   "TableBuilder", "TableData", "Cell",
   "FontManager",
   "Metadata", "Bookmark", "TOCEntry", "BookmarkManager", "LinkManager",
-  "to_mm", "to_pt", "mm_to_pt", "parse_color", "color_alpha", "parse_margin",
+  "to_mm", "to_pt", "mm_to_pt", "parse_color", "color_alpha", "color_hex", "parse_margin",
+  "smaller_size",
   "RichSegment", "render_rich",
 ]

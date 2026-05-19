@@ -47,13 +47,13 @@ def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
 # Pygments' markdown lexer has known bugs (e.g. only tags `1.` and `2.` as
 # Keyword but not `3.`+). Simple regex-based highlighter instead.
 _MD_COLORS = {
-  "heading":     (0.035, 0.368, 0.855),
+  "heading": (0.035, 0.368, 0.855),
   "list_marker": (0.0,   0.502, 0.0),
-  "code":        (0.729, 0.129, 0.129),
-  "fence":       (0.502, 0.502, 0.502),
-  "link":        (0.035, 0.368, 0.855),
-  "quote":       (0.502, 0.502, 0.502),
-  "default":     (0.13,  0.13,  0.13),
+  "code": (0.729, 0.129, 0.129),
+  "fence": (0.502, 0.502, 0.502),
+  "link": (0.035, 0.368, 0.855),
+  "quote": (0.502, 0.502, 0.502),
+  "default": (0.13,  0.13,  0.13),
 }
 
 import re as _re
@@ -75,7 +75,8 @@ def _highlight_md(
   default_color: tuple,
 ) -> list[list[RichSegment]]:
   """Regex-based markdown highlighter - correct, simple, no pygments dependency."""
-  def seg(text: str, color: tuple, bold: bool = False) -> RichSegment:
+  def seg(text:
+    str, color: tuple, bold: bool = False) -> RichSegment:
     return RichSegment(
       text=text, family=family, mode=bold_mode if bold else mode,
       size=size, color=color,
@@ -122,18 +123,18 @@ def _highlight_md(
 # Each alternative's group index → (color_key, bold). `code`/`link` use
 # their own colors; others use the surrounding base_color.
 _MD_INLINE_PAT = _re.compile(
-  r"(`+)([^`]*?)\1"                     # 1: code
-  r"|(\*\*)([^*]+?)\*\*"                # 3: **bold**
-  r"|(__)([^_]+?)__"                    # 5: __bold__
-  r"|(\*)([^*]+?)\*"                    # 7: *italic*
-  r"|(_)([^_]+?)_"                      # 9: _italic_
-  r"|(~~)([^~]+?)~~"                    # 11: ~~strike~~
+  r"(`+)([^`]*?)\1"  # 1: code
+  r"|(\*\*)([^*]+?)\*\*"  # 3: **bold**
+  r"|(__)([^_]+?)__"  # 5: __bold__
+  r"|(\*)([^*]+?)\*"  # 7: *italic*
+  r"|(_)([^_]+?)_"  # 9: _italic_
+  r"|(~~)([^~]+?)~~"  # 11: ~~strike~~
   r"|(\[)([^\]]+?)(\])(\()([^)]+?)(\))" # 13: [text](url)
 )
 _MD_INLINE_GROUPS = [
   (1,  "code",    False),
-  (3,  None,      True),   # **bold**
-  (5,  None,      True),   # __bold__
+  (3,  None,      True),  # **bold**
+  (5,  None,      True),  # __bold__
   (7,  None,      False),  # *italic*
   (9,  None,      False),  # _italic_
   (11, None,      False),  # ~~strike~~
@@ -146,7 +147,8 @@ def _tokenize_md_inline(
 ):
   """Parse inline markdown into colored segments."""
   base_color = _MD_COLORS["quote"] if quote else default_color
-  def seg(t: str, c: tuple, bold: bool = False) -> RichSegment:
+  def seg(t:
+    str, c: tuple, bold: bool = False) -> RichSegment:
     return RichSegment(
       text=t, family=family, mode=bold_mode if bold else mode,
       size=size, color=c,

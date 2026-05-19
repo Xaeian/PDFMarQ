@@ -8,13 +8,13 @@ Forces all markdown-related dependencies as a single bundle. Install with:
   pip install pdfmarq[md]
 
 Bundled dependencies (all required, no optional):
-  - markdown-it-py     # parser
-  - mdit-py-plugins    # tables, footnotes, anchors, deflists
-  - PyYAML             # frontmatter
-  - Pygments           # syntax highlighting in fenced code blocks
-  - matplotlib         # math formula rendering ($x^2$)
-  - emoji              # :smile: shortcode resolution
-  - mdit-py-emoji      # emoji parser plugin
+  - markdown-it-py  # parser
+  - mdit-py-plugins  # tables, footnotes, anchors, deflists
+  - PyYAML  # frontmatter
+  - Pygments  # syntax highlighting in fenced code blocks
+  - matplotlib  # math formula rendering ($x^2$)
+  - emoji  # :smile: shortcode resolution
+  - mdit-py-emoji  # emoji parser plugin
 
 Optional system tools (not pip-installable):
   - mermaid-cli (npm)  # for ```mermaid``` blocks; auto-detected at runtime

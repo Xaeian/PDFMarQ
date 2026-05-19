@@ -26,7 +26,7 @@ from pathlib import Path
 #---------------------------------------------------------------------------------------- Cache
 
 _CACHE_DIR = Path.home() / ".cache" / "pdfmarq" / "openmoji"
-_DRAWING_CACHE: dict = {}   # (codepoint, fontsize_pt) -> Drawing
+_DRAWING_CACHE: dict = {}  # (codepoint, fontsize_pt) -> Drawing
 _SVG_DIR_CACHE: Path|None = None
 _CLONE_ATTEMPTED = False
 
@@ -80,13 +80,14 @@ _EMOJI_RANGES = [
   (0x1F900, 0x1F9FF),  # Supplemental Symbols and Pictographs
   (0x1FA00, 0x1FA6F),  # Chess Symbols
   (0x1FA70, 0x1FAFF),  # Symbols and Pictographs Extended-A
-  (0x2600,  0x26FF),   # Misc Symbols
-  (0x2700,  0x27BF),   # Dingbats
-  (0x2B00,  0x2BFF),   # Misc Symbols and Arrows
-  (0x24C2,  0x24C2),   # Circled M (Ⓜ)
+  (0x2600,  0x26FF),  # Misc Symbols
+  (0x2700,  0x27BF),  # Dingbats
+  (0x2B00,  0x2BFF),  # Misc Symbols and Arrows
+  (0x24C2,  0x24C2),  # Circled M (Ⓜ)
 ]
 
-def is_emoji(ch: str) -> bool:
+def is_emoji(ch:
+  str) -> bool:
   """Check if single character should be rendered as color emoji."""
   if not ch: return False
   code = ord(ch)
@@ -95,7 +96,8 @@ def is_emoji(ch: str) -> bool:
       return True
   return False
 
-def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
+def split_text_by_emoji(text:
+  str) -> list[tuple[str, bool]]:
   """Split text into runs of (fragment, is_emoji).
 
   Groups consecutive non-emoji chars into a single text run. Each emoji
@@ -126,7 +128,8 @@ def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
 
 #-------------------------------------------------------------------------------------- Drawing
 
-def get_emoji_drawing(codepoint: int, fontsize_pt: float):
+def get_emoji_drawing(codepoint:
+  int, fontsize_pt: float):
   """Return a reportlab `Drawing` for the given emoji codepoint, scaled to
   approximately the given font size. Returns None on any failure (missing
   SVG, clone not attempted, svglib error).

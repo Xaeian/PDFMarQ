@@ -46,12 +46,16 @@ class FontManager:
     return key
 
   def get_path(self, family:str, mode:str="Regular") -> str:
+    """Return absolute filesystem path of the TTF for `(family, mode)`.
+    Hits the registration cache first; falls back to fresh disk lookup.
+    Raises `FileNotFoundError` if the font isn't installed."""
     key = self._font_key(family, mode)
     if key in self._paths:
       return self._paths[key]
     return str(self._resolve_path(family, mode))
 
   def is_registered(self, family:str, mode:str="Regular") -> bool:
+    """True when `(family, mode)` was already loaded into reportlab."""
     return self._font_key(family, mode) in self._registered
 
   def text_width(self, text:str, family:str, mode:str, size:float) -> float:
@@ -61,28 +65,41 @@ class FontManager:
 
 #-------------------------------------------------------------------------------------- Builtin
 
-# `Times/Regular` aliased to `Times/Roman` for consistency with other families
+# `Times/Regular` aliased to `Times/Roman` for consistency with other families.
+# `Times-Roman` aliased to `Times` so users passing the reportlab name still
+# get the right modal variant (was a quiet bug: `Times-Roman` + `Bold` fell
+# through to "Times-Roman" instead of "Times-Bold").
 _BUILTIN_NAMES: dict[tuple[str, str], str] = {
-  ("Helvetica", "Regular"):     "Helvetica",
-  ("Helvetica", "Bold"):        "Helvetica-Bold",
-  ("Helvetica", "Oblique"):     "Helvetica-Oblique",
+  ("Helvetica", "Regular"): "Helvetica",
+  ("Helvetica", "Bold"): "Helvetica-Bold",
+  ("Helvetica", "Oblique"): "Helvetica-Oblique",
+  ("Helvetica", "Italic"): "Helvetica-Oblique",
   ("Helvetica", "BoldOblique"): "Helvetica-BoldOblique",
-  ("Times", "Regular"):         "Times-Roman",
-  ("Times", "Roman"):           "Times-Roman",
-  ("Times", "Bold"):            "Times-Bold",
-  ("Times", "Italic"):          "Times-Italic",
-  ("Times", "BoldItalic"):      "Times-BoldItalic",
-  ("Courier", "Regular"):       "Courier",
-  ("Courier", "Bold"):          "Courier-Bold",
-  ("Courier", "Oblique"):       "Courier-Oblique",
-  ("Courier", "BoldOblique"):   "Courier-BoldOblique",
+  ("Helvetica", "BoldItalic"): "Helvetica-BoldOblique",
+  ("Times", "Regular"): "Times-Roman",
+  ("Times", "Roman"): "Times-Roman",
+  ("Times", "Bold"): "Times-Bold",
+  ("Times", "Italic"): "Times-Italic",
+  ("Times", "Oblique"): "Times-Italic",
+  ("Times", "BoldItalic"): "Times-BoldItalic",
+  ("Times", "BoldOblique"): "Times-BoldItalic",
+  ("Times-Roman", "Regular"): "Times-Roman",
+  ("Times-Roman", "Bold"): "Times-Bold",
+  ("Times-Roman", "Italic"): "Times-Italic",
+  ("Times-Roman", "Oblique"): "Times-Italic",
+  ("Times-Roman", "BoldItalic"): "Times-BoldItalic",
+  ("Times-Roman", "BoldOblique"): "Times-BoldItalic",
+  ("Courier", "Regular"): "Courier",
+  ("Courier", "Bold"): "Courier-Bold",
+  ("Courier", "Oblique"): "Courier-Oblique",
+  ("Courier", "Italic"): "Courier-Oblique",
+  ("Courier", "BoldOblique"): "Courier-BoldOblique",
+  ("Courier", "BoldItalic"): "Courier-BoldOblique",
 }
 
 def is_builtin(family:str, mode:str="Regular") -> bool:
-  """Check if font is a reportlab built-in."""
-  if (family, mode) in _BUILTIN_NAMES: return True
-  if family == "Times-Roman": return True
-  return False
+  """Check if `(family, mode)` resolves to a reportlab built-in font."""
+  return (family, mode) in _BUILTIN_NAMES
 
 def builtin_name(family:str, mode:str="Regular") -> str:
   """Get reportlab built-in font name. Returns `family` unchanged when not a builtin."""

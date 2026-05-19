@@ -1,7 +1,7 @@
 # pdfmarq/layout.py
 
 """Layout system - cursor positioning, alignment, page geometry."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from .constants import Align
 
 #--------------------------------------------------------------------------------------- Cursor
@@ -43,11 +43,17 @@ class Cursor:
     return self
 
   def advance_x(self, width:float) -> "Cursor":
-    """Advance x position based on alignment."""
+    """Advance x past an element of `width` based on alignment.
+
+    `CENTER` intentionally leaves x untouched: a centered element is anchored
+    to the page midline, so the cursor's logical "current x" doesn't change
+    after drawing it. Callers chain `enter()` or set a new cursor instead.
+    """
     if self.align == Align.LEFT:
       self.x += width
     elif self.align == Align.RIGHT:
       self.x -= width
+    # CENTER: no-op by design
     self.last_width = width
     return self
 
@@ -58,26 +64,37 @@ class Cursor:
 
   def copy(self) -> "Cursor":
     """Create cursor copy."""
-    return Cursor(
-      x=self.x, y=self.y, x_base=self.x_base,
-      align=self.align, last_height=self.last_height, last_width=self.last_width
-    )
+    return replace(self)
 
 #--------------------------------------------------------------------------------- PageGeometry
 
 @dataclass
 class PageGeometry:
-  """Page dimensions and margins."""
-  width: float  # mm
-  height: float  # mm
-  margin_lr: float = 15  # left-right
-  margin_top: float = 15
-  margin_bot: float = 15
+  """Page dimensions and margins (all in mm). CSS-style margins - left and
+  right can differ. `margin_lr` is a back-compat alias for symmetric setups."""
+  width: float
+  height: float
+  margin_top: float = 20
+  margin_right: float = 20
+  margin_bot: float = 20
+  margin_left: float = 20
+
+  @property
+  def margin_lr(self) -> float:
+    """Back-compat alias for the symmetric left/right margin. Reads return
+    `margin_left`; writes set both sides to the same value."""
+    return self.margin_left
+
+  @margin_lr.setter
+  def margin_lr(self, value:float) -> None:
+    """Set both `margin_left` and `margin_right` to the same value."""
+    self.margin_left = value
+    self.margin_right = value
 
   @property
   def content_width(self) -> float:
     """Available width for content."""
-    return self.width - 2 * self.margin_lr
+    return self.width - self.margin_left - self.margin_right
 
   @property
   def content_height(self) -> float:
@@ -87,27 +104,26 @@ class PageGeometry:
   def x_for_align(self, width:float, align:str) -> float:
     """Calculate x position for given alignment and element width."""
     if align == Align.LEFT:
-      return self.margin_lr
+      return self.margin_left
     elif align == Align.CENTER:
       return (self.width - width) / 2
     elif align == Align.RIGHT:
-      return self.width - self.margin_lr - width
-    return self.margin_lr
+      return self.width - self.margin_right - width
+    return self.margin_left
 
   def cursor_to_canvas(self, cursor:Cursor, width:float=0) -> tuple[float, float]:
     """Convert cursor position to canvas coordinates (mm).
-    
+
     Cursor: origin top-left, y grows down
     Canvas: origin bottom-left, y grows up
     Returns (x_mm, y_mm) in canvas coordinates.
     """
     x = cursor.x
     y = self.height - cursor.y - self.margin_top
-    # Adjust x based on alignment
     if cursor.align == Align.LEFT:
-      x += self.margin_lr
+      x += self.margin_left
     elif cursor.align == Align.CENTER:
       x += (self.width - width) / 2
     elif cursor.align == Align.RIGHT:
-      x += self.width - self.margin_lr - width
+      x += self.width - self.margin_right - width
     return x, y

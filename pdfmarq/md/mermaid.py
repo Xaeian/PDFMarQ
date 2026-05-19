@@ -13,8 +13,9 @@ first one that succeeds:
      Free, no API key. Used as fallback when mmdc unavailable.
   3. **None** - both failed. Caller falls back to plain code block.
 
-Rendered output is cached to `~/.cache/pdfmarq/mermaid/{hash}.png` so the
-same diagram isn't re-rendered on every PDF build.
+Rendered output is cached to `~/.cache/marq/mermaid/{hash}.png` (shared
+with `docmarq`) so the same diagram isn't re-rendered on every build,
+even when alternating between PDF and DOCX outputs.
 
 Usage:
   >>> from pdfmarq.mermaid import render_mermaid
@@ -32,29 +33,33 @@ from pathlib import Path
 
 #---------------------------------------------------------------------------------------- Cache
 
-_CACHE_DIR = Path.home() / ".cache" / "pdfmarq" / "mermaid"
+# Shared between pdfmarq and docmarq - identical diagrams render once
+# regardless of which output format triggers the build first.
+_CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 _RENDER_CACHE: dict = {}  # in-memory cache for current process
 
 def _ensure_cache():
   _CACHE_DIR.mkdir(parents=True, exist_ok=True)
   return _CACHE_DIR
 
-def _hash(code: str) -> str:
-  return hashlib.sha1(code.encode("utf-8")).hexdigest()[:16]
+def _cache_key(code:str, theme:str, background:str, scale:float) -> str:
+  """SHA-1 over inputs that affect rendering. Different theme/bg/scale
+  must produce different cache files."""
+  payload = f"{code}\x00{theme}\x00{background}\x00{scale}".encode("utf-8")
+  return hashlib.sha1(payload).hexdigest()[:16]
 
 #------------------------------------------------------------------------- Backend: mermaid-cli
 
-def _try_mmdc(code: str, out_path: Path) -> bool:
-  """Render via local mermaid-cli binary. Returns True on success."""
-  mmdc = shutil.which("mmdc")
-  if not mmdc:
-    return False
+def _try_mmdc(code:str, out_path:Path, *, cli:str, theme:str,
+    background:str, scale:float) -> bool:
+  """Render via local mermaid-cli. Returns `True` on success."""
+  mmdc = shutil.which(cli)
+  if not mmdc: return False
   try:
     in_path = out_path.with_suffix(".mmd")
     in_path.write_text(code, encoding="utf-8")
     cmd = [mmdc, "-i", str(in_path), "-o", str(out_path),
-           "-b", "transparent", "-s", "3"]
-    # Optional puppeteer config (e.g. custom Chrome path in sandboxed envs)
+      "-t", theme, "-b", background, "-s", str(scale)]
     pp_config = os.environ.get("XAEIAN_MMDC_PUPPETEER_CONFIG")
     if pp_config and Path(pp_config).exists():
       cmd += ["-p", pp_config]
@@ -66,19 +71,24 @@ def _try_mmdc(code: str, out_path: Path) -> bool:
 
 #------------------------------------------------------------------------- Backend: mermaid.ink
 
-def _try_mermaid_ink(code: str, out_path: Path) -> bool:
-  """Render via mermaid.ink HTTP service. Returns True on success."""
+def _try_mermaid_ink(code:str, out_path:Path, *, theme:str,
+    background:str) -> bool:
+  """Render via mermaid.ink HTTP service. Returns `True` on success.
+  Internal `scale` is capped at 3 by the API regardless of mmdc setting."""
+  ink_scale = 3
   try:
-    import urllib.request
-    import base64
-    import zlib
-    # mermaid.ink expects pako-deflate-base64-url-safe encoded code
-    # Format: pako:base64(zlib.deflate(json))
-    import json
-    payload = json.dumps({"code": code, "mermaid": {"theme": "default"}})
+    import urllib.request, base64, zlib, json
+    payload = json.dumps({"code": code, "mermaid": {"theme": theme}})
     deflated = zlib.compress(payload.encode("utf-8"), 9)
     encoded = base64.urlsafe_b64encode(deflated).decode("ascii").rstrip("=")
-    url = f"https://mermaid.ink/img/pako:{encoded}?type=png&bgColor=!FFFFFF00"
+    bg = background.lstrip("#")
+    if bg.lower() == "transparent": bg_param = "!FFFFFF00"
+    elif all(c in "0123456789abcdefABCDEF" for c in bg):
+      bg_param = f"!{bg}"
+    else:
+      bg_param = bg
+    url = (f"https://mermaid.ink/img/pako:{encoded}"
+      f"?type=png&width=800&scale={ink_scale}&bgColor={bg_param}")
     req = urllib.request.Request(url, headers={"User-Agent": "pdfmarq"})
     with urllib.request.urlopen(req, timeout=15) as resp:
       data = resp.read()
@@ -91,37 +101,44 @@ def _try_mermaid_ink(code: str, out_path: Path) -> bool:
 
 #----------------------------------------------------------------------------------- Public API
 
-def render_mermaid(code: str) -> tuple[str, float, float]|None:
+def render_mermaid(code:str, *, cli:str="mmdc", theme:str="default",
+    background:str="transparent", scale:float=4) -> tuple[str, float, float]|None:
   """Render a mermaid diagram to a PNG file.
 
-  Tries backends in order: mmdc → mermaid.ink. Returns (path, width_pt,
-  height_pt) on success or None if all backends failed.
+  Args:
+    code: Mermaid source (the content of a ```mermaid fenced block).
+    cli: `mermaid-cli` binary name or path. Override if mmdc isn't in PATH.
+    theme: Mermaid theme - `default` / `dark` / `forest` / `neutral`.
+    background: PNG background - `transparent`, hex (`#RRGGBB`), or named.
+    scale: Oversampling factor for the mmdc backend (mermaid.ink caps at 3
+      internally regardless).
 
-  Results are cached on disk by SHA-1 hash of the code, so identical
-  diagrams across builds reuse the same file.
+  Returns:
+    `(path, width_pt, height_pt)` on success, `None` when both backends fail.
+    Results are cached on disk keyed by code + theme + background + scale.
   """
   code = code.strip()
-  if not code:
-    return None
-  key = _hash(code)
+  if not code: return None
+  key = _cache_key(code, theme, background, scale)
   if key in _RENDER_CACHE:
     return _RENDER_CACHE[key]
   cache_dir = _ensure_cache()
   out_path = cache_dir / f"{key}.png"
   if not out_path.exists():
-    success = _try_mmdc(code, out_path) or _try_mermaid_ink(code, out_path)
-    if not success:
+    ok = _try_mmdc(code, out_path, cli=cli, theme=theme,
+      background=background, scale=scale) or _try_mermaid_ink(
+      code, out_path, theme=theme, background=background)
+    if not ok:
       _RENDER_CACHE[key] = None
       return None
-  # Read PNG dimensions for sizing
   try:
     from PIL import Image
     with Image.open(out_path) as im:
       px_w, px_h = im.size
-    # Mermaid renders at 96 DPI by default; mmdc -s 3 gives 3x oversampling.
-    # Convert px → pt assuming 96 DPI base, with oversampling factored out.
-    # Heuristic: if image > 1500 px wide, assume oversampled at 3x.
-    dpi = 96 * (3 if px_w > 1500 else 1)
+    # Convert px → pt at 96 DPI * oversampling scale. Loaded from cache:
+    # scale is the configured value (cache key includes it, so pixel size
+    # matches that scale).
+    dpi = 96 * scale
     w_pt = px_w * 72 / dpi
     h_pt = px_h * 72 / dpi
   except Exception:

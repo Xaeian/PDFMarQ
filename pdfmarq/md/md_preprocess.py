@@ -12,6 +12,12 @@ import re
 #------------------------------------------------------------------------------ PreprocessMixin
 
 class PreprocessMixin:
+  """
+  Source text preprocessing (list indent normalization, emoji shortcode
+  replacement) run before markdown-it parsing. Mixed into
+  `MarkdownRenderer`.
+  """
+
   @staticmethod
   def _iter_content_lines(md_text:str):
     """Yield `(line, is_content)` for each line. `is_content` is False for

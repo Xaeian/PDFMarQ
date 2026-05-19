@@ -70,18 +70,6 @@ def draw_circle(
   canvas.setDash()
   canvas.circle(x, y, radius, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
 
-def draw_ellipse(
-  canvas,
-  x: float, y: float,
-  width: float, height: float,
-  stroke_width: float = 0,
-  fill: bool = True,
-):
-  """Draw ellipse on canvas (coordinates in pt)."""
-  canvas.setLineWidth(stroke_width)
-  canvas.setDash()
-  canvas.ellipse(x, y, x + width, y + height, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
-
 def draw_path(
   canvas,
   points: list[tuple[float, float]],
@@ -102,20 +90,6 @@ def draw_path(
     p.close()
   canvas.drawPath(p, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
 
-#--------------------------------------------------------------------------------------- Colors
-
-def set_fill_color(canvas, r:float, g:float, b:float, a:float=1):
-  """Set fill color."""
-  canvas.setFillColor(Color(r, g, b, a))
-
-def set_stroke_color(canvas, r:float, g:float, b:float, a:float=1):
-  """Set stroke color."""
-  canvas.setStrokeColor(Color(r, g, b, a))
-
-def set_fill_grey(canvas, light:float=0, a:float=1):
-  """Set fill to greyscale."""
-  canvas.setFillColor(Color(light, light, light, a))
-
 #--------------------------------------------------------------------------------------- Images
 
 def draw_image(
@@ -135,7 +109,7 @@ def draw_svg(
 ):
   """Draw SVG on canvas (coordinates in pt). Uses canvas-level transform
   (`saveState`/`translate`/`scale`/`restoreState`) so target size is
-  deterministic on every platform/svglib version — internal `Drawing`
+  deterministic on every platform/svglib version - internal `Drawing`
   attributes like `transform` and `scale` are inconsistent across versions,
   especially on Python 3.13 + Windows. Falls back to the union bounding
   box when intrinsic dims are missing."""

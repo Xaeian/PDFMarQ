@@ -30,49 +30,78 @@ except ImportError:
 
 #------------------------------------------------------------------------------- Fontset config
 
-_PRESETS = {"stix", "stixsans", "cm", "dejavusans", "dejavuserif"}
-_LAST_FONTSET = "stixsans"
+from dataclasses import dataclass
 
-def configure_math_fonts(fontset:str="stixsans", font_dir:str|None=None):
-  """Configure matplotlib mathtext fonts.
+_PRESETS = {"stix", "stixsans", "cm", "dejavusans", "dejavuserif"}
+
+@dataclass
+class MathFontConfig:
+  """Per-renderer matplotlib mathtext settings.
+
+  matplotlib's `rcParams` are process-global, so two `MarkdownRenderer`
+  instances with different `math_fontset` would clobber each other if we
+  set rcParams at construction time. We now hold the config per-renderer
+  and apply it via `apply()` immediately before each math render call.
+  """
+  fontset: str = "stixsans"
+  rm: str|None = None
+  it: str|None = None
+  bf: str|None = None
+  sf: str|None = None
+  tt: str|None = None
+  cal: str|None = None
+
+  def apply(self) -> None:
+    """Write this config into matplotlib's rcParams."""
+    if not _HAS_MATPLOTLIB:
+      return
+    import matplotlib as mpl
+    mpl.rcParams["mathtext.fontset"] = self.fontset
+    if self.fontset == "custom":
+      for key, val in (("mathtext.rm", self.rm), ("mathtext.it", self.it),
+          ("mathtext.bf", self.bf), ("mathtext.sf", self.sf),
+          ("mathtext.tt", self.tt), ("mathtext.cal", self.cal)):
+        if val:
+          mpl.rcParams[key] = val
+
+def configure_math_fonts(
+  fontset: str = "stixsans",
+  font_dir: str|None = None,
+) -> MathFontConfig:
+  """Build a `MathFontConfig` for the given fontset.
+
   Args:
     fontset: Either a matplotlib preset (`"stix"`, `"stixsans"`, `"cm"`,
       `"dejavusans"`, `"dejavuserif"`) or a font family name. When a family
       name is given, the loader looks for `<font_dir>/<family>/<family>-Regular.ttf`
       and registers Regular/Italic/Bold/BoldItalic from that folder.
     font_dir: Root font directory (only used when `fontset` is a family name).
+
+  Returns a `MathFontConfig` the renderer stores and applies before each
+  math render. Custom-font TTFs ARE registered with matplotlib at this
+  point - that's a one-time global side-effect - but the rcParams
+  assignment happens lazily inside `MathFontConfig.apply()`.
   """
-  global _LAST_FONTSET
   if not _HAS_MATPLOTLIB:
-    return
-  import matplotlib as mpl
+    return MathFontConfig(fontset="stixsans")
   if fontset in _PRESETS:
-    mpl.rcParams["mathtext.fontset"] = fontset
-    _LAST_FONTSET = fontset
-    return
+    return MathFontConfig(fontset=fontset)
   if not font_dir:
-    mpl.rcParams["mathtext.fontset"] = "stixsans"
-    _LAST_FONTSET = "stixsans"
-    return
+    return MathFontConfig(fontset="stixsans")
   family = fontset
   base = Path(font_dir) / family
   rm_path = base / f"{family}-Regular.ttf"
   if not rm_path.exists():
-    mpl.rcParams["mathtext.fontset"] = "stixsans"
-    _LAST_FONTSET = "stixsans"
-    return
+    return MathFontConfig(fontset="stixsans")
   rm_name = _register_ttf(rm_path)
   it_name = _register_ttf(base / f"{family}-Italic.ttf") or rm_name
   bf_name = _register_ttf(base / f"{family}-Bold.ttf") or rm_name
   bi_name = _register_ttf(base / f"{family}-BoldItalic.ttf") or it_name
-  mpl.rcParams["mathtext.fontset"] = "custom"
-  mpl.rcParams["mathtext.rm"] = rm_name
-  mpl.rcParams["mathtext.it"] = it_name
-  mpl.rcParams["mathtext.bf"] = bf_name
-  mpl.rcParams["mathtext.sf"] = rm_name
-  mpl.rcParams["mathtext.tt"] = rm_name
-  mpl.rcParams["mathtext.cal"] = bi_name
-  _LAST_FONTSET = "custom"
+  return MathFontConfig(
+    fontset="custom",
+    rm=rm_name, it=it_name, bf=bf_name,
+    sf=rm_name, tt=rm_name, cal=bi_name,
+  )
 
 def _register_ttf(path:"Path") -> str|None:
   """Register a TTF with matplotlib and return its real family name.
@@ -89,16 +118,6 @@ def _register_ttf(path:"Path") -> str|None:
     return FT2Font(str(path)).family_name
   except Exception:
     return path.stem
-
-def _ensure_fontset():
-  """Re-apply last configured fontset. Call before every render because
-  matplotlib's rcParams are global and may have been clobbered by other
-  code using matplotlib (e.g. user imported pyplot after us)."""
-  if not _HAS_MATPLOTLIB:
-    return
-  import matplotlib as mpl
-  if mpl.rcParams["mathtext.fontset"] != _LAST_FONTSET:
-    mpl.rcParams["mathtext.fontset"] = _LAST_FONTSET
 
 #----------------------------------------------------------------------------------- Preprocess
 
@@ -146,13 +165,22 @@ def _preprocess_formula(formula:str) -> str:
 
 #--------------------------------------------------------------------------------------- Render
 
-def render_math_svg(formula:str, fontsize:float=11, color:tuple=(0, 0, 0)):
+def render_math_svg(
+  formula: str,
+  fontsize: float = 11,
+  color: tuple = (0, 0, 0),
+  config: MathFontConfig|None = None,
+):
   """Render a math formula as a reportlab `Drawing` (vector).
 
   Args:
     formula: LaTeX source (without surrounding `$...$`).
     fontsize: Font size in points.
     color: RGB tuple (0-1 range) for glyph color.
+    config: Per-renderer `MathFontConfig`. Applied to matplotlib's global
+      rcParams immediately before rendering, so multiple renderers with
+      different fontsets coexist cleanly. Pass `None` to render with
+      whatever fontset rcParams currently holds.
 
   Returns:
     `reportlab.graphics.shapes.Drawing` object with `.width` and `.height`
@@ -161,7 +189,8 @@ def render_math_svg(formula:str, fontsize:float=11, color:tuple=(0, 0, 0)):
   """
   if not _HAS_MATPLOTLIB:
     return None
-  _ensure_fontset()
+  if config is not None:
+    config.apply()
   formula = _preprocess_formula(formula)
   try:
     fig = Figure(figsize=(10, 2))
@@ -189,6 +218,7 @@ def render_math_svg_with_baseline(
   formula: str,
   fontsize: float = 11,
   color: tuple = (0, 0, 0),
+  config: MathFontConfig|None = None,
 ):
   """Render math and return `(drawing, baseline_from_bottom_pt)`.
 
@@ -196,17 +226,14 @@ def render_math_svg_with_baseline(
   baseline, in points. For inline alignment: place the drawing so that
   `drawing.bottom = text_baseline - baseline_from_bottom_pt`.
 
-  Technique: render the formula at (0, 0) with `va='baseline'`, then use
-  `get_tightbbox` to find the bbox of the inked region. In matplotlib
-  display coords, y=0 is the baseline. The distance from bbox bottom (y_min
-  of ink) up to y=0 gives us how far below the baseline the lowest ink
-  extends (descent). `baseline_from_bottom = -y_min_of_bbox_display_pt`.
+  See `render_math_svg` for the `config` argument.
 
   Returns `(drawing, baseline_from_bottom_pt)` or `(None, 0)` on failure.
   """
   if not _HAS_MATPLOTLIB:
     return None, 0
-  _ensure_fontset()
+  if config is not None:
+    config.apply()
   formula = _preprocess_formula(formula)
   try:
     from matplotlib.backends.backend_agg import FigureCanvasAgg

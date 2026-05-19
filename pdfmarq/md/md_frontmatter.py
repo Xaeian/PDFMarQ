@@ -59,6 +59,11 @@ def peek_frontmatter(md_text:str) -> dict|None:
 #----------------------------------------------------------------------------- FrontmatterMixin
 
 class FrontmatterMixin:
+  """
+  YAML frontmatter banner rendering and metadata extraction
+  (title / author / dates / status badges). Mixed into `MarkdownRenderer`.
+  """
+
   def _extract_frontmatter(self, md_text:str) -> tuple[dict|None, str]:
     """Strip YAML frontmatter from `md_text` and return (data, remainder).
     Returns `(None, md_text)` if no frontmatter or YAML parsing fails.
@@ -98,6 +103,7 @@ class FrontmatterMixin:
   #------------------------------------------------------------------------------------- Header
   
   def _render_frontmatter_header(self, data:dict):
+  
     """Render the full document header on the current (first) page.
     Iteratively shrinks the logo column when the text column is shorter
     than `banner_logo_max_h`, giving the text more horizontal space.
@@ -405,6 +411,7 @@ class FrontmatterMixin:
   #-------------------------------------------------------------------------- Page chrome
   
   def _render_page_chrome(self, pdf, page_num:int):
+  
     """Per-page callback. Mini-header on pages 2+ only.
     Page number is drawn via `_render_page_number` registered as on_final_page
     (deferred) so it can include the total page count.
@@ -594,8 +601,7 @@ class FrontmatterMixin:
     text_w = c.stringWidth(label, font, s.mini_banner_size - 1)
     badge_w = text_w + pad_x * 2
     badge_h = s.mini_banner_size + pad_y * 2 - 1
-    if anchor == "center":
-      bx = x_pt - badge_w / 2
+    if anchor == "center": bx = x_pt - badge_w / 2
     else:
       bx = x_pt
     # Whole badge raised 0.2mm
@@ -640,6 +646,7 @@ class FrontmatterMixin:
   #---------------------------------------------------------------------------------- Signature
   
   def _render_signature_block(self):
+  
     """Right-aligned signature line + italic label, at the end of the document.
     Line uses the same color and thickness as other rules in the header.
     Extra ~1cm vertical space is reserved above the line for the actual signature.

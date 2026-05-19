@@ -13,9 +13,9 @@ from .markdown_style import MarkdownStyle
 #------------------------------------------------------------------------------------ Constants
 
 _FONT_FILES = {
-  "Regular":    "{family}.ttf",
-  "Bold":       "{family}-Bold.ttf",
-  "Italic":     "{family}-Oblique.ttf",
+  "Regular": "{family}.ttf",
+  "Bold": "{family}-Bold.ttf",
+  "Italic": "{family}-Oblique.ttf",
   "BoldItalic": "{family}-BoldOblique.ttf",
 }
 _FONT_DIRS = [
@@ -27,6 +27,12 @@ _FONT_DIRS = [
 #----------------------------------------------------------------------------------- FontsMixin
 
 class FontsMixin:
+  """
+  Default font auto-registration. Ensures the body / heading / mono
+  families requested by `MarkdownStyle` are loaded before the first
+  draw. Mixed into `MarkdownRenderer`.
+  """
+
   _FONT_FILES = _FONT_FILES
   _FONT_DIRS = _FONT_DIRS
 
@@ -61,9 +67,9 @@ class FontsMixin:
       import reportlab, os
       base = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
       return {
-        "Regular":    os.path.join(base, "Vera.ttf"),
-        "Bold":       os.path.join(base, "VeraBd.ttf"),
-        "Italic":     os.path.join(base, "VeraIt.ttf"),
+        "Regular": os.path.join(base, "Vera.ttf"),
+        "Bold": os.path.join(base, "VeraBd.ttf"),
+        "Italic": os.path.join(base, "VeraIt.ttf"),
         "BoldItalic": os.path.join(base, "VeraBI.ttf"),
       }
     except Exception:

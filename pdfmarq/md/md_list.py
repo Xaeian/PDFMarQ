@@ -13,6 +13,11 @@ from ..constants import Align, MM_TO_PT
 #------------------------------------------------------------------------------------ ListMixin
 
 class ListMixin:
+  """
+  Bullet and ordered list rendering, including task lists (`[ ]`, `[x]`)
+  and nesting. Mixed into `MarkdownRenderer`.
+  """
+
   def _render_list(self, tokens:list[Token], start:int, ordered:bool) -> int:
     s = self.style
     open_type = "ordered_list_open" if ordered else "bullet_list_open"
@@ -62,7 +67,7 @@ class ListMixin:
     # Pre-measure first paragraph so the prefix (number/bullet) doesn't get
     # orphaned on the previous page when the content wraps to a new one.
     # Without this, `_render_paragraph` triggers its own page-break AFTER the
-    # prefix is already drawn — leaving "4." alone on the last line.
+    # prefix is already drawn - leaving "4." alone on the last line.
     needed = self._measure_item_first_para(item_tokens)
     page_avail = self.pdf.content_height
     if needed <= page_avail * 0.9 and needed > (page_avail - self.pdf.y):
@@ -97,7 +102,7 @@ class ListMixin:
     self.pdf.cursor(self._indent_mm, self.pdf.y)
 
   def _measure_item_first_para(self, item_tokens:list[Token]) -> float:
-    """Height (mm) of the first paragraph in a list item — used as the
+    """Height (mm) of the first paragraph in a list item - used as the
     keep-together reservation in `_render_list_item`. Falls back to two
     body lines when the item starts with something other than a paragraph
     (nested list, code block, etc.) since those have their own break logic."""
@@ -119,7 +124,7 @@ class ListMixin:
           except Exception:
             pass
         break
-      # Non-paragraph leading content (nested list, fence, etc.) — defer to
+      # Non-paragraph leading content (nested list, fence, etc.) - defer to
       # that block's own keep logic; reserve minimum two lines here.
       if t.type not in ("paragraph_close",):
         break

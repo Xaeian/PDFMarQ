@@ -13,8 +13,8 @@ class Unit:
   MM = 1.0
   CM = 10.0
   INCH = 25.4
-  PT = 25.4 / 72   # ≈ 0.35278 mm - exact
-  PX = 25.4 / 96   # ≈ 0.26458 mm - 96 DPI
+  PT = 25.4 / 72  # ≈ 0.35278 mm - exact
+  PX = 25.4 / 96  # ≈ 0.26458 mm - 96 DPI
 
 #------------------------------------------------------------------------------------- PageSize
 
@@ -24,6 +24,7 @@ class PageSize:
   width: float
   height: float
   def landscape(self) -> "PageSize":
+    """Return a copy with width/height swapped (landscape orientation)."""
     return PageSize(self.height, self.width)
 
 A4 = PageSize(210, 297)
@@ -57,12 +58,14 @@ class Colors:
 #------------------------------------------------------------------------------------- Defaults
 
 class Defaults:
-  """Default values for PDF generation."""
+  """Default values for PDF generation. Numerics match `docmarq.Defaults`
+  for cross-lib consistency; `FONT_FAMILY` differs by format (reportlab
+  built-in vs. Word built-in)."""
   PAGE_WIDTH = 210
   PAGE_HEIGHT = 297
-  MARGIN = 15
+  MARGIN = 20
   FONT_FAMILY = "Helvetica"
-  FONT_SIZE = 12
+  FONT_SIZE = 11
   FONT_MODE = "Regular"
-  LINE_HEIGHT = 1.2
+  LINE_HEIGHT = 1.15
   UNIT = "mm"

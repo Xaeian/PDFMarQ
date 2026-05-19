@@ -15,12 +15,17 @@ for that, a page break is inserted first.
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
 from ..constants import Align, MM_TO_PT
+from ..utils import smaller_size
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
 )
 
 #----------------------------------------------------------------------------------- TableMixin
 class TableMixin:
+  """
+  Markdown table rendering with HTML-like auto-layout column widths and
+  inline image support in cells. Mixed into `MarkdownRenderer`.
+  """
 
   def _extract_cell_image(self, inline_token:Token|None) -> ImageInfo|None:
     """If a cell contains only a single local image, return its `ImageInfo`.
@@ -32,13 +37,13 @@ class TableMixin:
       return None
     children = inline_token.children or []
     nontrivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
-    if len(nontrivial) != 1 or nontrivial[0].type != "image":
-      return None
+    if len(nontrivial) != 1 or nontrivial[0].type != "image": return None
     img = nontrivial[0]
     img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
     src = img_attrs.get("src", "")
     if not src or src.startswith(("http://", "https://")):
       return None
+    src = self._resolve_image_path(src)
     return load_image_info(
       src, attrs=img_attrs, alt=img.content or "",
       default_dpi=self.style.image_dpi,
@@ -71,8 +76,7 @@ class TableMixin:
         k = j + 1
         cell_inline: Token|None = None
         while k < end and tokens[k].type != close_type:
-          if tokens[k].type == "inline":
-            cell_inline = tokens[k]
+          if tokens[k].type == "inline": cell_inline = tokens[k]
           k += 1
         current_row.append(cell_inline)
         j = k
@@ -82,7 +86,7 @@ class TableMixin:
         len(body_rows[0]) if body_rows else 1)
       aligns = [Align.LEFT] * ncols
     # Header-only table (no body rows) is virtually always a headerless layout
-    # — markdown tables require a header per spec, so users emulate "card" or
+    # - markdown tables require a header per spec, so users emulate "card" or
     # "labeled-row" tables by writing one row + separator. Demote to body.
     if header_cells and not body_rows:
       body_rows = [header_cells]
@@ -111,7 +115,10 @@ class TableMixin:
     ncols = len(header) if header else (len(body[0]) if body else 1)
     h_pad = s.table_h_pad
     v_pad = s.table_pad
-    text_top_offset = s.body_size * 0.30 / MM_TO_PT
+    # `table_size=None` (default) → derive one ladder step below body so the
+    # same body_pt yields the same cell size in pdfmarq + docmarq output.
+    cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
+    text_top_offset = cell_size * 0.30 / MM_TO_PT
 
     def cell_data(inline_token:Token|None, bold:bool) -> dict:
       """Convert one cell to a render-ready dict.
@@ -124,16 +131,21 @@ class TableMixin:
       fallback = [RichSegment(
         text=" ", family=s.body_family,
         mode=s.bold_mode if bold else s.body_mode,
-        size=s.body_size, color=s.body_color,
+        size=cell_size, color=s.body_color,
       )]
       if inline_token is None:
         return {"type": "text", "segs": fallback}
       base = RichSegment(
         text="", family=s.body_family,
         mode=s.bold_mode if bold else s.body_mode,
-        size=s.body_size, color=s.body_color,
+        size=cell_size, color=s.body_color,
       )
       segs = self._inline_to_segments(inline_token, base) or fallback
+      # Inline segments may have inherited body_size from defaults - coerce
+      # to cell_size so tables consistently render at the smaller table font.
+      for seg in segs:
+        if seg.math_drawing is None and seg.size == s.body_size:
+          seg.size = cell_size
       return {"type": "text", "segs": segs}
 
     # Pre-convert all cells (reused across pages)
@@ -149,9 +161,9 @@ class TableMixin:
       header_data, body_data, ncols, total_w, h_pad)
 
     # Row heights (pre-measured, reused)
-    min_row_h = s.body_size * s.line_height / MM_TO_PT + v_pad * 2
+    min_row_h = cell_size * s.line_height / MM_TO_PT + v_pad * 2
 
-    # Inline cap reused everywhere — derived from style
+    # Inline cap reused everywhere - derived from style
     inline_cap_mm = s.inline_image_max_h
 
     def cell_height(cd:dict, text_w_mm:float) -> float:
@@ -315,7 +327,7 @@ class TableMixin:
     sum_min = sum(col_min)
     if sum_max <= total_w:
       # Distribute leftover only to non-image cols. Image cols stay at col_max
-      # — letting them grow makes the image puff up to fill, which is wrong
+      # - letting them grow makes the image puff up to fill, which is wrong
       # in tables with sparse content.
       col_widths = list(col_max)
       leftover = total_w - sum_max
@@ -332,7 +344,7 @@ class TableMixin:
       col_widths = [m * scale for m in col_min]
     else:
       # Overflow: solver shrinks each col proportionally between min and max.
-      # Image cols treated as text — they shrink alongside, but their col_min
+      # Image cols treated as text - they shrink alongside, but their col_min
       # is icon-scale, so they never go below that floor.
       slack = total_w - sum_min
       diffs = [col_max[i] - col_min[i] for i in range(ncols)]
@@ -366,7 +378,7 @@ class TableMixin:
   ) -> tuple[list[float], list[float]]:
     """Reflow widths so each pure-image col's rendered height matches the
     height of its widest text-col partner. Skipped for mixed cols (image
-    rows + text rows in the same col) — there the col already needs full
+    rows + text rows in the same col) - there the col already needs full
     text width and balancing would crush wider text rows.
 
     Donor cols are non-image cols only.
@@ -382,8 +394,9 @@ class TableMixin:
       return col_widths, text_width_mm
     pdf = self.pdf
     s = self.style
-    line_h_mm = s.body_size * s.line_height / MM_TO_PT
-    char_w_pt = pdf._metrics.text_width("M", s.body_family, s.body_mode, s.body_size)
+    cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
+    line_h_mm = cell_size * s.line_height / MM_TO_PT
+    char_w_pt = pdf._metrics.text_width("M", s.body_family, s.body_mode, cell_size)
     char_w_mm = char_w_pt / MM_TO_PT
     for ic in range(ncols):
       if not is_image_col[ic]:
@@ -406,8 +419,7 @@ class TableMixin:
       # Estimate text "char-area" K_max across rows (use widest row's text)
       K = 0.0
       for row in all_rows:
-        if tc >= len(row) or row[tc]["type"] != "text":
-          continue
+        if tc >= len(row) or row[tc]["type"] != "text": continue
         # Sum of segment widths approximates char-area: (total_text_w_mm × line_h)
         from ..inline import measure_extent
         _, text_w_mm = measure_extent(pdf, row[tc]["segs"])

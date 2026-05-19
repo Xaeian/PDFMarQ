@@ -17,7 +17,9 @@ from .md_images import load_image_info, size_block, size_inline, ImageInfo
 #---------------------------------------------------------------------------------- BlocksMixin
 
 class BlocksMixin:
-  
+  """Headings, paragraphs, code blocks, horizontal rules, math blocks,
+  and standalone block images. Mixed into `MarkdownRenderer`."""
+
   #------------------------------------------------------------------------------------ Heading
   
   def _render_heading(self, level:int, inline_token:Token, lookahead_mm:float=0):
@@ -115,12 +117,17 @@ class BlocksMixin:
   def _render_code_block(self, content:str, lang:str=""):
     s = self.style
     content = content.rstrip("\n")
-    # Mermaid renders to image; falls back to plain code block on failure.
-    # The mermaid module itself is local but may need PIL or mermaid-cli.
-    if lang == "mermaid":
+    # Mermaid renders to image; falls back to plain code block on failure or
+    # when `style.mermaid_enable=False`. Backend config (theme/bg/scale/cli)
+    # comes from the style so two renderers in one process don't share state.
+    if lang == "mermaid" and s.mermaid_enable:
       try:
         from .mermaid import render_mermaid
-        result = render_mermaid(content)
+        result = render_mermaid(
+          content,
+          cli=s.mermaid_cli, theme=s.mermaid_theme,
+          background=s.mermaid_background, scale=s.mermaid_scale,
+        )
       except ImportError:
         from .._warn import warn_missing
         warn_missing("mermaid", "Pillow", "mermaid diagrams")
@@ -196,11 +203,13 @@ class BlocksMixin:
   #------------------------------------------------------------------------------------- Images
   
   def _load_inline_image(self, src:str, fontsize_pt:float, attrs:dict|None=None):
+  
     """Load a local image → scaled reportlab Drawing, or `None` on failure.
 
     Used for inline mid-paragraph images: capped at `inline_image_max_h`
     via `size_inline` so an inline image never blows up line height.
     """
+    src = self._resolve_image_path(src)
     info = load_image_info(src, attrs=attrs, default_dpi=self.style.image_dpi)
     if info is None:
       return None
@@ -216,7 +225,7 @@ class BlocksMixin:
         if src_drawing is None or src_drawing.width <= 0 or src_drawing.height <= 0:
           return None
         sx = h_pt / src_drawing.height
-        # Aspect-preserving — for SVGs, width derived from svglib's intrinsic ratio
+        # Aspect-preserving - for SVGs, width derived from svglib's intrinsic ratio
         target_w_pt = src_drawing.width * sx
         src_drawing.transform = (sx, 0, 0, sx, 0, 0)
         d = Drawing(target_w_pt, h_pt)
@@ -235,6 +244,7 @@ class BlocksMixin:
     pdf = self.pdf
     x_start = self._indent_mm
     avail_w_mm = pdf.content_width - x_start
+    src = self._resolve_image_path(src)
     info = load_image_info(src, attrs=attrs, alt=alt, default_dpi=s.image_dpi)
     if info is None:
       base = RichSegment(
@@ -252,7 +262,13 @@ class BlocksMixin:
     )
     self._ensure_space(img_h_mm + s.para_gap)
     y = pdf.y
-    x = x_start + (avail_w_mm - img_w_mm) / 2
+    # DSL `align=L/C/R` overrides the default center; otherwise center stays.
+    if info.align == "L":
+      x = x_start
+    elif info.align == "R":
+      x = x_start + (avail_w_mm - img_w_mm)
+    else:
+      x = x_start + (avail_w_mm - img_w_mm) / 2
     pdf.cursor(x, y)
     if info.is_svg:
       pdf.svg(info.src, img_w_mm, img_h_mm)
@@ -295,6 +311,7 @@ class BlocksMixin:
   #--------------------------------------------------------------------------------- Math block
   
   def _render_math_block(self, formula:str):
+  
     """Render a block-level math formula centered with auto-numbering."""
     s = self.style
     try:
@@ -307,6 +324,7 @@ class BlocksMixin:
       return
     drawing = render_math_svg(
       formula.strip(), fontsize=s.body_size * 1.1, color=s.body_color,
+      config=getattr(self, "_math_config", None),
     )
     if drawing is None:
       self._render_code_block(formula, "")

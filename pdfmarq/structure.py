@@ -28,16 +28,26 @@ class TOCEntry:
 
 @dataclass
 class Metadata:
-  """PDF document metadata."""
+  """PDF document metadata.
+
+  `comments` and `category` are accepted for cross-lib parity with
+  `docmarq.Metadata`; they are stored but NOT applied to the PDF /Info
+  dictionary because reportlab's `Canvas` has no native setter for them.
+  Round-tripping through the dataclass works; the resulting PDF file
+  won't carry those fields.
+  """
   title: str|None = None
   author: str|None = None
   subject: str|None = None
   keywords: str|None = None
+  comments: str|None = None
+  category: str|None = None
   creator: str = "pdfmarq"
   producer: str|None = None
 
   def apply(self, canvas):
-    """Apply metadata to canvas."""
+    """Apply metadata to canvas. `comments`/`category` are stored on the
+    instance but not pushed to the PDF (no reportlab setter)."""
     if self.title: canvas.setTitle(self.title)
     if self.author: canvas.setAuthor(self.author)
     if self.subject: canvas.setSubject(self.subject)
@@ -112,7 +122,6 @@ class LinkManager:
       y = (page_height - link["y"] - link["height"]) * RL_MM
       w = link["width"] * RL_MM
       h = link["height"] * RL_MM
-      if link["type"] == "url":
-        canvas.linkURL(link["url"], (x, y, x + w, y + h), relative=0)
+      if link["type"] == "url": canvas.linkURL(link["url"], (x, y, x + w, y + h), relative=0)
       else:
         canvas.linkAbsolute(link["dest"], (x, y, x + w, y + h))

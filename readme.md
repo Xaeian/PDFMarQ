@@ -54,13 +54,15 @@ style = MarkdownStyle(
 md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")
 ```
 
+See [`example.py`](example.py) for an end-to-end CLI script: language preset, custom TTF fonts from `./fonts/`, `link_root` for cross-document references, `base_dir` for relative images, and optional Ghostscript post-compression.
+
 ## Markdown features
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block, landscape flag)_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
-- Built-in language presets _(en/pl/de/fr/es/it/cs/sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
+- Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
 - Skip-duplicate-title: drops `# X` when it matches frontmatter `title`
 - Auto-slugged headings with clickable `[text](#anchor)` internal links _(unicode-aware, broken targets degrade to plain text)_
 - Local-path links configurable via `link_root` + `link_base` _(or per-doc YAML `base:`)_
@@ -78,3 +80,7 @@ md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")
 | ------------ | -------------------------------------------------- | -------------------------------------------- |
 | `pdfmarq`    | Core PDF API _(fluent cursor-based drawing)_       | [pdfmarq/readme.md](pdfmarq/readme.md)       |
 | `pdfmarq.md` | Markdown-to-PDF renderer _(optional `[md]` extra)_ | [pdfmarq/md/readme.md](pdfmarq/md/readme.md) |
+
+## See also
+
+Need `.docx` instead of PDF? [**DocMarQ**](https://github.com/Xaeian/DocMarQ) — sibling library, same API shape, `.docx` output. Math and syntax highlighting are PDF-only; everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.
