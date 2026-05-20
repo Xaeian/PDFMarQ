@@ -1,6 +1,6 @@
 # Changes `pdfmarq`
 
-## `0.2.0` Directives, DSL & docmarq parity
+## `0.3.0` Directives, DSL & docmarq parity
 
 - Directives `<!-- pagebreak -->`, `<!-- group -->`
 - Image title DSL: `max_w max_h w h scale align`
@@ -8,7 +8,7 @@
 - API parity with `docmarq`
 - Auto-derived table + footnote font sizes
 
-## `0.1.2` HTML, Table IMG & Lang
+## `0.2.0` HTML, Table IMG & Lang
 
 - Improved image handling in tables
 - Basic HTML tags: `<b>`, `<i>`, `<code>`, `<br>`, `<hr>`

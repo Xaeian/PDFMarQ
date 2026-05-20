@@ -83,4 +83,4 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 
 ## See also
 
-Need `.docx` instead of PDF? [**DocMarQ**](https://github.com/Xaeian/DocMarQ) — sibling library, same API shape, `.docx` output. Math and syntax highlighting are PDF-only; everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.
+Need `.docx` instead of PDF? Check [**DocMarQ**](https://github.com/Xaeian/DocMarQ), the sibling library with the same API shape and `.docx` output. Math and syntax highlighting are PDF-only. Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.

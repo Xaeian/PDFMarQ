@@ -107,7 +107,7 @@ md_to_pdf(md_text, "out.pdf", style=style)
 
 ### Banner labels (i18n)
 
-Labels in the banner, footer, and callouts are style fields — defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
+Labels in the banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
 ```py
 from pdfmarq.md import lang_style, md_to_pdf
@@ -220,7 +220,7 @@ Tag set lives in `pdfmarq/md/md_html.py` if you need to extend it.
 
 ### Headerless tables
 
-Markdown tables require a header row per spec, but a single-row "card" layout is a common pattern. A table with header but no body is rendered as headerless — useful for label/value blocks and contact cards:
+Markdown tables require a header row per spec, but a single-row "card" layout is a common pattern. A table with header but no body is rendered as headerless, useful for label/value blocks and contact cards:
 
 ```md
 | ![](logo.svg) | Pocket Diagnostics Poland sp. z o.o<br>80-890 Gdańsk<br>Jana Heweliusza 11/811 |
@@ -234,7 +234,7 @@ Markdown tables require a header row per spec, but a single-row "card" layout is
 ---
 ```
 
-CommonMark parses this as a setext h2 with the image as heading text — a common footgun that would render the image at heading-inline size _(thumbnail)_. `pdfmarq` detects the image-only setext case and renders it as a block image followed by an `<hr>`, matching the user's actual intent.
+CommonMark parses this as a setext h2 with the image as heading text. This is a common footgun that would render the image at heading-inline size _(thumbnail)_. `pdfmarq` detects the image-only setext case and renders it as a block image followed by an `<hr>`, matching the user's actual intent.
 
 ## Mixing with core API
 
