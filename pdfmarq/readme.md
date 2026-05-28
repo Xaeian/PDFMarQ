@@ -194,7 +194,7 @@ style = lang_style("pl", body_size=11, footnote_label="Bibliografia")
 md_to_pdf(text, "doc.pdf", style=style)
 # Relative image paths resolved against base_dir
 md_to_pdf(text, "doc.pdf", base_dir="./assets")
-# Landscape via YAML frontmatter (`landscape: true`) or explicit kwarg
+# Landscape via YAML frontmatter `render.landscape: true` or explicit kwarg
 md_to_pdf(text, "doc.pdf", landscape=True)
 ```
 

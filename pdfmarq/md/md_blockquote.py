@@ -92,8 +92,12 @@ class BlockquoteMixin:
       total_h += s.body_size * (s.line_height - 1.0) / MM_TO_PT  # title→content gap
     total_h += body_line_mm * 0.5  # padding
     page_avail = self.pdf.content_height
-    if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
-      self.pdf.new_page()
+    # Skip own pre-break when inside a `<!-- group -->` directive - the
+    # group owns atomicity. Otherwise the blockquote can break independently
+    # and leave the previous block (figure, code) orphaned above.
+    if not getattr(self, "_in_group", False):
+      if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
+        self.pdf.new_page()
     x_start = self._indent_mm
     y_start = self.pdf.y
     # Callout overrides bar color + adds a bold title line at top

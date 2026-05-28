@@ -64,8 +64,18 @@ class EstimateMixin:
       n_rows = sum(1 for j in range(start, end) if tokens[j].type == "tr_open")
       return min(n_rows, 5) * 8
     if ttype in ("fence", "code_block"):
-      lang = (t.info or "").strip().split()[0] if t.info else ""
-      if lang == "mermaid": return 60 # mermaid renders to image - reserve ~60mm
+      parts = (t.info or "").strip().split(maxsplit=1)
+      lang = parts[0] if parts else ""
+      info_rest = parts[1] if len(parts) > 1 else ""
+      if lang == "mermaid":
+        # Read DSL `h` / `max_h` if present; fall back to `image_max_h` cap.
+        if info_rest:
+          from .md_images import parse_image_dsl
+          dsl = parse_image_dsl(info_rest)
+          if dsl.is_dsl:
+            if dsl.exact_h_mm is not None: return dsl.exact_h_mm
+            if dsl.max_h_mm is not None: return dsl.max_h_mm
+        return s.image_max_h
       lines = (t.content or "").count("\n") + 1
       pad = s.code_block_pad * 2
       return min(lines, 6) * (s.code_block_size * s.line_height / MM_TO_PT) + pad

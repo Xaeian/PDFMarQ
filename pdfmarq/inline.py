@@ -11,6 +11,7 @@ simpler single-style variant and is unchanged.
 from dataclasses import dataclass
 import re
 from reportlab.lib.colors import Color
+from reportlab.pdfbase import pdfmetrics
 from .constants import Align, MM_TO_PT
 from .fonts import is_builtin, builtin_name
 
@@ -30,6 +31,16 @@ _UNDERLINE_OFFSET_PT = 1.0  # underline distance below baseline (pt, size-indepe
 # Inline-code shaded background padding (pt - not font-size relative).
 _BG_INNER_PAD_PT = 2.5  # bg rect extends this far past glyphs
 _BG_OUTER_GAP_PT = 1.2  # extra gap between bg rect and adjacent text
+# Total horizontal overhead a single inline-code run draws on top of its
+# glyph width (outer gap + inner pad on each side). Used by `measure_extent`
+# so table column-width estimation reserves room for the shaded rect.
+_BG_RUN_EXTRA_PT = 2 * (_BG_OUTER_GAP_PT + _BG_INNER_PAD_PT)
+
+# Preferred break points inside a token wider than the wrap width
+# (URLs, long file paths). Break happens AFTER one of these chars so the
+# delimiter stays attached to the preceding chunk - matches how readers
+# scan URLs. Falls back to character-level break when none is reachable.
+_BREAK_CHARS = "/?&=._-:,;"
 
 # Math drawings: tiny breathing room around an inline formula (pt).
 _MATH_INLINE_PAD_PT = 1.0
@@ -96,6 +107,67 @@ class RichSegment:
     elif self.italic:
       self.mode = "Italic"
 
+#---------------------------------------------------------------------------- Glyph fallback
+
+# Visually-equivalent codepoints. Many fonts (IBM Plex, Inter, ...) ship the
+# glyph under one of these but not the other; e.g. IBM Plex Sans has Ω only
+# at U+2126 (Ohm sign), not U+03A9 (Greek capital Omega) which is what most
+# editors emit. We remap to whichever codepoint the font actually has so the
+# user sees the glyph instead of a `.notdef` box.
+_GLYPH_EQUIVALENTS: dict[int, int] = {
+  0x03A9: 0x2126, 0x2126: 0x03A9,  # Greek Omega ↔ Ohm sign
+  0x03BC: 0x00B5, 0x00B5: 0x03BC,  # Greek mu ↔ micro sign
+  0x0394: 0x2206, 0x2206: 0x0394,  # Greek Delta ↔ Increment
+  0x03A3: 0x2211, 0x2211: 0x03A3,  # Greek Sigma ↔ N-ary summation
+  0x03A0: 0x220F, 0x220F: 0x03A0,  # Greek Pi ↔ N-ary product
+  0x2212: 0x002D,                  # Minus sign → hyphen-minus
+}
+
+_cmap_cache: dict[str, dict|None] = {}
+_remap_cache: dict[tuple[str, str], str] = {}
+
+def _font_cmap(font_name:str) -> dict|None:
+  """Return the char→glyph dict for a registered TTF font, or None for
+  builtins / unregistered. Result cached - the dict identity is stable
+  for the lifetime of the process."""
+  cached = _cmap_cache.get(font_name)
+  if cached is not None or font_name in _cmap_cache:
+    return cached
+  try:
+    face = pdfmetrics.getFont(font_name).face
+    cmap = getattr(face, "charToGlyph", None)
+  except Exception:
+    cmap = None
+  _cmap_cache[font_name] = cmap
+  return cmap
+
+def _remap_for_font(text:str, font_name:str) -> str:
+  """Substitute codepoints missing from `font_name` with visually-equivalent
+  ones the font does have. Returns `text` unchanged when no substitution is
+  needed (the common case)."""
+  if not text:
+    return text
+  cmap = _font_cmap(font_name)
+  if cmap is None:
+    return text
+  key = (font_name, text)
+  cached = _remap_cache.get(key)
+  if cached is not None:
+    return cached
+  out = None
+  for i, c in enumerate(text):
+    cp = ord(c)
+    if cp in cmap:
+      continue
+    alt = _GLYPH_EQUIVALENTS.get(cp)
+    if alt is not None and alt in cmap:
+      if out is None:
+        out = list(text)
+      out[i] = chr(alt)
+  result = "".join(out) if out is not None else text
+  _remap_cache[key] = result
+  return result
+
 #---------------------------------------------------------------------------------- _Word token
 @dataclass
 class _Word:
@@ -115,7 +187,9 @@ def _effective_size(seg:RichSegment) -> float:
   return seg.size
 
 def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
-  """Split segments into word tokens preserving per-segment style."""
+  """Split segments into word tokens preserving per-segment style.
+  Codepoints missing from the seg's font get remapped to visually-equivalent
+  ones the font has (Ω→Ohm, μ→micro, etc.) before width measurement."""
   words = []
   for seg in segments:
     # `break_line` flag emits a hard break before the segment's content,
@@ -130,7 +204,9 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
       words.append(_Word("", seg, 0, is_space=False, is_break=True))
       continue
     eff_size = _effective_size(seg)
+    font_name = _font_name(seg, metrics.fonts)
     for part in re.findall(r"\S+|\s+", seg.text):
+      part = _remap_for_font(part, font_name)
       w = metrics.text_width(part, seg.family, seg.mode, eff_size)
       words.append(_Word(part, seg, w, is_space=part.isspace()))
   return words
@@ -138,17 +214,52 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
 #----------------------------------------------------------------------------------------- Wrap
 @dataclass
 class _WrapResult:
-  """Output of `_wrap`. `overflow=True` means at least one non-space word
-  was wider than the wrap width - it was emitted unbroken (extends past
-  the right edge) and the caller should warn or fall back."""
+  """Output of `_wrap`. `overflow=True` means a chunk still didn't fit
+  after the force-break pass (wrap width too narrow for even one glyph)."""
   lines: list[list["_Word"]]
   overflow: bool = False
 
+def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
+  """Split a token wider than `width_pt` into chunks each fitting the width.
+  Prefers a URL/path delimiter from `_BREAK_CHARS` as the break boundary;
+  falls back to character-level break. All chunks share the original
+  segment so link rect, bg, color, and font stay continuous across the
+  break."""
+  seg = word.seg
+  eff_size = _effective_size(seg)
+  text = word.text
+  if not text:
+    return [word]
+  tw = metrics.text_width
+  family, mode = seg.family, seg.mode
+  chunks: list[_Word] = []
+  i, n = 0, len(text)
+  while i < n:
+    j, last_fit = i + 1, i + 1
+    while j <= n:
+      if tw(text[i:j], family, mode, eff_size) > width_pt:
+        break
+      last_fit = j
+      j += 1
+    if last_fit == i:
+      last_fit = i + 1  # single glyph still > width_pt, emit it anyway
+    if last_fit < n:
+      for k in range(last_fit - 1, i, -1):
+        if text[k-1] in _BREAK_CHARS:
+          last_fit = k
+          break
+    piece = text[i:last_fit]
+    chunks.append(_Word(piece, seg, tw(piece, family, mode, eff_size), is_space=False))
+    i = last_fit
+  return chunks
+
 def _wrap(
-  words:list[_Word], width_pt:float, preserve_leading_space:bool=False,
+  words:list[_Word], width_pt:float, metrics,
+  preserve_leading_space:bool=False,
 ) -> _WrapResult:
-  """Greedy word-wrap honoring hard breaks. Mirrors `text.box_fit` by
-  also returning an `overflow` flag for words that couldn't be wrapped.
+  """Greedy word-wrap honoring hard breaks. Tokens wider than `width_pt`
+  are force-broken via `_break_oversized` (preferred at URL delimiters),
+  so long links and paths don't spill past the right edge.
 
   Args:
     preserve_leading_space: If True, leading whitespace on a line is kept
@@ -163,6 +274,16 @@ def _wrap(
     while line and line[-1].is_space:
       line.pop()
     lines.append(line)
+  def place(w):
+    nonlocal current, current_w, overflow
+    if w.width_pt > width_pt:
+      overflow = True  # even one glyph wider than wrap width
+    if current_w + w.width_pt > width_pt and current:
+      flush(current)
+      current, current_w = [w], w.width_pt
+    else:
+      current.append(w)
+      current_w += w.width_pt
   for w in words:
     if w.is_break:
       flush(current)
@@ -174,16 +295,11 @@ def _wrap(
       current.append(w)
       current_w += w.width_pt
       continue
-    # Single token wider than wrap width - emit on its own line; it'll
-    # overrun the right edge but the alternative is dropping content.
-    if w.width_pt > width_pt and not w.is_space:
-      overflow = True
-    if current_w + w.width_pt > width_pt and current:
-      flush(current)
-      current, current_w = [w], w.width_pt
-    else:
-      current.append(w)
-      current_w += w.width_pt
+    if w.width_pt > width_pt and w.text:
+      for chunk in _break_oversized(w, width_pt, metrics):
+        place(chunk)
+      continue
+    place(w)
   flush(current)
   return _WrapResult(lines, overflow)
 
@@ -252,11 +368,19 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
       continue
     if seg.text == "\n":
       continue
+    # Inline-code draws a shaded rect with outer gap + inner pad on each
+    # side. That overhead must show up here or table columns sized for
+    # `` `x` `` clip the bg rect against the cell border.
+    bg_extra_mm = (_BG_RUN_EXTRA_PT / MM_TO_PT) if seg.bg_color is not None else 0
+    font_name = _font_name(seg, metrics.fonts)
     for part in re.findall(r"\S+|\s+", seg.text):
+      part = _remap_for_font(part, font_name)
       w = metrics.text_width(part, seg.family, seg.mode, seg.size) / MM_TO_PT
       if not part.isspace():
-        if w > max_word: max_word = w
+        word_w = w + bg_extra_mm  # any word may end up alone on a wrapped line
+        if word_w > max_word: max_word = word_w
       total += w
+    total += bg_extra_mm
   return max_word, total
 
 def measure_rich(
@@ -277,7 +401,7 @@ def measure_rich(
   metrics = pdf._metrics
   width_pt = width_mm * MM_TO_PT
   words = _tokenize(segments, metrics)
-  wrapped = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space)
   lines = wrapped.lines
   total_used_mm = 0
   for line in lines:
@@ -321,15 +445,14 @@ def render_rich(
   page = pdf._page
   width_pt = width_mm * MM_TO_PT
   words = _tokenize(segments, metrics)
-  wrapped = _wrap(words, width_pt, preserve_leading_space=preserve_leading_space)
+  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space)
   lines = wrapped.lines
   if wrapped.overflow:
-    # Word too wide for `width_mm` - it'll spill past the right edge. Surface
-    # this once per process so callers (especially `MarkdownRenderer`) know
-    # without breaking the float return contract.
+    # Wrap width too narrow for even a single glyph after force-break.
+    # Pathological - surface it so callers know the column is unusable.
     import warnings
     warnings.warn(
-      f"render_rich: word wider than wrap width ({width_mm:.1f}mm); "
+      f"render_rich: wrap width {width_mm:.1f}mm too narrow for one glyph; "
       "content extends past the right edge",
       RuntimeWarning, stacklevel=2,
     )

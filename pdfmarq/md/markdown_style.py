@@ -38,15 +38,15 @@ class MarkdownStyle:
   """Visual style for markdown rendering, matching GitHub light theme.
 
   Default fonts use **Vera Sans** (Bitstream Vera) bundled with reportlab.
-  Vera has complete Latin-Extended coverage including Polish `ąęłńóśźż`,
-  unlike core-14 Helvetica which lacks them entirely. To use a different
-  font register a TTF via `pdf.fonts.register()` and set `body_family` etc.
+  Vera covers most of Latin Extended-A but is missing some Polish glyphs
+  (ą, ę, ń, ś, ź, ż). For full Polish coverage register a TTF via
+  `pdf.fonts.register()` and set `body_family` to that family.
   """
 
-  # Font families - Vera Sans has Polish glyphs out of the box
+  # Font families
   body_family: str = "Vera"
   head_family: str = "Vera"
-  mono_family: str = "Courier" # keeping Courier for mono; can be overridden
+  mono_family: str = "Courier" # PDF core 14, no TTF needed
 
   # Modes (Vera has dedicated Italic / BoldItalic TTFs)
   body_mode: str = "Regular"
@@ -55,6 +55,7 @@ class MarkdownStyle:
   bold_italic_mode: str = "BoldItalic"
   head_mode: str = "Bold"
   mono_mode: str = "Regular"
+  heavy_mode: str = "Black" # `**bold**` inside bold base escalates to this
 
   # Font sizes (pt). Heading sizes match `docmarq.Defaults.HEAD_SIZES` so
   # the same markdown source renders at the same scale in both libs.
@@ -98,7 +99,7 @@ class MarkdownStyle:
   # Spacing (mm) - tightened for GitHub feel
   line_height: float = 1.4  # ratio of font size
   para_gap: float = 3  # mm between paragraphs
-  head_gap_top: float = 5  # mm above headings
+  head_gap_top: float = 3  # mm above headings
   head_gap_bot: float = 1.5  # mm below headings
   list_indent: float = 6  # mm per list level
   list_gap: float = 0.5  # mm between items (tight)
@@ -173,7 +174,7 @@ class MarkdownStyle:
 
   # Frontmatter header layout (mm)
   banner_pad_top: float = 0  # mm above header block (start near top)
-  banner_pad_bot: float = 8  # mm below header block before body
+  banner_pad_bot: float = 3  # mm below header block before body
   banner_logo_max_h: float = 50  # mm - cap on logo height (page 1, big left column)
   banner_logo_max_w: float = 60  # mm - cap on logo width; overrides height if aspect wide
   banner_title_size: float = 20  # pt - main title (matches `docmarq`)

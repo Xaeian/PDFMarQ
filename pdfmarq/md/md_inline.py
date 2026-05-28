@@ -71,7 +71,10 @@ class InlineMixin:
     in_link = False
     def resolve_mode():
       if is_bold and is_italic: return s.bold_italic_mode
-      if is_bold: return s.bold_mode
+      if is_bold:
+        # Escalate inside bold base (heading); fallback drops to Bold.
+        if base.mode in (s.head_mode, s.bold_mode): return s.heavy_mode
+        return s.bold_mode
       if is_italic: return s.italic_mode
       return base.mode
     def make(text):

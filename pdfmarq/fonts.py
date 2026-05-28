@@ -6,6 +6,15 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
+# Mode fallback when a variant TTF is missing (drops styling, keeps content).
+_MODE_FALLBACK = {
+  "Italic": ["Regular"],
+  "Bold": ["Regular"],
+  "BoldItalic": ["Bold", "Italic", "Regular"],
+  "Oblique": ["Italic", "Regular"],
+  "BoldOblique": ["BoldItalic", "Bold", "Italic", "Regular"],
+}
+
 #---------------------------------------------------------------------------------- FontManager
 
 class FontManager:
@@ -35,15 +44,23 @@ class FontManager:
     raise FileNotFoundError(f"Font not found: {family}-{mode} in {self.font_dir}")
 
   def register(self, family:str, mode:str="Regular") -> str:
-    """Register font and return reportlab font name. Lazy - only registers once."""
-    key = self._font_key(family, mode)
-    if key in self._registered:
+    """Register font, return reportlab name. Missing variants fall back
+    through `_MODE_FALLBACK`. Raises when nothing in the chain exists."""
+    for try_mode in [mode] + _MODE_FALLBACK.get(mode, []):
+      key = self._font_key(family, try_mode)
+      if key in self._registered:
+        return key
+      try:
+        path = self._resolve_path(family, try_mode)
+      except FileNotFoundError:
+        continue
+      pdfmetrics.registerFont(TTFont(key, str(path)))
+      self._registered.add(key)
+      self._paths[key] = str(path)
       return key
-    path = self._resolve_path(family, mode)
-    pdfmetrics.registerFont(TTFont(key, str(path)))
-    self._registered.add(key)
-    self._paths[key] = str(path)
-    return key
+    raise FileNotFoundError(
+      f"Font not found: {family}-{mode} in {self.font_dir} (no fallback worked)"
+    )
 
   def get_path(self, family:str, mode:str="Regular") -> str:
     """Return absolute filesystem path of the TTF for `(family, mode)`.

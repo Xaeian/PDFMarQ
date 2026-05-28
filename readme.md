@@ -59,7 +59,8 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 ## Markdown features
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
-- YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block, landscape flag)_
+- YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block)_
+- Nested `render:` block in frontmatter controls page geometry, fonts, banner toggles, locale _(see [`md-guide`](md-guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers

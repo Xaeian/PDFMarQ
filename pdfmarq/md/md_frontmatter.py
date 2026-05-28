@@ -27,7 +27,7 @@ Supported YAML keys (all optional):
 
 Aliases: `code` -> `id`, `company` -> `entity` (legacy compatibility).
 """
-import os, re
+import os, re, warnings
 from datetime import date, datetime
 from reportlab.lib.colors import Color
 from reportlab.graphics import renderPDF
@@ -100,6 +100,13 @@ class FrontmatterMixin:
         return value
     return str(value)
 
+  def _resolved_logo(self, data:dict|None) -> str|None:
+    """Return frontmatter `logo:` resolved against `base_dir` (or `None`)."""
+    raw = data.get("logo") if data else None
+    if not raw:
+      return None
+    return self._resolve_image_path(raw)
+
   #------------------------------------------------------------------------------------- Header
   
   def _render_frontmatter_header(self, data:dict):
@@ -114,13 +121,16 @@ class FrontmatterMixin:
     pdf.enter(s.banner_pad_top)
     self._frontmatter_data = data
     content_w = pdf.content_width
-    logo_path = data.get("logo")
+    # Logo path resolves like body images: relative joins against `base_dir`,
+    # missing file warns and skips (graceful, no render crash on typo).
+    logo_path = self._resolved_logo(data)
     if logo_path and not os.path.isfile(logo_path):
-      raise FileNotFoundError(
-        f"frontmatter `logo: {logo_path}` not found. "
-        f"Use a path relative to the markdown file (e.g. `./logo.svg`) "
-        f"or an absolute path that exists. cwd={os.getcwd()}"
+      warnings.warn(
+        f"frontmatter `logo: {data.get('logo')}` not found "
+        f"(base_dir={self.base_dir}); rendering without logo",
+        RuntimeWarning, stacklevel=2,
       )
+      logo_path = None
     has_logo = bool(logo_path)
     # Logo aspect ratio (w/h). 1.0 = square, <1.0 = tall, >1.0 = wide.
     logo_aspect = self._get_logo_aspect(logo_path) if has_logo else 1.0
@@ -440,7 +450,11 @@ class FrontmatterMixin:
     data = self._frontmatter_data
     doc_id = data.get("id") or data.get("code") or ""
     title = data.get("title") or ""
-    logo_path = data.get("logo")
+    # Mirror main-banner resolution. Page 1 already warned if missing;
+    # skip silently here to avoid one warning per continuation page.
+    logo_path = self._resolved_logo(data)
+    if logo_path and not os.path.isfile(logo_path):
+      logo_path = None
     version = data.get("version")
     updated = self._format_date(data.get("updated"))
     c = pdf._canvas

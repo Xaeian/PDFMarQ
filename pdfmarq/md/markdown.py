@@ -210,10 +210,13 @@ class MarkdownRenderer(
         self._render_paragraph(tokens[i+1])
         i = close_i + 1
       elif ttype == "fence" or ttype == "code_block":
-        lang = (t.info or "").strip().split()[0] if t.info else ""
+        # Info string: first token = lang, rest = optional DSL (mermaid).
+        info_parts = (t.info or "").strip().split(maxsplit=1)
+        lang = info_parts[0] if info_parts else ""
+        info_rest = info_parts[1] if len(info_parts) > 1 else ""
         if lang == "math": self._render_math_block(t.content)
         else:
-          self._render_code_block(t.content, lang)
+          self._render_code_block(t.content, lang, info_rest)
         i += 1
       elif ttype == "math_block":
         self._render_math_block(t.content)
@@ -361,24 +364,20 @@ class MarkdownRenderer(
     return total
 
   def _render_group(self, tokens:list[Token]):
-    """Render group content, breaking page first if it doesn't fit and
-    a fresh page would help. Existing auto-pagebreak (`_ensure_space`,
-    heading lookahead) stays active during inner rendering - this is
-    pure pre-emptive break, not a replacement.
-
-    Skip the break when:
-      - group fits in the remaining space, OR
-      - group is larger than a full page (break would just emit an empty
-        page top followed by the same overflow), OR
-      - we're already at page top.
-    """
+    """Render group content; pre-break if it doesn't fit but a fresh page
+    would. Sets `_in_group` so inner blocks skip their own pre-break."""
     if not tokens: return
     total_h = self._estimate_group_height(tokens)
     remaining = self.pdf.content_height - self.pdf.y
     page_avail = self.pdf.content_height
     if total_h > remaining and total_h <= page_avail and self.pdf.y > 0.5:
       self.pdf.new_page()
-    self._render_tokens(tokens)
+    was_in_group = getattr(self, "_in_group", False)
+    self._in_group = True
+    try:
+      self._render_tokens(tokens)
+    finally:
+      self._in_group = was_in_group
 
 #------------------------------------------------------------------------------------ md_to_pdf
 
@@ -442,11 +441,6 @@ def md_to_pdf(
     output_path, width=width, height=height,
     margin=margin, font_dir=font_dir,
   )
-  # Gutter from render block is added to left margin uniformly. Mirrors
-  # docmarq's native gutter for single-sided documents; book-style alternating
-  # gutters not supported in this MVP.
-  if render.gutter:
-    pdf._page.margin_left += render.gutter
   # Auto-fill PDF metadata from YAML. Explicit `metadata=` kwarg wins per-key.
   meta = _metadata_from_frontmatter(fm) if fm else {}
   if metadata:

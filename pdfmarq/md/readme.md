@@ -27,7 +27,6 @@ address: 1 Lone Star Boulevard, Dallas TX 75201
 created: 1993-04-21
 updated: 2026-03-15
 sign: true
-landscape: false
 logo: ./ranger-badge.svg
 ---
 
@@ -46,7 +45,6 @@ logo: ./ranger-badge.svg
 | `created`   | ISO date, formatted via `style.date_format`                                          |
 | `updated`   | Same                                                                                 |
 | `sign`      | `true` adds a dashed signature line + label at the end                               |
-| `landscape` | `true` flips page to landscape orientation                                           |
 | `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware _(tall logos take less horizontal space)_ |
 | `subject`   | Written to PDF metadata `/Subject`, not rendered                                     |
 | `keywords`  | Written to PDF metadata `/Keywords`, string or YAML list                             |
@@ -56,6 +54,38 @@ Aliases: `code` → `id`, `company` → `entity` _(legacy)_.
 PDF metadata _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ is auto-filled from matching YAML keys. Pass `metadata={...}` to `md_to_pdf()` to override per-key.
 
 If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Disable with `skip_dup_title=False`.
+
+## Render block
+
+Geometry, fonts, chrome, and locale live under a nested `render:` key in the same frontmatter. All optional; library defaults apply when absent.
+
+```yaml
+---
+title: Report
+render:
+  page: A4              # A4 / A3 / A5 / LETTER / LEGAL
+  margin: 25            # mm; or list [top, right, bot, left]
+  landscape: false      # flip page
+  font_body: IBMPlexSans
+  font_head: Sora       # defaults to `font_body`
+  font_mono: IBMPlexMono
+  font_size: 11         # body pt
+  line_height: 1.4
+  img_max_h: 120        # mm cap on every image (per-image DSL still overrides)
+  banner: true          # page-1 banner from frontmatter
+  banner_min: true      # mini-banner on continuation pages
+  page_number: true     # footer numbering
+  lang: pl              # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
+  mermaid_theme: default # default / dark / forest / neutral
+  syntax_theme: default  # Pygments style name for fenced code
+---
+```
+
+`render.lang:` overrides any explicit `MarkdownStyle()` language preset. For one-off custom page dimensions pass `width=` and `height=` to `md_to_pdf()` directly; `render.page:` only accepts preset names. Mermaid diagrams use `font_body` for label text when a matching TTF lives in the configured `font_dir`.
+
+Precedence: `MarkdownStyle()` defaults < lang preset < frontmatter `render:` keys < caller's `style=` non-default fields. Caller-passed style wins on top.
+
+Top-level `landscape:` in frontmatter is deprecated and warns at parse time; move it under `render.landscape:`.
 
 ## Internal links
 

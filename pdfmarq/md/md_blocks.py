@@ -114,12 +114,10 @@ class BlocksMixin:
 
   #--------------------------------------------------------------------------------- Code block
   
-  def _render_code_block(self, content:str, lang:str=""):
+  def _render_code_block(self, content:str, lang:str="", info_rest:str=""):
     s = self.style
     content = content.rstrip("\n")
-    # Mermaid renders to image; falls back to plain code block on failure or
-    # when `style.mermaid_enable=False`. Backend config (theme/bg/scale/cli)
-    # comes from the style so two renderers in one process don't share state.
+    # Mermaid renders to image. `info_rest` is parsed as image DSL.
     if lang == "mermaid" and s.mermaid_enable:
       try:
         from .mermaid import render_mermaid
@@ -127,6 +125,8 @@ class BlocksMixin:
           content,
           cli=s.mermaid_cli, theme=s.mermaid_theme,
           background=s.mermaid_background, scale=s.mermaid_scale,
+          font_family=s.body_family,
+          font_dir=str(self.pdf._fonts.font_dir),
         )
       except ImportError:
         from .._warn import warn_missing
@@ -134,7 +134,9 @@ class BlocksMixin:
         result = None
       if result is not None:
         path, w_pt, h_pt = result
-        self._render_mermaid_image(path, w_pt, h_pt)
+        from .md_images import parse_image_dsl
+        dsl = parse_image_dsl(info_rest) if info_rest else None
+        self._render_mermaid_image(path, w_pt, h_pt, dsl)
         return
     # Syntax highlighting via pygments. The function returns None when
     # pygments is missing and warns once internally; ImportError handler
@@ -276,10 +278,8 @@ class BlocksMixin:
       pdf.image(info.src, img_w_mm, img_h_mm)
     pdf.cursor(x_start, y + img_h_mm + s.para_gap)
 
-  def _render_mermaid_image(self, png_path:str, w_pt:float, h_pt:float):
-    """Embed a mermaid PNG, scaled to fit content width + max height, centered.
-    Mermaid output has reliable intrinsic dims at 96 DPI from the renderer,
-    so we apply the raster block rule directly without `load_image_info`."""
+  def _render_mermaid_image(self, png_path:str, w_pt:float, h_pt:float, dsl=None):
+    """Embed a mermaid PNG. `dsl` mirrors `![](src "DSL")` image semantics."""
     from .md_images import _clamp_no_upscale
     s = self.style
     pdf = self.pdf
@@ -287,10 +287,31 @@ class BlocksMixin:
     avail_w_mm = pdf.content_width - x_start
     nat_w_mm = w_pt / MM_TO_PT
     nat_h_mm = h_pt / MM_TO_PT
-    img_w_mm, img_h_mm = _clamp_no_upscale(nat_w_mm, nat_h_mm, avail_w_mm, s.image_max_h)
+    # DSL overrides: scale wins absolutely, else explicit w/h, then max_* caps.
+    ew_mm, eh_mm = nat_w_mm, nat_h_mm
+    max_w_cap = avail_w_mm
+    max_h_cap = s.image_max_h
+    align = "C"
+    if dsl is not None and getattr(dsl, "is_dsl", False):
+      if dsl.scale is not None:
+        ew_mm = nat_w_mm * dsl.scale
+        eh_mm = nat_h_mm * dsl.scale
+      else:
+        if dsl.exact_w_mm is not None:
+          ew_mm = dsl.exact_w_mm
+          eh_mm = nat_h_mm * (dsl.exact_w_mm / nat_w_mm) if nat_w_mm > 0 else eh_mm
+        if dsl.exact_h_mm is not None:
+          eh_mm = dsl.exact_h_mm
+          ew_mm = nat_w_mm * (dsl.exact_h_mm / nat_h_mm) if nat_h_mm > 0 else ew_mm
+      if dsl.max_w_mm is not None: max_w_cap = min(max_w_cap, dsl.max_w_mm)
+      if dsl.max_h_mm is not None: max_h_cap = min(max_h_cap, dsl.max_h_mm)
+      if dsl.align: align = dsl.align
+    img_w_mm, img_h_mm = _clamp_no_upscale(ew_mm, eh_mm, max_w_cap, max_h_cap)
     self._ensure_space(img_h_mm + s.para_gap)
     y = pdf.y
-    x = x_start + (avail_w_mm - img_w_mm) / 2
+    if align == "L": x = x_start
+    elif align == "R": x = x_start + (avail_w_mm - img_w_mm)
+    else: x = x_start + (avail_w_mm - img_w_mm) / 2
     pdf.cursor(x, y)
     pdf.image(png_path, img_w_mm, img_h_mm)
     pdf.cursor(x_start, y + img_h_mm + s.para_gap)
