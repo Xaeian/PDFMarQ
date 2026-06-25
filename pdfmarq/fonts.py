@@ -76,16 +76,15 @@ class FontManager:
     return self._font_key(family, mode) in self._registered
 
   def text_width(self, text:str, family:str, mode:str, size:float) -> float:
-    """Get text width in points using reportlab metrics."""
+    """Return text advance width in points (reportlab `stringWidth`)."""
     key = self.register(family, mode)
     return stringWidth(text, key, size)
 
 #-------------------------------------------------------------------------------------- Builtin
 
 # `Times/Regular` aliased to `Times/Roman` for consistency with other families.
-# `Times-Roman` aliased to `Times` so users passing the reportlab name still
-# get the right modal variant (was a quiet bug: `Times-Roman` + `Bold` fell
-# through to "Times-Roman" instead of "Times-Bold").
+# `Times-Roman` aliased to `Times` so users passing the reportlab canonical name
+# still get the correct modal variant (e.g. Bold → "Times-Bold", not "Times-Roman").
 _BUILTIN_NAMES: dict[tuple[str, str], str] = {
   ("Helvetica", "Regular"): "Helvetica",
   ("Helvetica", "Bold"): "Helvetica-Bold",

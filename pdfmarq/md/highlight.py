@@ -1,17 +1,15 @@
 # pdfmarq/md/highlight.py
 
-"""
-Syntax highlighting for code blocks via `pygments`.
+"""Syntax highlighting for code blocks via `pygments`.
 
 Converts a source string + language hint into a list of lines, where each
 line is a list of `RichSegment` with colors/weights from a pygments style.
 
-Falls back gracefully: if pygments is missing, the language is unknown, or
-any other error occurs, `highlight_code()` returns `None` and the caller
-should render the code as plain monospace.
+Falls back to `None` (caller renders plain monospace) when pygments is
+missing, the language is unknown, or any other error occurs.
 
 Example:
-  >>> from pdfmarq.highlight import highlight_code
+  >>> from pdfmarq.md.highlight import highlight_code
   >>> lines = highlight_code("def f(): return 1", lang="python",
   ...                        family="Courier", mode="Regular", size=10)
   >>> # lines is list[list[RichSegment]], one inner list per source line
@@ -75,8 +73,7 @@ def _highlight_md(
   default_color: tuple,
 ) -> list[list[RichSegment]]:
   """Regex-based markdown highlighter - correct, simple, no pygments dependency."""
-  def seg(text:
-    str, color: tuple, bold: bool = False) -> RichSegment:
+  def seg(text: str, color: tuple, bold: bool = False) -> RichSegment:
     return RichSegment(
       text=text, family=family, mode=bold_mode if bold else mode,
       size=size, color=color,
@@ -147,8 +144,7 @@ def _tokenize_md_inline(
 ):
   """Parse inline markdown into colored segments."""
   base_color = _MD_COLORS["quote"] if quote else default_color
-  def seg(t:
-    str, c: tuple, bold: bool = False) -> RichSegment:
+  def seg(t: str, c: tuple, bold: bool = False) -> RichSegment:
     return RichSegment(
       text=t, family=family, mode=bold_mode if bold else mode,
       size=size, color=c,
@@ -196,8 +192,7 @@ def highlight_code(
   """
   if not lang:
     return None
-  # Custom markdown highlighter (pygments md lexer has bugs with list
-  # markers - only tags `1.` and `2.` as Keyword, not `3.`+).
+  # Pygments md lexer is buggy (see `_MD_BLOCKS`/`_highlight_md` above).
   if lang in ("md", "markdown"):
     return _highlight_md(
       code, family=family, mode=mode, bold_mode=bold_mode, size=size,

@@ -8,8 +8,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.colors import Color
 
-from .constants import Defaults, Align, A4
-from .utils import to_mm, mm_to_pt, parse_margin, parse_color
+from .constants import Defaults, Align
+from .utils import to_mm, parse_margin, parse_color
 from .fonts import FontManager, is_builtin, builtin_name
 from .styles import Style, TableStyle
 from .layout import Cursor, PageGeometry
@@ -46,7 +46,6 @@ class NumberedCanvas(canvas.Canvas):
     self._replaying = False
   
   def showPage(self):
-  
     """Buffer current page state instead of emitting."""
     self._saved_pages.append(dict(self.__dict__))
     self._startPage()
@@ -59,7 +58,6 @@ class NumberedCanvas(canvas.Canvas):
     return None
   
   def save(self):
-  
     """Replay buffered pages, running final-page callbacks with known total."""
     # Buffer any pending content from the last page (caller may not have
     # called showPage on the final page - matches Canvas.save() behavior).
@@ -198,7 +196,6 @@ class PDF:
   #--------------------------------------------------------------------------------------- Page
   
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
-  
     """Set page size."""
     if width:
       self._page.width = to_mm(width, self.unit)
@@ -232,7 +229,6 @@ class PDF:
   #-------------------------------------------------------------------------------------- Fonts
   
   def add_font(self, family:str, mode:str="Regular") -> "PDF":
-  
     """Register font for use."""
     self._fonts.register(family, mode)
     return self
@@ -271,7 +267,6 @@ class PDF:
   #------------------------------------------------------------------------------------- Cursor
   
   def cursor(self, x:float|None=None, y:float|None=None, align:str|None=None) -> "PDF":
-  
     """Set cursor position and/or alignment."""
     if x is not None:
       x = to_mm(x, self.unit)
@@ -294,7 +289,6 @@ class PDF:
   #------------------------------------------------------------------------------------- Colors
   
   def color(self, r:float, g:float, b:float, a:float=1) -> "PDF":
-  
     """Set fill color."""
     self._canvas.setFillColor(Color(r, g, b, a))
     self._style.color = (r, g, b, a)
@@ -335,7 +329,6 @@ class PDF:
     align: str|None = None,
     padding: float = 0,
   ) -> "PDF":
-  
     """Draw text at cursor position."""
     if content is None:
       content = ""
@@ -406,7 +399,6 @@ class PDF:
   #----------------------------------------------------------------------------- Lines & Shapes
   
   def line(self, width:float=0, height:float=0, thickness:float=1, dash:tuple|None=None) -> "PDF":
-  
     """Draw line from cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
@@ -469,7 +461,6 @@ class PDF:
   #------------------------------------------------------------------------------------- Images
   
   def image(self, path:str, width:float, height:float) -> "PDF":
-  
     """Draw image at cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
@@ -506,7 +497,6 @@ class PDF:
     width: float|None = None,
     style: TableStyle|None = None,
   ) -> "PDF":
-  
     """Draw table at cursor."""
     style = style or TableStyle()
     width_mm = to_mm(width, self.unit) if width else self.content_width - self._cursor.x
@@ -599,7 +589,6 @@ class PDF:
   #---------------------------------------------------------------------------------- Structure
   
   def bookmark(self, title:str, level:int=0) -> "PDF":
-  
     """Add bookmark at current position."""
     self._bookmarks.add(title, self._page_num, self._cursor.y, level)
     return self
@@ -626,7 +615,6 @@ class PDF:
   #---------------------------------------------------------------------------- Headers/Footers
   
   def on_page(self, callback:Callable) -> "PDF":
-  
     """Register callback to run on each page (for headers/footers).
 
     Callback receives (pdf, page_num) arguments.
@@ -635,9 +623,8 @@ class PDF:
     return self
 
   def on_new_page(self, callback:Callable) -> "PDF":
-    """Register callback to run AFTER a new page is started (after cursor
-    reset). Use to advance the cursor before content begins, e.g. to leave
-    space for a top header drawn in the margin.
+    """Register callback to run after a new page is started (after cursor
+    reset). Use to advance the cursor past a top header before content begins.
 
     Callback receives (pdf, page_num) arguments.
     """
@@ -648,10 +635,8 @@ class PDF:
     """Register callback that runs at save() time once total page count is
     known. Use for footers like "Page 1/5" that need the final page total.
 
-    Callback receives (pdf, page_num, total_pages). At call time the canvas
-    is positioned on the right page - you can draw freely with self._canvas.
-    Cursor state is restored after each callback so other rendering is
-    unaffected.
+    Callback receives (pdf, page_num, total_pages). Canvas is on the correct
+    page; cursor state is saved and restored around each call.
     """
     self._canvas._final_page_callbacks.append(
       lambda pdf, page_num, total: self._wrap_final_callback(callback, pdf, page_num, total)
@@ -678,11 +663,10 @@ class PDF:
     self._cursor = cursor_backup
 
   def _finalize_page(self):
-    """Finalize current page: run callbacks, register bookmarks and links.
+    """Run page callbacks and flush bookmarks/links for the current page.
 
-    Called before `showPage()` for each page and before `canvas.save()` for the last one.
-    `canvas.bookmarkPage()` and `canvas.linkURL()` apply to the CURRENT page - must
-    happen while canvas is still on that page.
+    Must be called while the canvas is still on this page - both
+    `bookmarkPage()` and `linkURL()` bind to the current canvas page.
     """
     self._apply_page_callbacks()
     self._bookmarks.apply_page(self._canvas, self._page_num)
@@ -691,7 +675,6 @@ class PDF:
   #------------------------------------------------------------------------------------- Output
   
   def save(self) -> "PDF":
-  
     """Render and save PDF."""
     self._finalize_page()  # finalize last page
     self._metadata.apply(self._canvas)
@@ -707,8 +690,7 @@ class PDF:
     Returns `self` (fluent). On failure (no `gs` in PATH, gs error):
       - `raise_on_error=True`: re-raises with a clear message
       - `raise_on_error=False` (default): emits a warning and leaves the
-        original file untouched. Previously failures were swallowed silently
-        so users couldn't tell whether compression actually happened.
+        original file untouched.
     """
     import warnings
     temp = self._path + ".tmp"

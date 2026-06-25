@@ -96,8 +96,7 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
     `(t, h, b)`      → top, horizontal, bottom
     `(t, r, b, l)`   → top, right, bottom, left (full CSS form)
 
-  Previously 4-tuples silently dropped the last element (review.md). Now
-  honored as CSS-order. Matches `docmarq.parse_margin` shape.
+  Matches `docmarq.parse_margin` shape.
   """
   if isinstance(margin, (int, float)):
     return (margin, margin, margin, margin)
@@ -112,7 +111,7 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
 #----------------------------------------------------------------------------------------- Text
 
 def sanitize_text(text:str, link_char:str="·", enter_in:str="\n", enter_out:str="\n") -> str:
-  """Prepare text for rendering - handle special chars."""
+  """Normalize text before rendering: replace link sentinel with pilcrow, remap line endings."""
   text = text.replace(link_char, "¶")
   text = text.replace(enter_in, enter_out)
   return text

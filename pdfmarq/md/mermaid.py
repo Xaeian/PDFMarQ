@@ -1,21 +1,14 @@
 # pdfmarq/md/mermaid.py
 
-"""
-Mermaid diagram rendering with hybrid backends.
+"""Mermaid diagram rendering with hybrid backends.
 
-Mermaid is a JavaScript-only library - no native Python implementation
-exists. We try multiple rendering backends in priority order and use the
-first one that succeeds:
+Backends tried in priority order:
+  1. mermaid-cli (mmdc) - local subprocess, best quality, fully offline.
+  2. mermaid.ink - public HTTP fallback, no local deps, needs internet.
+  3. None - both failed; caller falls back to a plain code block.
 
-  1. **mermaid-cli (mmdc)** - local subprocess, best quality, requires
-     Node.js + `npm install -g @mermaid-js/mermaid-cli`. Fully offline.
-  2. **mermaid.ink** - public HTTP service, no local deps but needs internet.
-     Free, no API key. Used as fallback when mmdc unavailable.
-  3. **None** - both failed. Caller falls back to plain code block.
-
-Rendered output is cached to `~/.cache/marq/mermaid/{hash}.png` (shared
-with `docmarq`) so the same diagram isn't re-rendered on every build,
-even when alternating between PDF and DOCX outputs.
+Output cached to `~/.cache/marq/mermaid/{hash}.png`, shared with
+`docmarq`, so identical diagrams are only rendered once across formats.
 
 Usage:
   >>> from pdfmarq.mermaid import render_mermaid
@@ -33,8 +26,7 @@ from pathlib import Path
 
 #---------------------------------------------------------------------------------------- Cache
 
-# Shared between pdfmarq and docmarq - identical diagrams render once
-# regardless of which output format triggers the build first.
+# Shared with docmarq - same diagram renders once regardless of output format.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 _RENDER_CACHE: dict = {}  # in-memory cache for current process
 
@@ -176,9 +168,8 @@ def render_mermaid(code:str, *, cli:str="mmdc", theme:str="default",
     from PIL import Image
     with Image.open(out_path) as im:
       px_w, px_h = im.size
-    # Convert px → pt at 96 DPI * oversampling scale. Loaded from cache:
-    # scale is the configured value (cache key includes it, so pixel size
-    # matches that scale).
+    # mmdc renders at 96 DPI * scale; cache key includes scale so cached
+    # pixels always correspond to the configured oversampling factor.
     dpi = 96 * scale
     w_pt = px_w * 72 / dpi
     h_pt = px_h * 72 / dpi

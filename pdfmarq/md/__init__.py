@@ -1,23 +1,19 @@
 # pdfmarq/md/__init__.py
 
-"""
-Markdown rendering for `pdfmarq`.
+"""Markdown rendering for `pdfmarq`. Install the full dependency bundle with
+``pip install pdfmarq[md]``.
 
-Forces all markdown-related dependencies as a single bundle. Install with:
+Bundled (pip):
+  - markdown-it-py     # parser
+  - mdit-py-plugins    # tables, footnotes, anchors, deflists
+  - PyYAML             # frontmatter
+  - Pygments           # fenced code syntax highlighting
+  - matplotlib         # math formula rendering ($x^2$)
+  - emoji              # :smile: shortcode resolution
+  - mdit-py-emoji      # emoji parser plugin
 
-  pip install pdfmarq[md]
-
-Bundled dependencies (all required, no optional):
-  - markdown-it-py  # parser
-  - mdit-py-plugins  # tables, footnotes, anchors, deflists
-  - PyYAML  # frontmatter
-  - Pygments  # syntax highlighting in fenced code blocks
-  - matplotlib  # math formula rendering ($x^2$)
-  - emoji  # :smile: shortcode resolution
-  - mdit-py-emoji  # emoji parser plugin
-
-Optional system tools (not pip-installable):
-  - mermaid-cli (npm)  # for ```mermaid``` blocks; auto-detected at runtime
+Optional system tool (not pip-installable):
+  - mermaid-cli (npm)  # ```mermaid``` blocks; auto-detected at runtime
 
 Example:
   >>> from pdfmarq.md import md_to_pdf, MarkdownStyle
@@ -27,8 +23,8 @@ Example:
 
 #------------------------------------------------------------------------- Extras for auto-toml
 
-# Tuple form: (extra_name, [packages]). Forces ALL packages on `pdfmarq[md]`
-# install - no piecemeal optionals to avoid surprise feature gaps.
+# Declares the `pdfmarq[md]` extra; all packages are required so partial
+# installs never produce silent feature gaps.
 __extras__ = ("md", [
   "markdown-it-py",
   "mdit-py-plugins",

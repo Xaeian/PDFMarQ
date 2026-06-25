@@ -46,8 +46,7 @@ class Metadata:
   producer: str|None = None
 
   def apply(self, canvas):
-    """Apply metadata to canvas. `comments`/`category` are stored on the
-    instance but not pushed to the PDF (no reportlab setter)."""
+    """Write available metadata fields to the canvas /Info dictionary."""
     if self.title: canvas.setTitle(self.title)
     if self.author: canvas.setAuthor(self.author)
     if self.subject: canvas.setSubject(self.subject)
@@ -60,11 +59,9 @@ class Metadata:
 class BookmarkManager:
   """Manages PDF bookmarks/outlines.
 
-  Required usage from `core.py`:
-    1. During rendering of each page, call `apply_page(canvas, page_num)`
-       - this registers anchors via `canvas.bookmarkPage` on the current page.
-    2. After all pages rendered, before `canvas.save()`, call `apply_outline(canvas)`
-       - this adds outline entries in order.
+  Call order: `apply_page` during each page render, then `apply_outline`
+  once before `canvas.save()`. Order matters - anchors must exist before
+  the outline references them.
   """
   def __init__(self):
     self._bookmarks: list[Bookmark] = []
@@ -76,15 +73,13 @@ class BookmarkManager:
     return key
 
   def apply_page(self, canvas, page:int):
-    """Register anchors for all bookmarks belonging to given page.
-    Call during rendering of that page - canvas must currently be on it.
-    """
+    """Register anchors for all bookmarks on this page. Canvas must be on that page."""
     for i, bm in enumerate(self._bookmarks):
       if bm.page == page:
         canvas.bookmarkPage(f"bm_{i}")
 
   def apply_outline(self, canvas):
-    """Add outline entries for all bookmarks. Call once before `save`."""
+    """Add outline entries for all bookmarks. Call once, after all pages are rendered."""
     for i, bm in enumerate(self._bookmarks):
       canvas.addOutlineEntry(bm.title, f"bm_{i}", level=bm.level)
 

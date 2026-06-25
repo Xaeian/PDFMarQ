@@ -65,6 +65,7 @@ title: Report
 render:
   page: A4              # A4 / A3 / A5 / LETTER / LEGAL
   margin: 25            # mm; or list [top, right, bot, left]
+  gutter: 0             # mm binding margin added to the inner/left side
   landscape: false      # flip page
   font_body: IBMPlexSans
   font_head: Sora       # defaults to `font_body`
@@ -73,7 +74,7 @@ render:
   line_height: 1.4
   img_max_h: 120        # mm cap on every image (per-image DSL still overrides)
   banner: true          # page-1 banner from frontmatter
-  banner_min: true      # mini-banner on continuation pages
+  banner_min: true      # mini-banner on continuation pages (alias: `header`)
   page_number: true     # footer numbering
   lang: pl              # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
   mermaid_theme: default # default / dark / forest / neutral

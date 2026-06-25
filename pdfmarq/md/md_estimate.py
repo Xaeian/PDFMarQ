@@ -1,12 +1,10 @@
 # pdfmarq/md/md_estimate.py
 
-"""
-Block height estimation for heading keep-with-next lookahead.
+"""Block height estimation for heading keep-with-next lookahead.
 
-`_estimate_next_block` returns an approximate minimum height (mm) for
-whatever block token comes after a heading, so `_render_heading` can
-reserve enough space to keep them on the same page.
-"""
+`_estimate_next_block` returns an approximate minimum height (mm) for the
+block after a heading so `_render_heading` can reserve enough space to keep
+them on the same page."""
 
 from markdown_it.token import Token
 from ..constants import MM_TO_PT
@@ -28,9 +26,7 @@ class EstimateMixin:
     t = tokens[start]
     ttype = t.type
     if ttype == "paragraph_open":
-      # Measure actual wrapped height - `body_line_mm * 2` was a flat lower
-      # bound that under-reserved for long paragraphs and pushed headings
-      # apart from their following content.
+      # Measure actual wrapped height so long paragraphs don't under-reserve.
       if start + 1 < len(tokens) and tokens[start+1].type == "inline":
         from ..inline import RichSegment, measure_rich
         inline = tokens[start+1]
@@ -43,9 +39,7 @@ class EstimateMixin:
           width = self.pdf.content_width - self._indent_mm
           page_avail = self.pdf.content_height
           h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
-          # Cap at 90% page so an oversized paragraph doesn't force a break
-          # for the heading when it would split anyway.
-          return max(min(h, page_avail * 0.9), body_line_mm * 2)
+          return max(min(h, page_avail * 0.9), body_line_mm * 2)  # cap: paragraph that splits anyway shouldn't force a heading break
         except Exception:
           pass
       return body_line_mm * 2
@@ -54,9 +48,7 @@ class EstimateMixin:
       end = self._find_close(tokens, start, ttype, close_type)
       list_h = self._estimate_list_height(tokens, start, end)
       page_avail = self.pdf.content_height
-      # Cap at 90% page so a giant list doesn't force a page break for the
-      # heading when it would just split anyway.
-      if list_h <= page_avail * 0.9:
+      if list_h <= page_avail * 0.9:  # giant lists that split anyway shouldn't force a heading break
         return list_h
       return body_line_mm * s.line_height * 3
     if ttype == "table_open":
@@ -68,8 +60,7 @@ class EstimateMixin:
       lang = parts[0] if parts else ""
       info_rest = parts[1] if len(parts) > 1 else ""
       if lang == "mermaid":
-        # Read DSL `h` / `max_h` if present; fall back to `image_max_h` cap.
-        if info_rest:
+        if info_rest:  # DSL `h` / `max_h` override; falls back to `image_max_h`
           from .md_images import parse_image_dsl
           dsl = parse_image_dsl(info_rest)
           if dsl.is_dsl:
@@ -85,17 +76,16 @@ class EstimateMixin:
       n_inline = sum(
         1 for j in range(start, end + 1) if tokens[j].type == "inline"
       )
-      # Each inline ≈ 1 line; add 1 extra for callout title + padding
-      return max(body_line_mm * (n_inline + 1) * 1.1, body_line_mm * 3)
+      return max(body_line_mm * (n_inline + 1) * 1.1, body_line_mm * 3)  # +1 for callout title
     if ttype == "dl_open": return body_line_mm * 2
     if ttype == "hr": return 3
     return body_line_mm * 2
 
   def _estimate_list_height(self, tokens:list[Token], start:int, end:int) -> float:
-    """Sum estimated height of each list item - used for heading lookahead.
-    Each item's first paragraph is measured by `measure_rich`; nested blocks
-    fall back to a flat 2-line approximation. Used only for break planning,
-    not for actual layout."""
+    """Sum estimated height of each list item for heading-lookahead break planning.
+    First paragraph per item is measured via `measure_rich`; nested blocks
+    fall back to a 2-line approximation.
+    """
     from ..inline import RichSegment, measure_rich
     s = self.style
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
@@ -108,8 +98,7 @@ class EstimateMixin:
     j = start + 1
     while j < end:
       if tokens[j].type == "list_item_open":
-        # First inline inside this item drives the estimate
-        item_h = body_line_mm
+        item_h = body_line_mm  # first inline drives the estimate; fallback = 1 line
         for k in range(j + 1, min(j + 6, end)):
           if tokens[k].type == "inline":
             try:

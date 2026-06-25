@@ -2,30 +2,24 @@
 
 """HTML whitelist for `MarkdownRenderer`.
 
-`pdfmarq` recognizes only a small subset of raw HTML embedded in markdown.
-Everything else _(`<table>`, `<div>`, `<span>`, `<style>`, attributes, etc.)_
-is dropped silently.
+Only a small subset of raw HTML is recognized; everything else is dropped silently.
 
 Block:
   `<hr>`                 - horizontal rule
   `<!-- pagebreak -->`   - force new page
   `<!-- group -->` ...   - keep-together block (paired with `<!-- /group -->`)
 
-Inline _(paired)_:
+Inline (paired):
   `<b>`, `<strong>` - bold
   `<i>`, `<em>`     - italic
-  `<code>`          - inline code _(mono family, code colors)_
+  `<code>`          - inline code (mono family, code colors)
 
-Inline _(self-closing)_:
+Inline (self-closing):
   `<br>`, `<hr>`    - hard line break
 
-Tags are matched case-insensitively, with whitespace tolerance for the
-self-closing form (`<br/>`, `<br />`). Attributes disqualify a tag from
-the whitelist - `<b class="x">` is dropped, not styled.
-
-Directive comments accept any amount of whitespace inside the comment
-but reject extra tokens: `<!-- pagebreak xxx -->` is NOT a directive,
-it's just a regular HTML comment and gets dropped.
+Tags matched case-insensitively; whitespace-tolerant for self-closing form.
+Attributes disqualify a tag (`<b class="x">` is dropped, not styled).
+Directives reject extra tokens: `<!-- pagebreak xxx -->` is a plain comment.
 """
 import re
 
@@ -44,9 +38,7 @@ _GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group\s*-->\s*", re.IGNORECASE)
 _GROUP_CLOSE_RE = re.compile(r"\s*<!--\s*/\s*group\s*-->\s*", re.IGNORECASE)
 
 def is_pagebreak_directive(content:str) -> bool:
-  """True for `<!-- pagebreak -->` directive comments. Whitespace tolerant
-  inside the comment, case-insensitive on the name. Extra tokens
-  (`<!-- pagebreak xxx -->`) disqualify the match."""
+  """True for `<!-- pagebreak -->` directive; extra tokens disqualify."""
   return bool(_PAGEBREAK_RE.fullmatch(content))
 
 def is_group_open_directive(content:str) -> bool:

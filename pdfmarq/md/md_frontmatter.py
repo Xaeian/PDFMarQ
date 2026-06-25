@@ -110,19 +110,16 @@ class FrontmatterMixin:
   #------------------------------------------------------------------------------------- Header
   
   def _render_frontmatter_header(self, data:dict):
-  
     """Render the full document header on the current (first) page.
-    Iteratively shrinks the logo column when the text column is shorter
-    than `banner_logo_max_h`, giving the text more horizontal space.
-    Convergence is fast (1-2 passes for typical content).
+    Iteratively shrinks the logo column when text needs more horizontal space.
+    Converges in 1-2 passes for typical content.
     """
     s = self.style
     pdf = self.pdf
     pdf.enter(s.banner_pad_top)
     self._frontmatter_data = data
     content_w = pdf.content_width
-    # Logo path resolves like body images: relative joins against `base_dir`,
-    # missing file warns and skips (graceful, no render crash on typo).
+    # Missing logo warns and skips; relative path resolves against `base_dir`.
     logo_path = self._resolved_logo(data)
     if logo_path and not os.path.isfile(logo_path):
       warnings.warn(
@@ -132,13 +129,10 @@ class FrontmatterMixin:
       )
       logo_path = None
     has_logo = bool(logo_path)
-    # Logo aspect ratio (w/h). 1.0 = square, <1.0 = tall, >1.0 = wide.
-    logo_aspect = self._get_logo_aspect(logo_path) if has_logo else 1.0
+    logo_aspect = self._get_logo_aspect(logo_path) if has_logo else 1.0  # w/h; 1.0 = square
     gutter = 4.0 if has_logo else 0
     y_start = pdf.y
-    # ---- Measure optimal logo box ----
-    # logo_h capped at banner_logo_max_h, then logo_w = logo_h * aspect
-    # capped at banner_logo_max_w (wide logos scale height down proportionally).
+    # logo_h capped at banner_logo_max_h; logo_w = logo_h * aspect capped at banner_logo_max_w.
     logo_h = s.banner_logo_max_h if has_logo else 0
     if has_logo:
       logo_h = self._measure_optimal_logo_height(data, content_w, gutter, y_start, logo_aspect)
@@ -162,8 +156,7 @@ class FrontmatterMixin:
     self._fm_rule_at(0, content_w)
     if has_logo:
       actual_h = rule_bot_y - rule_top_y
-      # Use aspect-correct dimensions, capped by available height AND max_width
-      draw_h = min(logo_h, actual_h)
+      draw_h = min(logo_h, actual_h)  # fit within rule band
       draw_w = draw_h * logo_aspect
       if draw_w > s.banner_logo_max_w:
         draw_w = s.banner_logo_max_w
@@ -205,27 +198,22 @@ class FrontmatterMixin:
 
   def _measure_optimal_logo_height(self, data:dict, content_w:float,
     gutter:float, y_start:float, aspect:float) -> float:
-    """Find optimal logo HEIGHT iteratively. Logo width = height * aspect.
-    Text column gets `right_w = content_w - logo_w - gutter`. Each iteration
-    measures text height with current logo_w; new logo_h = min(cap, text_h).
-    For tall logos (aspect < 1) the logo width is naturally smaller, so text
-    column gets more space without sacrificing logo height.
+    """Find the logo height that makes the logo and text column the same height.
+    Each iteration measures text height given the current logo width, then sets
+    logo_h = min(cap, text_h). Tall logos (aspect < 1) consume less horizontal
+    space, giving the text column more room without sacrificing logo height.
     """
     s = self.style
-    pdf = self.pdf
     max_h = s.banner_logo_max_h
     max_w = s.banner_logo_max_w
-    # Cap height so width never exceeds max_w (wide logos land here).
-    if aspect > 0 and max_h * aspect > max_w:
+    if aspect > 0 and max_h * aspect > max_w:  # wide logos: cap height so width stays within max_w
       max_h = max_w / aspect
     logo_h = max_h
     for _ in range(4):
       logo_w = logo_h * aspect
       right_w = content_w - logo_w - gutter
       text_h = self._dry_measure_text_column(data, logo_w + gutter, right_w, y_start)
-      # Logo height should match text height (so they align between rules),
-      # but capped at max_h. Width follows aspect.
-      new_h = min(max_h, text_h)
+      new_h = min(max_h, text_h)  # align logo bottom to text bottom, capped at max_h
       if abs(new_h - logo_h) < 0.5:
         logo_h = new_h
         break
@@ -234,18 +222,15 @@ class FrontmatterMixin:
 
   def _dry_measure_text_column(self, data:dict, x_offset:float, width:float,
     y_start:float) -> float:
-    """Estimate text column height analytically without any drawing.
-    Mirrors the structure in `_fm_render_text_column` but only computes
-    `pdf.enter()` advances based on font metrics and word-wrap.
+    """Estimate text-column height analytically (no drawing).
+    Mirrors `_fm_render_text_column` structure using font metrics and word-wrap.
     """
     s = self.style
-    pdf = self.pdf
     h_mm = 0
     entity = data.get("entity") or data.get("company")
     address = data.get("address")
     if entity or address:
-      # entity + address single row, max 1 line each side
-      h_mm += s.banner_meta_size / MM_TO_PT * 1.3 + 2
+      h_mm += s.banner_meta_size / MM_TO_PT * 1.3 + 2  # single row, one line each side
     doc_id = data.get("id") or data.get("code")
     version = data.get("version")
     status = data.get("status")
@@ -253,7 +238,6 @@ class FrontmatterMixin:
       h_mm += s.banner_id_size / MM_TO_PT * 1.6 + 3
     title = data.get("title")
     if title:
-      # estimate title line wrap by string width vs available width
       title_lines = self._estimate_lines(str(title), s.head_family,
         s.head_mode, s.banner_title_size, width)
       h_mm += s.banner_title_size / MM_TO_PT * title_lines * 1.0 + 2
@@ -378,8 +362,8 @@ class FrontmatterMixin:
   def _fm_meta_row(self, author:str|None, created:str, updated:str,
       x_offset:float, width:float) -> float:
     """Two-row meta block:
-      Row 1: (right) Utworzono: <created>
-      Row 2: (left) Autor: <author> (right) Zaktualizowano: <updated>
+      Row 1: created (right-aligned)
+      Row 2: author (left) | updated (right)
     Returns total height in mm.
     """
     pdf = self.pdf
@@ -421,10 +405,9 @@ class FrontmatterMixin:
   #-------------------------------------------------------------------------- Page chrome
   
   def _render_page_chrome(self, pdf, page_num:int):
-  
     """Per-page callback. Mini-header on pages 2+ only.
-    Page number is drawn via `_render_page_number` registered as on_final_page
-    (deferred) so it can include the total page count.
+    Page number drawn via `_render_page_number` as `on_final_page` (deferred)
+    so it can include the total page count.
     """
     s = self.style
     if page_num > 1 and s.mini_banner_render and self._frontmatter_data:
@@ -450,8 +433,7 @@ class FrontmatterMixin:
     data = self._frontmatter_data
     doc_id = data.get("id") or data.get("code") or ""
     title = data.get("title") or ""
-    # Mirror main-banner resolution. Page 1 already warned if missing;
-    # skip silently here to avoid one warning per continuation page.
+    # Page 1 already warned on a missing logo; skip silently here.
     logo_path = self._resolved_logo(data)
     if logo_path and not os.path.isfile(logo_path):
       logo_path = None
@@ -468,14 +450,12 @@ class FrontmatterMixin:
     # ---- LEFT: logo + (id top, title bottom) ----
     cursor_x = x_left_pt
     if logo_path:
-      # Logo top is 1.5mm above the line1 ascent, bottom never crosses sep,
-      # final size shrunk by 1mm (0.5mm top + 0.5mm bottom) for breathing room
+      # 1mm breathing room (0.5mm top + 0.5mm bottom); bottom never crosses separator.
       logo_top_pt = (pdf._page.height - y_top_mm + 1.0) * MM_TO_PT
       avail_pt = logo_top_pt - sep_y_pt
       max_size_pt = s.mini_banner_logo_max_h * MM_TO_PT
       logo_h_pt = min(max_size_pt, avail_pt) - 1.0 * MM_TO_PT
-      # Width follows aspect: tall logos take less horizontal space, leaving
-      # more room for id/title text to start closer to the left edge.
+      # Tall logos (aspect < 1) take less horizontal space, leaving more room for id/title.
       aspect = self._get_logo_aspect(logo_path)
       logo_w_pt = logo_h_pt * aspect
       max_w_pt = s.mini_banner_logo_max_w * MM_TO_PT
@@ -490,20 +470,17 @@ class FrontmatterMixin:
           mask="auto", preserveAspectRatio=True)
       cursor_x += logo_w_pt + 4
     text_x = cursor_x
-    # id (top line) - code style: mono on light-grey rounded background
-    if doc_id:
+    if doc_id:  # top line - mono on light-grey rounded background
       try:
         font = pdf._fonts.register(s.mono_family, s.mono_mode)
         self._draw_code_inline(c, str(doc_id), font, s.mini_banner_size,
           text_x, line1_y_pt, anchor="left")
       except Exception:
         pass
-    # title (bottom line, trimmed)
-    if title:
+    if title:  # bottom line, ellipsis-trimmed
       try:
         font = pdf._fonts.register(s.body_family, s.bold_mode)
-        # Allow title to use up to right zone start minus a gap
-        avail_pt = (x_right_pt - text_x) * 0.55
+        avail_pt = (x_right_pt - text_x) * 0.55  # leave room for right zone
         shown = self._fit_text(c, str(title), font, s.mini_banner_size, avail_pt)
         c.setFont(font, s.mini_banner_size)
         c.setFillColor(Color(*s.body_color[:3]))
@@ -526,10 +503,10 @@ class FrontmatterMixin:
         c.drawRightString(x_right_pt, line2_y_pt, updated)
       except Exception:
         pass
-    # Separator below the 2 lines (computed earlier so logo can be sized to fit)
+    # Separator below the 2 lines
     c.setStrokeColor(Color(*s.hr_color[:3]))
     c.setLineWidth(0.3)
-    c.setDash() # ensure solid line - prior canvas state may have dash set
+    c.setDash()  # reset any dash from prior canvas state
     c.line(x_left_pt, sep_y_pt, x_right_pt, sep_y_pt)
 
   @staticmethod
@@ -594,14 +571,8 @@ class FrontmatterMixin:
   def _draw_status_badge(self, c, status:str, x_pt:float, y_pt:float,
     anchor:str="center") -> float:
     """Draw a small colored badge with the status text.
-    Args:
-      c: reportlab Canvas
-      status: status name (lowercase looked up in `style.banner_status_colors`)
-      x_pt: horizontal anchor in canvas pt
-      y_pt: text baseline in canvas pt
-      anchor: `"center"` or `"left"`
-    Returns:
-      Badge width in pt.
+    `status` is lowercased to look up `style.banner_status_colors`.
+    Returns badge width in pt.
     """
     s = self.style
     key = status.lower()
@@ -618,15 +589,13 @@ class FrontmatterMixin:
     if anchor == "center": bx = x_pt - badge_w / 2
     else:
       bx = x_pt
-    # Whole badge raised 0.2mm
-    by = y_pt - pad_y + 0.2 * MM_TO_PT
+    by = y_pt - pad_y + 0.2 * MM_TO_PT  # raised 0.2mm for visual baseline alignment
     c.setFillColor(Color(*bg))
     c.setStrokeColor(Color(*bg))
     c.roundRect(bx, by, badge_w, badge_h, badge_h * 0.3, fill=1, stroke=0)
     c.setFillColor(Color(*fg))
     c.setFont(font, s.mini_banner_size - 1)
-    # Text centered vertically in badge: baseline = by + (badge_h - cap_height) / 2
-    # Approximate cap height as 0.7 * font size, so offset = (badge_h - 0.7*size) / 2
+    # Vertical centering: baseline = by + (badge_h - cap_height)/2; cap_height ≈ 0.7 * size.
     text_size = s.mini_banner_size - 1
     text_y = by + (badge_h - text_size * 0.7) / 2
     c.drawString(bx + pad_x, text_y, label)
@@ -660,10 +629,8 @@ class FrontmatterMixin:
   #---------------------------------------------------------------------------------- Signature
   
   def _render_signature_block(self):
-  
-    """Right-aligned signature line + italic label, at the end of the document.
-    Line uses the same color and thickness as other rules in the header.
-    Extra ~1cm vertical space is reserved above the line for the actual signature.
+    """Right-aligned dashed signature line + italic label at document end.
+    ~25mm space above the line is reserved for the handwritten signature.
     """
     s = self.style
     pdf = self.pdf

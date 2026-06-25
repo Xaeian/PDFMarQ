@@ -1,42 +1,40 @@
-"""End-to-end smoke tests - exercise the public API and check that a
-valid PDF lands on disk. They are deliberately shallow: pass=no crash,
-non-empty PDF, valid header. Catches the most painful regressions
-(import errors, signature changes, reportlab version drift, broken
-mixin wiring) without locking us into specific byte output.
-"""
+# tests/test_smoke.py
+
+"""End-to-end smoke: public API produces a valid PDF on disk (no crash, valid header)."""
+
+import pytest
+from conftest import assert_valid_pdf
 from pdfmarq import (
-  PDF, A4, A5, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich,
+  PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich,
 )
-from pdfmarq.tests.conftest import assert_valid_pdf
 
-#--------------------------------------------------------------------------------- PDF basic
+#---------------------------------------------------------------------------------- PDF basic
 
-def test_pdf_empty(tmp_path):
+def pdf_context_manager_writes_file(tmp_path):
   path = tmp_path / "empty.pdf"
   with PDF(str(path)) as pdf:
     pdf.text("hi")
   assert_valid_pdf(path)
 
-def test_pdf_explicit_save(tmp_path):
+def pdf_explicit_save_writes_file(tmp_path):
   path = tmp_path / "saved.pdf"
   pdf = PDF(str(path))
   pdf.font("Helvetica", 12).text("manual save")
   pdf.save()
   assert_valid_pdf(path)
 
-def test_pdf_unit_mm(tmp_path):
-  path = tmp_path / "mm.pdf"
-  with PDF(str(path), width=210, height=297, margin=15) as pdf:
-    pdf.text("default unit")
+@pytest.mark.parametrize("kwargs", [
+  {"width": 210, "height": 297, "margin": 15},               # default unit mm
+  {"width": 595, "height": 842, "margin": 40, "unit": "pt"}, # points
+  {"margin": (10, 20, 30)},                                  # tuple margin
+])
+def pdf_accepts_page_and_margin_options(tmp_path, kwargs):
+  path = tmp_path / "page.pdf"
+  with PDF(str(path), **kwargs) as pdf:
+    pdf.text("page options")
   assert_valid_pdf(path)
 
-def test_pdf_unit_pt(tmp_path):
-  path = tmp_path / "pt.pdf"
-  with PDF(str(path), width=595, height=842, margin=40, unit="pt") as pdf:
-    pdf.text("points")
-  assert_valid_pdf(path)
-
-def test_pdf_landscape(tmp_path):
+def pdf_landscape_swaps_dimensions(tmp_path):
   path = tmp_path / "ls.pdf"
   ls = A4.landscape()
   with PDF(str(path), width=ls.width, height=ls.height) as pdf:
@@ -44,15 +42,9 @@ def test_pdf_landscape(tmp_path):
   assert pdf.page_width > pdf.page_height
   assert_valid_pdf(path)
 
-def test_pdf_margin_tuple(tmp_path):
-  path = tmp_path / "marg.pdf"
-  with PDF(str(path), margin=(10, 20, 30)) as pdf:
-    pdf.text("margins")
-  assert_valid_pdf(path)
+#-------------------------------------------------------------------------------------- Fonts
 
-#----------------------------------------------------------------------------------- Fonts
-
-def test_font_all_builtins(tmp_path):
+def font_all_builtins_render(tmp_path):
   path = tmp_path / "fonts.pdf"
   with PDF(str(path)) as pdf:
     for family, mode in [
@@ -65,16 +57,16 @@ def test_font_all_builtins(tmp_path):
       pdf.font(family, 11, mode).text(f"{family}-{mode}").enter(6)
   assert_valid_pdf(path)
 
-def test_font_partial_update(tmp_path):
+def font_partial_update_keeps_other_fields(tmp_path):
   path = tmp_path / "partial.pdf"
   with PDF(str(path)) as pdf:
     pdf.font("Helvetica", 16, "Bold").text("Title").enter()
     pdf.font(size=11, mode="Regular").text("Body").enter()
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Text
+#--------------------------------------------------------------------------------------- Text
 
-def test_text_wrapped(tmp_path):
+def text_wrapped_to_width(tmp_path):
   path = tmp_path / "wrap.pdf"
   with PDF(str(path)) as pdf:
     pdf.text(
@@ -84,16 +76,15 @@ def test_text_wrapped(tmp_path):
     )
   assert_valid_pdf(path)
 
-def test_text_autoscale(tmp_path):
+def text_autoscale_does_not_recurse_to_stack_ceiling(tmp_path):
+  # regression: tiny box → autoscale must terminate iteratively (see review.md)
   path = tmp_path / "autoscale.pdf"
   with PDF(str(path)) as pdf:
-    # Box too small for text at requested size → autoscale must kick in
-    # and NOT recurse to the stack ceiling (see review.md).
     pdf.font("Helvetica", 14)
     pdf.text("This is a fairly long text", width=20, height=10)
   assert_valid_pdf(path)
 
-def test_text_aligns(tmp_path):
+def text_aligns_render(tmp_path):
   path = tmp_path / "aligns.pdf"
   with PDF(str(path)) as pdf:
     pdf.text("L", width=60, align=Align.LEFT).enter()
@@ -101,16 +92,16 @@ def test_text_aligns(tmp_path):
     pdf.text("R", width=60, align=Align.RIGHT).enter()
   assert_valid_pdf(path)
 
-def test_text_none_content(tmp_path):
-  # `core.text` accepts None silently - guard so we don't regress.
+def text_none_content_is_silent(tmp_path):
+  # `core.text` accepts None silently - guard so we don't regress
   path = tmp_path / "none.pdf"
   with PDF(str(path)) as pdf:
     pdf.text(None)
   assert_valid_pdf(path)
 
-#----------------------------------------------------------------------------------- Shapes
+#------------------------------------------------------------------------------------- Shapes
 
-def test_shapes_all(tmp_path):
+def shapes_all_render(tmp_path):
   path = tmp_path / "shapes.pdf"
   with PDF(str(path)) as pdf:
     pdf.rect(40, 20).enter(25)
@@ -121,17 +112,17 @@ def test_shapes_all(tmp_path):
     pdf.line(80, 0, 1, dash=(3, 2))
   assert_valid_pdf(path)
 
-def test_pdf_path_polygon(tmp_path):
-  # Regression: `self.path` (file path attr) used to shadow `def path()`
-  # making the documented `pdf.path([...])` polygon API unreachable.
+def pdf_path_polygon_is_reachable(tmp_path):
+  # regression: `self.path` (file path attr) used to shadow `def path()`,
+  # making the documented `pdf.path([...])` polygon API unreachable
   path = tmp_path / "poly.pdf"
   with PDF(str(path)) as pdf:
     pdf.path([(0, 0), (10, 5), (20, 0)], close=True)
   assert_valid_pdf(path)
 
-#----------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------- Colors
 
-def test_colors(tmp_path):
+def colors_all_setters_render(tmp_path):
   path = tmp_path / "color.pdf"
   with PDF(str(path)) as pdf:
     pdf.color(0.2, 0.4, 0.8).text("rgb").enter()
@@ -141,9 +132,9 @@ def test_colors(tmp_path):
     pdf.stroke_color(0, 0, 1).line(40, 0, 1)
   assert_valid_pdf(path)
 
-#----------------------------------------------------------------------------------- Tables
+#------------------------------------------------------------------------------------- Tables
 
-def test_table_simple(tmp_path):
+def table_simple_with_header(tmp_path):
   path = tmp_path / "table.pdf"
   with PDF(str(path)) as pdf:
     pdf.table(
@@ -154,13 +145,13 @@ def test_table_simple(tmp_path):
     )
   assert_valid_pdf(path)
 
-def test_table_no_header(tmp_path):
+def table_without_header(tmp_path):
   path = tmp_path / "noheader.pdf"
   with PDF(str(path)) as pdf:
     pdf.table([["a", "b"], ["c", "d"]])
   assert_valid_pdf(path)
 
-def test_table_builder(tmp_path):
+def table_builder_drives_draw_table(tmp_path):
   path = tmp_path / "builder.pdf"
   style = TableStyle(header_bg=(0.3, 0.3, 0.3), cell_pad_h=1, header_bold=True)
   with PDF(str(path)) as pdf:
@@ -170,9 +161,9 @@ def test_table_builder(tmp_path):
     pdf._draw_table(data, style)
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------ Pages
+#-------------------------------------------------------------------------------------- Pages
 
-def test_multi_page(tmp_path):
+def multi_page_tracks_page_num(tmp_path):
   path = tmp_path / "pages.pdf"
   with PDF(str(path)) as pdf:
     pdf.text("page 1").new_page()
@@ -181,16 +172,15 @@ def test_multi_page(tmp_path):
     assert pdf.page_num == 3
   assert_valid_pdf(path)
 
-def test_on_page_callback(tmp_path):
+def on_page_callback_fires_per_page(tmp_path):
   path = tmp_path / "header.pdf"
   hits = []
   with PDF(str(path)) as pdf:
     pdf.on_page(lambda p, n: hits.append(n))
     pdf.text("a").new_page().text("b")
-  # Each page (final included) should fire the callback once.
-  assert len(hits) >= 2
+  assert len(hits) >= 2 # each page (final included) fires once
 
-def test_on_final_page_total(tmp_path):
+def on_final_page_knows_real_total(tmp_path):
   path = tmp_path / "final.pdf"
   seen = []
   def footer(p, n, total):
@@ -198,12 +188,11 @@ def test_on_final_page_total(tmp_path):
   with PDF(str(path)) as pdf:
     pdf.on_final_page(footer)
     pdf.text("a").new_page().text("b").new_page().text("c")
-  # `on_final_page` knows the real total once buffered replay runs.
   assert seen, "final-page callback never fired"
   totals = {t for _, t in seen}
   assert totals == {3}, f"expected total=3 on every page, got {seen}"
 
-def test_bookmarks(tmp_path):
+def bookmarks_render(tmp_path):
   path = tmp_path / "bm.pdf"
   with PDF(str(path)) as pdf:
     pdf.bookmark("Top", level=0).text("intro")
@@ -211,16 +200,16 @@ def test_bookmarks(tmp_path):
     pdf.bookmark("Second", level=0).text("more")
   assert_valid_pdf(path)
 
-def test_metadata(tmp_path):
+def metadata_render(tmp_path):
   path = tmp_path / "meta.pdf"
   with PDF(str(path)) as pdf:
     pdf.metadata(title="T", author="X", subject="S", keywords="k1,k2")
     pdf.text("body")
   assert_valid_pdf(path)
 
-#---------------------------------------------------------------------------------- Inline
+#------------------------------------------------------------------------------------- Inline
 
-def test_render_rich_basic(tmp_path):
+def render_rich_basic(tmp_path):
   path = tmp_path / "rich.pdf"
   with PDF(str(path)) as pdf:
     segs = [
@@ -234,11 +223,10 @@ def test_render_rich_basic(tmp_path):
     render_rich(pdf, segs, width_mm=120, x_mm=0, y_mm=0)
   assert_valid_pdf(path)
 
-#---------------------------------------------------------------------------------- Styles
+#------------------------------------------------------------------------------------- Styles
 
-def test_style_presets_independent():
-  # Each access must yield a fresh Style so users can't accidentally
-  # mutate shared state by tweaking a preset.
+def style_presets_are_independent_copies():
+  # each access must yield a fresh Style so users can't mutate shared state
   a = Styles.BOLD
   b = Styles.BOLD
   assert a is not b

@@ -62,12 +62,12 @@ class InlineMixin:
     segments: list[RichSegment] = []
     is_bold = is_italic = is_strike = False
     is_sub = is_sup = is_mark = False
-    is_html_code = False  # `<code>...</code>` inline html - distinct from md `code_inline`
+    is_html_code = False  # `<code>...</code>` HTML tag, distinct from md backtick `code_inline`
     link_url = None
     link_target = None
-    # `in_link` tracks visual link styling independently of actionable target.
-    # A local link without `style.link_root` has no action but still renders
-    # with link color + underline (so the doc reads correctly).
+    # Visual link state is tracked separately from the actionable target:
+    # a local link without `style.link_root` has no URL but still renders
+    # with link color + underline.
     in_link = False
     def resolve_mode():
       if is_bold and is_italic: return s.bold_italic_mode
@@ -168,7 +168,7 @@ class InlineMixin:
         link_target = None
         in_link = False
       elif ct == "math_inline":
-        # Formula → vector Drawing, embedded via math_drawing slot
+        # Render formula to a vector Drawing embedded via math_drawing slot.
         try:
           from .math import render_math_svg_with_baseline
           drawing, baseline_pt = render_math_svg_with_baseline(
@@ -233,7 +233,7 @@ class InlineMixin:
       elif ct == "html_inline":
         html = child.content or ""
         tag = html.strip().lower()
-        # Task-list checkbox escape hatch (legacy GFM extension marker)
+        # GFM task-list checkbox injected as raw HTML by the parser plugin
         if "task-list-item-checkbox" in html:
           checked = "checked" in html
           drawing = _make_checkbox(base.size, checked, base.color, s.link_color)
@@ -324,7 +324,6 @@ def _make_checkbox(fontsize_pt:float, checked:bool, fg:tuple, accent:tuple):
   pad_right = fontsize_pt * 0.15  # trailing breathing room before next glyph
   w = s + pad_right
   d = Drawing(w, s)
-  fg_c = Color(*fg[:3])
   if checked:
     accent_c = Color(*accent[:3])
     box = Rect(0, 0, s, s, rx=s * 0.18, ry=s * 0.18,

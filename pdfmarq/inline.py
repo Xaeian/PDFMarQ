@@ -1,13 +1,11 @@
 # pdfmarq/inline.py
 
-"""
-Rich inline text rendering - mixed styles within a single line.
+"""Rich inline text rendering - mixed styles within a single line.
 
 Provides `RichSegment` and `render_rich()` for drawing a sequence of
 styled text spans (bold, italic, code, links) with word-wrap. This is
 the low-level engine used by `markdown.py`; `core.PDF.text()` is a
-simpler single-style variant and is unchanged.
-"""
+simpler single-style variant."""
 from dataclasses import dataclass
 import re
 from reportlab.lib.colors import Color

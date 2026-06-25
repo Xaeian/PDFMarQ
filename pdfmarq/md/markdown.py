@@ -57,10 +57,9 @@ class MarkdownRenderer(
     import os
     self.pdf = pdf
     self.style = style or MarkdownStyle()
-    # Root for resolving relative `![alt](./img.png)` paths. Defaults to the
-    # process cwd. Mirrors `docmarq.MarkdownRenderer.base_dir`.
+    # Root for resolving relative image paths. Mirrors docmarq.MarkdownRenderer.base_dir.
     self.base_dir = base_dir or os.getcwd()
-    # Auto-register default sans/mono fonts before the first draw
+    # Auto-register default fonts before the first draw.
     self._ensure_default_font()
     md = MarkdownIt("commonmark", {"html": True, "breaks": False})
     md.enable(["table", "strikethrough"])
@@ -69,11 +68,10 @@ class MarkdownRenderer(
     self._indent_mm = 0
     self._list_depth = 0
     self._eq_counter = 0
-    self._known_slugs: set = set()  # populated in render() pre-scan
-    # Per-renderer math font config. Settings are NOT pushed to matplotlib's
-    # global rcParams until each math render call (`MathFontConfig.apply()`),
-    # so two renderers with different fontsets coexist without clobbering
-    # each other's state mid-render.
+    self._known_slugs: set = set()  # populated by render() pre-scan
+    # Math font config is applied per-render-call (MathFontConfig.apply()), not
+    # at init, so multiple renderers with different fontsets don't clobber
+    # matplotlib's global rcParams mid-render.
     self._math_config = None
     try:
       from .math import configure_math_fonts
@@ -87,11 +85,7 @@ class MarkdownRenderer(
     self.pdf.font(self.style.body_family, self.style.body_size, self.style.body_mode)
 
   def _load_plugins(self, md):
-    """Load optional markdown-it plugins, warning once for each missing one.
-    The features map maps a plugin module path to a (key, package, feature)
-    tuple. Plugins are tried in order and missing ones are reported via the
-    deduplicated warning system.
-    """
+    """Load optional markdown-it plugins, warning once per missing one."""
     from .._warn import warn_missing
     plugins = [
       ("mdit_py_plugins.dollarmath", "dollarmath_plugin",
@@ -113,7 +107,7 @@ class MarkdownRenderer(
         md.use(getattr(mod, attr))
       except ImportError:
         warn_missing(key, pkg, feature)
-    # Bundled plugins live in the package itself, so they should always import.
+    # Bundled plugins are always present; ImportError here indicates a broken install.
     try:
       from .md_plugins import sup_plugin, mark_plugin
       md.use(sup_plugin).use(mark_plugin)
@@ -134,10 +128,8 @@ class MarkdownRenderer(
         fm_rendered_title = data.get("title")
     else:
       _, md_text = self._extract_frontmatter(md_text)
-    # Register page chrome callbacks:
-    #   on_page       - mini-header on pages 2+ (per-page, no total known)
-    #   on_new_page   - cursor offset on pages 2+ for mini-header gap
-    #   on_final_page - footer page number (deferred, has total page count)
+    # Page chrome: mini-header fires per-page (no total known yet);
+    # footer page number deferred via on_final_page (total count available then).
     self.pdf.on_page(self._render_page_chrome)
     self.pdf.on_new_page(self._offset_body_for_mini_header)
     if self.style.page_number_label:
@@ -188,11 +180,9 @@ class MarkdownRenderer(
         level = int(t.tag[1])
         inline = tokens[i+1]
         close_i = self._find_close(tokens, i, "heading_open", "heading_close")
-        # Setext heading whose only inline content is an image is virtually
-        # always user error: `![alt](src)\n---` was meant as block image + HR,
-        # but markdown-it consumed `---` as setext h2 markup, sinking the image
-        # into a heading where it'd render at inline cap (thumbnail). Recover
-        # the original intent. `markup` is `-`/`=` for setext, `#...` for ATX.
+        # `![alt](src)\n---` is a common misparse: markdown-it treats `---`
+        # as setext h2, sinking the image into a heading (inline thumbnail cap).
+        # Recover: render as block image + HR. markup is `-`/`=` for setext, `#` for ATX.
         if t.markup and t.markup[0] in ("-", "=") and self._is_image_only_inline(inline):
           img = next(c for c in inline.children if c.type == "image")
           img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
@@ -210,7 +200,7 @@ class MarkdownRenderer(
         self._render_paragraph(tokens[i+1])
         i = close_i + 1
       elif ttype == "fence" or ttype == "code_block":
-        # Info string: first token = lang, rest = optional DSL (mermaid).
+        # info string: first word = lang, remainder = optional DSL (mermaid).
         info_parts = (t.info or "").strip().split(maxsplit=1)
         lang = info_parts[0] if info_parts else ""
         info_rest = info_parts[1] if len(info_parts) > 1 else ""
@@ -228,15 +218,14 @@ class MarkdownRenderer(
         self._render_hr()
         i += 1
       elif ttype == "html_block":
-        # Whitelist: `<hr>` block, `<!-- pagebreak -->`, `<!-- group --> ...
-        # <!-- /group -->` directives. Everything else (raw `<table>`, `<div>`,
-        # `<script>`, ...) is silently dropped.
+        # Only <hr>, <!-- pagebreak -->, and <!-- group --> directives are handled;
+        # all other HTML blocks are silently dropped.
         from . import md_html
         content = t.content or ""
         if md_html.is_hr_block(content):
           self._render_hr()
         elif md_html.is_pagebreak_directive(content):
-          if self.pdf.y > 0.5:  # skip if we're already at page top
+          if self.pdf.y > 0.5:  # skip when already at page top
             self.pdf.new_page()
         elif md_html.is_group_open_directive(content):
           end_i = self._find_group_close(tokens, i)
@@ -244,7 +233,7 @@ class MarkdownRenderer(
           i = end_i + 1
           continue
         elif md_html.is_group_close_directive(content):
-          # Stray close - log and skip
+          # Stray close without a matching open.
           import warnings
           warnings.warn(
             "stray `<!-- /group -->` directive (no matching open)",
@@ -307,11 +296,10 @@ class MarkdownRenderer(
   #-------------------------------------------------------------------------------- Directives
 
   def _find_group_close(self, tokens:list[Token], start:int) -> int:
-    """Find index of matching `<!-- /group -->` for the open at `start`.
-    Tracks depth to support naive nesting - inner directives are silent
-    markers (no extra keep-together behavior) but their close still
-    matches their open so the outer group close lands correctly.
-    Returns `len(tokens)` for unclosed groups (warns + renders to EOF).
+    """Return index of the matching `<!-- /group -->` for the open at `start`.
+    Depth-tracked so nested group directives don't confuse the outer close.
+    Inner groups are silent markers only (no extra keep-together behavior).
+    Returns `len(tokens)` for unclosed groups (warns, renders to EOF).
     """
     from . import md_html
     depth = 1
@@ -331,10 +319,9 @@ class MarkdownRenderer(
     return len(tokens)
 
   def _estimate_group_height(self, tokens:list[Token]) -> float:
-    """Sum estimated heights of top-level blocks inside a group. Reuses
-    `_estimate_next_block` per block and adds `para_gap` between them.
-    Conservative - the real layout may be tighter or looser; precision
-    isn't needed because the decision is just `fits remaining or not`."""
+    """Sum estimated heights of top-level blocks in a group.
+    Approximate (tighter or looser than real layout); sufficient for a
+    binary fits-remaining-space decision."""
     s = self.style
     total = 0.0
     paired = {
@@ -424,24 +411,28 @@ def md_to_pdf(
   fm = peek_frontmatter(md_text)
   warn_top_level_landscape(fm)
   render = parse_render_block(fm)
-  # Resolve page geometry: caller > render block > A4 default.
+  # Geometry precedence: caller arg > render block > A4 default.
   if width is None:
     width = render.page.width if render.page else 210
   if height is None:
     height = render.page.height if render.page else 297
   if margin is None:
     margin = render.margin if render.margin is not None else 20
+  # Gutter folds into the left margin (PDF has no native binding margin).
+  if render.gutter:
+    from ..utils import parse_margin
+    mt, mr, mb, ml = parse_margin(margin)
+    margin = (mt, mr, mb, ml + render.gutter)
   if landscape is None:
     landscape = bool(render.landscape)
   if landscape:
     width, height = height, width
-  # Build effective style by layering defaults → lang → render → caller.
   eff_style = build_style(fm, style, render)
   pdf = PDF(
     output_path, width=width, height=height,
     margin=margin, font_dir=font_dir,
   )
-  # Auto-fill PDF metadata from YAML. Explicit `metadata=` kwarg wins per-key.
+  # YAML frontmatter seeds PDF metadata; explicit `metadata=` kwarg overrides per-key.
   meta = _metadata_from_frontmatter(fm) if fm else {}
   if metadata:
     meta.update(metadata)

@@ -1,17 +1,14 @@
-"""Tests for the markdown image title DSL.
+# tests/test_image_dsl.py
 
-Two layers: the pure parser (both libs share equivalent logic) and the
-end-to-end render path (file lands on disk without crashing). The parser
-checks are exhaustive; the render checks are smoke-level.
-"""
+"""Markdown image title DSL: exhaustive pure parser + smoke-level end-to-end render."""
+
 import warnings
 import pytest
+from conftest import assert_valid_pdf, assert_valid_docx
 from pdfmarq.md.md_images import parse_image_dsl as pdf_parse, ImageDSL as PdfDSL
 from docmarq.md.image_utils import parse_image_dsl as doc_parse, ImageDSL as DocDSL
 from pdfmarq.md import md_to_pdf
 from docmarq.md import md_to_docx
-from pdfmarq.tests.conftest import assert_valid_pdf
-from docmarq.tests.conftest import assert_valid_docx
 
 #-------------------------------------------------------------------------- Pure parser
 
@@ -19,88 +16,84 @@ from docmarq.tests.conftest import assert_valid_docx
 class TestParser:
   """Each parser must accept identical input and produce equivalent output."""
 
-  def test_empty_title_returns_no_dsl(self, parser):
-    d = parser("")
-    assert d.is_dsl is False
+  def empty_title_returns_no_dsl(self, parser):
+    assert parser("").is_dsl is False
 
-  def test_none_title_returns_no_dsl(self, parser):
-    d = parser(None)
-    assert d.is_dsl is False
+  def none_title_returns_no_dsl(self, parser):
+    assert parser(None).is_dsl is False
 
-  def test_caption_title_no_equals_silent(self, parser):
-    # Title without any `=` token is treated as opaque description.
+  def caption_title_no_equals_silent(self, parser):
+    # title without any `=` token is treated as opaque description
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("Just a description")
     assert d.is_dsl is False
     assert not w, f"unexpected warnings: {[str(x.message) for x in w]}"
 
-  def test_single_key_value(self, parser):
+  def single_key_value(self, parser):
     d = parser("max_h=60")
-    assert d.is_dsl is True
-    assert d.max_h_mm == 60.0
+    assert d.is_dsl is True and d.max_h_mm == 60.0
 
-  def test_multiple_keys(self, parser):
+  def multiple_keys(self, parser):
     d = parser("max_h=80 align=R")
     assert d.max_h_mm == 80.0 and d.align == "R"
 
-  def test_exact_w_and_h(self, parser):
+  def exact_w_and_h(self, parser):
     d = parser("w=100 h=60")
     assert d.exact_w_mm == 100.0 and d.exact_h_mm == 60.0
 
-  def test_scale(self, parser):
-    d = parser("scale=0.5")
-    assert d.scale == 0.5
+  def scale(self, parser):
+    assert parser("scale=0.5").scale == 0.5
 
-  def test_align_values(self, parser):
+  def align_values(self, parser):
     assert parser("align=L").align == "L"
     assert parser("align=C").align == "C"
     assert parser("align=R").align == "R"
 
-  def test_case_insensitive_keys(self, parser):
+  def case_insensitive_keys(self, parser):
     d = parser("MAX_H=50 ALIGN=c SCALE=2")
     assert d.max_h_mm == 50.0 and d.align == "C" and d.scale == 2.0
 
-  def test_order_independent(self, parser):
+  def order_independent(self, parser):
     a = parser("w=100 h=50")
     b = parser("h=50 w=100")
     assert (a.exact_w_mm, a.exact_h_mm) == (b.exact_w_mm, b.exact_h_mm)
 
-  def test_unknown_key_warns(self, parser):
+  def unknown_key_warns(self, parser):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("max_h=50 foo=1")
     assert d.max_h_mm == 50.0
     assert any("unknown" in str(x.message).lower() for x in w)
 
-  def test_invalid_value_warns(self, parser):
+  def invalid_value_warns(self, parser):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("max_h=zzz")
     assert d.max_h_mm is None
     assert any("not a number" in str(x.message).lower() for x in w)
 
-  def test_negative_value_warns(self, parser):
+  def negative_value_warns(self, parser):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("max_h=-10")
     assert d.max_h_mm is None
     assert any("> 0" in str(x.message) for x in w)
 
-  def test_zero_value_warns(self, parser):
-    with warnings.catch_warnings(record=True) as w:
+  def zero_value_warns(self, parser):
+    with warnings.catch_warnings(record=True):
       warnings.simplefilter("always")
       d = parser("scale=0")
     assert d.scale is None
 
-  def test_invalid_align_warns(self, parser):
+  def invalid_align_warns(self, parser):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("align=X")
     assert d.align is None
     assert any("l/c/r" in str(x.message).lower() for x in w)
 
-  def test_mixed_caption_and_dsl_warns_on_caption(self, parser):
+  def mixed_caption_and_dsl_warns_on_caption(self, parser):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       d = parser("Some caption scale=0.5")
@@ -109,8 +102,8 @@ class TestParser:
 
 #----------------------------------------------------------------------- Cross-parser parity
 
-def test_parsers_produce_same_field_set():
-  """Both libs share field names so a parsed DSL is interchangeable shape."""
+def parsers_produce_same_field_set():
+  # both libs share field names so a parsed DSL is interchangeable shape
   from dataclasses import fields
   pf = {f.name for f in fields(PdfDSL())}
   df = {f.name for f in fields(DocDSL())}
@@ -125,24 +118,26 @@ def test_parsers_produce_same_field_set():
   "align=L",
   "max_h=60 align=R",
 ])
-def test_parsers_produce_same_result(title):
-  """Same input → identical fields in both lib parsers."""
+def parsers_produce_same_result(title):
   a = pdf_parse(title)
   b = doc_parse(title)
   for f in ("exact_w_mm", "exact_h_mm", "max_w_mm", "max_h_mm", "scale", "align"):
     assert getattr(a, f) == getattr(b, f), \
       f"{f}: pdf={getattr(a, f)} doc={getattr(b, f)}"
 
-#------------------------------------------------------------------------- End-to-end PDF
+#------------------------------------------------------------------------- End-to-end render
 
-def _make_img(tmp_path, name="img.png", size=(400, 300)):
-  from PIL import Image
-  p = tmp_path / name
-  Image.new("RGB", size, (100, 150, 200)).save(p)
-  return p
+@pytest.fixture
+def make_img(tmp_path):
+  def _make(name="img.png", size=(400, 300)):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, (100, 150, 200)).save(p)
+    return p
+  return _make
 
-def test_dsl_renders_in_pdf(tmp_path):
-  _make_img(tmp_path)
+def dsl_renders_in_pdf(tmp_path, make_img):
+  make_img()
   src = (
     '![a](img.png)\n\n'
     '![b](img.png "max_h=30")\n\n'
@@ -153,8 +148,8 @@ def test_dsl_renders_in_pdf(tmp_path):
   md_to_pdf(src, str(path), base_dir=str(tmp_path))
   assert_valid_pdf(path)
 
-def test_dsl_renders_in_docx(tmp_path):
-  _make_img(tmp_path)
+def dsl_renders_in_docx(tmp_path, make_img):
+  make_img()
   src = (
     '![a](img.png "max_h=30")\n\n'
     '![b](img.png "scale=0.5")\n\n'
@@ -164,8 +159,8 @@ def test_dsl_renders_in_docx(tmp_path):
   md_to_docx(src, str(path), base_dir=str(tmp_path))
   assert_valid_docx(path)
 
-def test_dsl_align_applied_in_docx(tmp_path):
-  _make_img(tmp_path)
+def dsl_align_applied_in_docx(tmp_path, make_img):
+  make_img()
   src = '![a](img.png "align=R")'
   path = tmp_path / "align.docx"
   md_to_docx(src, str(path), base_dir=str(tmp_path))
@@ -176,23 +171,21 @@ def test_dsl_align_applied_in_docx(tmp_path):
   # `align_to_docx("R") -> WD_ALIGN_PARAGRAPH.RIGHT` (int 2)
   assert image_paras[0].alignment == 2
 
-def test_caption_only_title_renders_without_warnings(tmp_path):
-  """Legacy markdown with a plain text title (caption) keeps working
-  silently - no parser warnings, image rendered as before."""
-  _make_img(tmp_path)
+def caption_only_title_renders_without_warnings(tmp_path, make_img):
+  # legacy plain-text title (caption) keeps working silently - no parser warnings
+  make_img()
   src = '![a](img.png "An informative caption")'
   path = tmp_path / "caption.pdf"
   with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
     md_to_pdf(src, str(path), base_dir=str(tmp_path))
-  # Filter to DSL-related warnings only; PDF rendering may emit other ones.
   dsl_warns = [x for x in w if "image title" in str(x.message).lower()]
   assert not dsl_warns, f"unexpected DSL warnings: {dsl_warns}"
   assert_valid_pdf(path)
 
-def test_scale_priority_over_other_keys(tmp_path):
-  """When `scale` is present, w/h/max_* are ignored. Output renders fine."""
-  _make_img(tmp_path)
+def scale_priority_over_other_keys(tmp_path, make_img):
+  # when `scale` is present, w/h/max_* are ignored; output renders fine
+  make_img()
   src = '![a](img.png "scale=0.5 w=999 max_h=999")'
   path = tmp_path / "prio.pdf"
   md_to_pdf(src, str(path), base_dir=str(tmp_path))

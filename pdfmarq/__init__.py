@@ -1,7 +1,6 @@
 # pdfmarq/__init__.py
 
-"""
-PDF generation with fluent API. Built on reportlab.
+"""PDF generation with fluent API. Built on reportlab.
 
 Low-level drawing only - no markdown. For markdown rendering install
 the `[md]` extra and import from `pdfmarq.md`:
@@ -18,7 +17,7 @@ Example:
 
 #----------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"

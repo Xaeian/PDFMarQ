@@ -1,22 +1,18 @@
 # pdfmarq/md/md_preprocess.py
 
-"""
-Source text preprocessors for markdown rendering.
+"""Source text preprocessors run before markdown-it parsing.
 
-- `_iter_content_lines` - fence-aware line iterator used by other preprocessors
-- `_normalize_list_indent` - 2-space list indent → 4-space (markdown-it needs 4)
-- `_emojize_outside_code` - `:shortcode:` → Unicode emoji, respecting code blocks
+- `_iter_content_lines`   fence-aware line iterator used by other preprocessors
+- `_normalize_list_indent` 2-space list indent → 4-space (markdown-it requires 4)
+- `_emojize_outside_code`  `:shortcode:` → Unicode emoji, respecting code blocks
 """
 import re
 
 #------------------------------------------------------------------------------ PreprocessMixin
 
 class PreprocessMixin:
-  """
-  Source text preprocessing (list indent normalization, emoji shortcode
-  replacement) run before markdown-it parsing. Mixed into
-  `MarkdownRenderer`.
-  """
+  """Source text preprocessing mixed into `MarkdownRenderer`.
+  Runs before markdown-it parsing: list indent normalization and emoji expansion."""
 
   @staticmethod
   def _iter_content_lines(md_text:str):

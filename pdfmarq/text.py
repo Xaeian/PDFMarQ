@@ -36,11 +36,9 @@ class TextMetrics:
     return stringWidth(text, font_name, size)
 
   def line_height(self, family:str, mode:str, size:float) -> float:
-    """Get single line height (ascent) in points.
+    """Leading ascent in points for multi-line layout and cell sizing.
 
-    Note: this returns the line leading ascent used for multi-line layout and
-    cell sizing, NOT the real visual ascent. For visual text centering use
-    `visual_metrics()`.
+    Not the real visual ascent - use `visual_metrics()` for vertical centering.
     """
     if is_builtin(family, mode): return size * 0.8
     try:
@@ -100,14 +98,13 @@ class TextMetrics:
     enter_in: str = "\n",
     enter_out: str = "\n",
   ) -> BoxFitResult:
-    """Fit text into box, wrapping and optionally scaling font.
+    """Wrap text into a box, optionally shrinking font to fit.
 
-    Always returns `BoxFitResult`. Check `.overflow` when text cannot fit
+    Always returns `BoxFitResult`; check `.overflow` when no fit is possible
     (word too wide to wrap, or height exceeded with no autoscale room).
 
-    Autoscale walks `size -= autoscale` until text fits, a word still won't
-    wrap, or `size <= autoscale`. Iterative - was recursive before and could
-    hit Python's recursion limit for `size=12, autoscale=0.1`.
+    Autoscale steps `size -= autoscale` until text fits or size is exhausted.
+    Iterative to avoid call-stack depth issues at small step sizes.
     """
     if text is None: text = ""
     text = text.replace(link_char, "¶")

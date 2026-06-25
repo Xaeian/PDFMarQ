@@ -47,8 +47,7 @@ class FootnotesMixin:
     if s.footnote_label:
       self._render_footnote_heading(s.footnote_label)
     else:
-      # Full-width HR separator. Mirrors `docmarq` which calls `doc.hr()` at
-      # this point; previously this was 30% width but read as "broken line".
+      # Full-width HR separator; matches docmarq's `doc.hr()` at this point.
       x = self._indent_mm
       w = self.pdf.content_width - x
       self.pdf.cursor(x, self.pdf.y)
@@ -56,9 +55,8 @@ class FootnotesMixin:
       self.pdf.line(w, 0, s.hr_thick)
       self._reset_stroke()
       self.pdf.enter(s.para_gap)
-    # One step below body on the typographic ladder. Same derivation as
-    # `docmarq.md._render_footnote_block` so the bibliography reads at the
-    # same relative weight in both formats (e.g. body=11pt → footnote=10pt).
+    # One typographic ladder step below body; matches docmarq so the
+    # bibliography reads at the same relative weight in both formats.
     biblio_pt = smaller_size(s.body_size)
     i = start + 1
     while i < end:
@@ -85,8 +83,7 @@ class FootnotesMixin:
         width = self.pdf.content_width - x
         self._ensure_space(biblio_pt * s.line_height / MM_TO_PT)
         y = self.pdf.y
-        # Named dest → [label] refs in body navigate here
-        self.pdf._canvas.bookmarkPage(f"fn_{label}")
+        self.pdf._canvas.bookmarkPage(f"fn_{label}")  # [^label] refs navigate here
         self.pdf.cursor(x, y)
         h = render_rich(self.pdf, segs, width, x, y, Align.LEFT, s.line_height)
         self.pdf.cursor(x, y + h + s.list_gap)
@@ -102,7 +99,6 @@ class FootnotesMixin:
     while i < end:
       t = tokens[i]
       if t.type == "dt_open":
-        # Term - bold
         j = i + 1
         inline_token: Token|None = None
         while j < end and tokens[j].type != "dt_close":
@@ -124,7 +120,6 @@ class FootnotesMixin:
           self.pdf.cursor(x, y + h + s.list_gap)
         i = j + 1
       elif t.type == "dd_open":
-        # Definition - indented; walk to matching dd_close
         j = i + 1
         depth_dd = 1
         while j < end and depth_dd > 0:

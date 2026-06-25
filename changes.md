@@ -1,5 +1,10 @@
 # Changes `pdfmarq`
 
+## `0.3.2` Gutter & fixes
+
+- `render:` keys `gutter`, `header`
+- Fix: PDF generation without markdown
+
 ## `0.3.1` Fonts, mermaid & render keys
 
 - fixing weird unicode chars like **Ω**

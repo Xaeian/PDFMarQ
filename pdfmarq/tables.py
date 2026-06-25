@@ -65,15 +65,13 @@ class TableBuilder:
     return self
 
   def columns(self, sizes:list[float], aligns:list[str]|None=None) -> "TableBuilder":
-    """Set relative column widths (proportional) and per-column alignment.
-    `aligns` defaults to all-left; pass `["L","R","C"]` etc. to customize."""
+    """Set proportional column widths and per-column alignment (default: all-left)."""
     self._col_sizes = sizes
     self._col_aligns = aligns or [Align.LEFT] * len(sizes)
     return self
 
   def width(self, width:float) -> "TableBuilder":
-    """Force absolute total width in mm. When unset, `build()` fills the
-    `available_width` it's passed."""
+    """Force absolute total width in mm; unset lets `build()` use `available_width`."""
     self._width = width
     return self
 

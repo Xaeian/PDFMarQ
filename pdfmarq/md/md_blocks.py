@@ -12,7 +12,7 @@ from markdown_it.token import Token
 import re
 from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
-from .md_images import load_image_info, size_block, size_inline, ImageInfo
+from .md_images import load_image_info, size_block, size_inline
 
 #---------------------------------------------------------------------------------- BlocksMixin
 
@@ -25,14 +25,13 @@ class BlocksMixin:
   def _render_heading(self, level:int, inline_token:Token, lookahead_mm:float=0):
     s = self.style
     size = [s.h1_size, s.h2_size, s.h3_size, s.h4_size, s.h5_size, s.h6_size][level-1]
-    # h1 starts a new page when configured; other headings just add top spacing.
-    # The frontmatter title is rendered via _render_frontmatter_header so it
-    # never goes through this code path - safe to apply unconditionally here.
+    # h1 page-break is unconditional here: the frontmatter title goes through
+    # _render_frontmatter_header, never this path.
     if level == 1 and s.h1_page_break and self.pdf.y > 0.5:
       self.pdf.new_page()
     elif self.pdf.y > 0.5:
       self.pdf.enter(s.head_gap_top)
-    # Keep-with-next: reserve heading + max(lookahead, 3 body lines)
+    # Keep-with-next: reserve heading height + at least 3 body lines.
     heading_block_mm = size / MM_TO_PT * 2
     min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
     self._ensure_space(heading_block_mm + max(lookahead_mm, min_followup_mm))
@@ -44,8 +43,8 @@ class BlocksMixin:
     x = self._indent_mm
     y = self.pdf.y
     width = self.pdf.content_width - x
-    # Register named destination so `[text](#slug)` links can jump here.
-    # Must happen while canvas is on the correct page (after ensure_space).
+    # Named destination for `[text](#slug)` anchor links.
+    # Must be registered while the canvas is on the correct page.
     slug = self._slugify_inline(inline_token)
     if slug:
       self.pdf._canvas.bookmarkPage(slug)
@@ -97,9 +96,9 @@ class BlocksMixin:
     segments = self._inline_to_segments(inline_token, base)
     x = self._indent_mm
     width = self.pdf.content_width - x
-    # Measure full paragraph; if it fits on an empty page but not in remaining
-    # space here, break to new page first. Very long paragraphs (>90% of page)
-    # render in place - `render_rich` is not page-aware and cannot split.
+    # Break to next page only when the paragraph fits a full page but not the
+    # remaining space. Paragraphs >90% of page height render in place:
+    # render_rich cannot split across pages.
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
     para_h = measure_rich(self.pdf, segments, width, line_gap=s.line_height) or body_line_mm
     page_avail = self.pdf.content_height
@@ -117,7 +116,7 @@ class BlocksMixin:
   def _render_code_block(self, content:str, lang:str="", info_rest:str=""):
     s = self.style
     content = content.rstrip("\n")
-    # Mermaid renders to image. `info_rest` is parsed as image DSL.
+    # Mermaid: render to PNG; `info_rest` carries optional image DSL overrides.
     if lang == "mermaid" and s.mermaid_enable:
       try:
         from .mermaid import render_mermaid
@@ -138,9 +137,8 @@ class BlocksMixin:
         dsl = parse_image_dsl(info_rest) if info_rest else None
         self._render_mermaid_image(path, w_pt, h_pt, dsl)
         return
-    # Syntax highlighting via pygments. The function returns None when
-    # pygments is missing and warns once internally; ImportError handler
-    # here is defensive.
+    # highlight_code returns None when pygments is absent (warns once);
+    # the ImportError guard is defensive against partial installs.
     highlighted = None
     if lang:
       try:
@@ -264,7 +262,7 @@ class BlocksMixin:
     )
     self._ensure_space(img_h_mm + s.para_gap)
     y = pdf.y
-    # DSL `align=L/C/R` overrides the default center; otherwise center stays.
+    # DSL align overrides default center.
     if info.align == "L":
       x = x_start
     elif info.align == "R":
@@ -287,7 +285,7 @@ class BlocksMixin:
     avail_w_mm = pdf.content_width - x_start
     nat_w_mm = w_pt / MM_TO_PT
     nat_h_mm = h_pt / MM_TO_PT
-    # DSL overrides: scale wins absolutely, else explicit w/h, then max_* caps.
+    # DSL precedence: scale > explicit w/h > max_* caps.
     ew_mm, eh_mm = nat_w_mm, nat_h_mm
     max_w_cap = avail_w_mm
     max_h_cap = s.image_max_h

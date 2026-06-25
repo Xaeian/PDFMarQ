@@ -87,7 +87,6 @@ class PageGeometry:
 
   @margin_lr.setter
   def margin_lr(self, value:float) -> None:
-    """Set both `margin_left` and `margin_right` to the same value."""
     self.margin_left = value
     self.margin_right = value
 
@@ -102,7 +101,7 @@ class PageGeometry:
     return self.height - self.margin_top - self.margin_bot
 
   def x_for_align(self, width:float, align:str) -> float:
-    """Calculate x position for given alignment and element width."""
+    """Canvas x origin for an element of `width` at the requested alignment."""
     if align == Align.LEFT:
       return self.margin_left
     elif align == Align.CENTER:

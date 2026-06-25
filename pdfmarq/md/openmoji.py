@@ -10,7 +10,7 @@ to reportlab `Drawing` objects (which reuse the same inline-embedding path
 as inline math formulas via `RichSegment.math_drawing`).
 
 Usage:
-  >>> from pdfmarq.openmoji import get_emoji_drawing
+  >>> from pdfmarq.md.openmoji import get_emoji_drawing
   >>> drawing = get_emoji_drawing(0x1F44D, fontsize_pt=11) # 👍
   >>> # drawing.width / .height in pt, pre-scaled to fontsize
 
@@ -20,7 +20,6 @@ like 👨‍👩‍👧, skin-tone modifiers 👍🏾) fall back to the base cod
 
 __extras__ = ("emoji", [])
 
-import os
 from pathlib import Path
 
 #---------------------------------------------------------------------------------------- Cache
@@ -66,10 +65,8 @@ def _ensure_openmoji() -> Path|None:
 
 #------------------------------------------------------------------------------------ Detection
 
-# Unicode ranges that contain emoji/pictographs. Not exhaustive but covers
-# most of what appears in technical docs. We check these ranges to decide
-# if a character should be rendered as emoji (via OpenMoji SVG) or as text
-# (via the normal font).
+# Unicode ranges containing emoji/pictographs common in technical docs.
+# Not exhaustive — covers the practical set without a full Unicode lookup.
 _EMOJI_RANGES = [
   (0x1F300, 0x1F5FF),  # Misc Symbols and Pictographs
   (0x1F600, 0x1F64F),  # Emoticons
@@ -86,18 +83,13 @@ _EMOJI_RANGES = [
   (0x24C2,  0x24C2),  # Circled M (Ⓜ)
 ]
 
-def is_emoji(ch:
-  str) -> bool:
+def is_emoji(ch: str) -> bool:
   """Check if single character should be rendered as color emoji."""
   if not ch: return False
   code = ord(ch)
-  for lo, hi in _EMOJI_RANGES:
-    if lo <= code <= hi:
-      return True
-  return False
+  return any(lo <= code <= hi for lo, hi in _EMOJI_RANGES)
 
-def split_text_by_emoji(text:
-  str) -> list[tuple[str, bool]]:
+def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
   """Split text into runs of (fragment, is_emoji).
 
   Groups consecutive non-emoji chars into a single text run. Each emoji
@@ -111,8 +103,8 @@ def split_text_by_emoji(text:
   buf_text: list[str] = []
   for ch in text:
     code = ord(ch)
-    # Skip variation selectors (FE0F = emoji presentation, FE0E = text)
-    # and ZWJ. These are modifiers - we render only the base char.
+    # FE0F/FE0E = variation selectors, 200D = ZWJ - invisible modifiers,
+    # render only the base codepoint.
     if code in (0xFE0F, 0xFE0E, 0x200D):
       continue
     if is_emoji(ch):
@@ -128,13 +120,12 @@ def split_text_by_emoji(text:
 
 #-------------------------------------------------------------------------------------- Drawing
 
-def get_emoji_drawing(codepoint:
-  int, fontsize_pt: float):
+def get_emoji_drawing(codepoint: int, fontsize_pt: float):
   """Return a reportlab `Drawing` for the given emoji codepoint, scaled to
   approximately the given font size. Returns None on any failure (missing
   SVG, clone not attempted, svglib error).
 
-  Scaling: drawing is sized so its height matches `fontsize_pt * 1.1`,
+  Scaling: drawing is sized so its height matches `fontsize_pt * 1.32`,
   which places the emoji roughly the same height as cap-height letters.
   """
   key = (codepoint, round(fontsize_pt, 2))

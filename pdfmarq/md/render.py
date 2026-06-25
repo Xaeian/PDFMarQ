@@ -1,8 +1,7 @@
 """Frontmatter `render:` block - geometry, typography, chrome, locale.
 
-User-facing field names are short and friendly (`font`, `head_font`, `banner`,
-`page_number`) and map to internal `MarkdownStyle` / `PageGeometry` keys at
-parse time. Mirrors `docmarq.md.render` field-for-field.
+Field names map to internal `MarkdownStyle` / `PageGeometry` keys at parse
+time. Mirrors `docmarq.md.render` field-for-field.
 
 Precedence: `MarkdownStyle()` defaults < frontmatter `lang` preset <
 frontmatter `render:` keys < caller's `style=` non-default fields.
@@ -14,10 +13,14 @@ title: Report
 render:
   page: A4
   margin: 25
+  gutter: 0             # binding margin added to the inner/left side
   landscape: false
-  font: Inter
+  font_body: Inter
+  font_head: Sora       # defaults to `font_body`
+  font_mono: Consolas
   font_size: 11
   banner: true
+  header: true          # mini-banner / header on continuation pages
   page_number: true
   lang: pl
 ---
@@ -48,6 +51,7 @@ class RenderConfig:
   page: PageSize|None = None
   margin: float|tuple|list|None = None
   landscape: bool|None = None
+  gutter: float|None = None         # binding margin (added to the inner/left edge)
   font_body: str|None = None
   font_head: str|None = None
   font_mono: str|None = None
@@ -56,6 +60,7 @@ class RenderConfig:
   img_max_h: float|None = None
   banner: bool|None = None
   banner_min: bool|None = None
+  header: bool|None = None          # alias of `banner_min` (continuation-page header)
   page_number: bool|None = None
   lang: str|None = None
   mermaid_theme: str|None = None
@@ -96,6 +101,8 @@ def parse_render_block(fm:dict|None) -> RenderConfig:
       out.margin = _parse_margin_val(val)
     elif key == "landscape":
       out.landscape = _parse_bool(val, "landscape")
+    elif key == "gutter":
+      out.gutter = _parse_positive_float(val, "gutter", allow_zero=True)
     elif key == "font_body":
       out.font_body = _parse_str(val, "font_body")
     elif key == "font_head":
@@ -112,6 +119,8 @@ def parse_render_block(fm:dict|None) -> RenderConfig:
       out.banner = _parse_bool(val, "banner")
     elif key == "banner_min":
       out.banner_min = _parse_bool(val, "banner_min")
+    elif key == "header":
+      out.header = _parse_bool(val, "header")
     elif key == "page_number":
       out.page_number = _parse_bool(val, "page_number")
     elif key == "lang":
@@ -242,8 +251,11 @@ def build_style(
     base.syntax_theme = render.syntax_theme
   if render.banner is not None:
     base.banner_render = render.banner
+  # `header` is the friendly alias of `banner_min` (continuation-page header).
   if render.banner_min is not None:
     base.mini_banner_render = render.banner_min
+  if render.header is not None:
+    base.mini_banner_render = render.header
   if render.page_number is not None:
     # `True` keeps the current (possibly lang-derived) label; `False`
     # disables page numbers entirely.
@@ -262,9 +274,8 @@ def build_style(
 #---------------------------------------------------------------- Top-level deprecation
 
 def warn_top_level_landscape(fm:dict|None) -> None:
-  """Hard break: `landscape:` at frontmatter top-level used to flip the
-  page; it must now live under `render:`. Warn loudly when detected so
-  users see the migration path; the value is NOT honored."""
+  """Top-level `landscape:` is not honored - it must live under `render:`.
+  Emits a loud warning so users see the migration path."""
   if not fm or not isinstance(fm, dict):
     return
   if "landscape" in fm:

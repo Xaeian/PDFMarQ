@@ -23,7 +23,7 @@ def draw_line(
     canvas.setDash()
   canvas.line(x1, y1, x2, y2)
   if dash:
-    canvas.setDash() # reset to solid so subsequent strokes are unaffected
+    canvas.setDash()  # restore solid stroke for subsequent calls
 
 def draw_rect(
   canvas,

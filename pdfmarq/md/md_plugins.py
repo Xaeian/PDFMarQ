@@ -19,8 +19,7 @@ UNESCAPE_RE = re.compile(r'\\([ \\!"#$%&\'()*+,.\/:;<=>?@[\]^_`{|}~-])')
 
 #--------------------------------------------------------------------------- Superscript ^text^
 
-def _tokenize_sup(state:
-  StateInline, silent: bool) -> bool:
+def _tokenize_sup(state: StateInline, silent: bool) -> bool:
   if silent:
     return False
   start = state.pos
@@ -55,20 +54,17 @@ def _tokenize_sup(state:
   state.posMax = maximum
   return True
 
-def sup_plugin(md:
-  MarkdownIt) -> None:
+def sup_plugin(md: MarkdownIt) -> None:
   """Register superscript `^text^` → sup_open / text / sup_close tokens."""
   md.inline.ruler.after("emphasis", "sup", _tokenize_sup)
 
 #--------------------------------------------------------------------------- Highlight ==text==
 
-def _tokenize_mark(state:
-  StateInline, silent: bool) -> bool:
+def _tokenize_mark(state: StateInline, silent: bool) -> bool:
   if silent:
     return False
   start = state.pos
   maximum = state.posMax
-  # Need `==` (two equals signs)
   if start + 4 > maximum:
     return False
   if state.src[start] != "=" or state.src[start + 1] != "=":
@@ -100,7 +96,6 @@ def _tokenize_mark(state:
   state.posMax = maximum
   return True
 
-def mark_plugin(md:
-  MarkdownIt) -> None:
+def mark_plugin(md: MarkdownIt) -> None:
   """Register highlight `==text==` → mark_open / text / mark_close tokens."""
   md.inline.ruler.after("emphasis", "mark", _tokenize_mark)

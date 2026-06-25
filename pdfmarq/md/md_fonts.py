@@ -1,11 +1,10 @@
 # pdfmarq/md/md_fonts.py
 
-"""
-Font auto-registration for MarkdownRenderer.
+"""Font auto-registration for `MarkdownRenderer`.
 
 Tries DejaVu Sans/Mono from common system paths (Linux, Homebrew, Windows),
 falls back to Vera bundled with reportlab. Updates `MarkdownStyle` defaults
-if the user didn't explicitly override the family.
+only when the user has not overridden the family.
 """
 
 from .markdown_style import MarkdownStyle
@@ -27,17 +26,14 @@ _FONT_DIRS = [
 #----------------------------------------------------------------------------------- FontsMixin
 
 class FontsMixin:
-  """
-  Default font auto-registration. Ensures the body / heading / mono
-  families requested by `MarkdownStyle` are loaded before the first
-  draw. Mixed into `MarkdownRenderer`.
-  """
+  """Font auto-registration mixin for `MarkdownRenderer`.
+  Loads body/heading/mono families before the first draw."""
 
   _FONT_FILES = _FONT_FILES
   _FONT_DIRS = _FONT_DIRS
 
   def _ensure_default_font(self):
-    """Register default sans + mono TTFs with full Polish/Latin-Ext coverage."""
+    """Register DejaVu sans + mono TTFs (Polish/Latin-Ext coverage); fall back to Vera."""
     def family_paths(family:str, base:str) -> dict:
       import os
       return {

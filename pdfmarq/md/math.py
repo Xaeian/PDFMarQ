@@ -1,13 +1,11 @@
 # pdfmarq/md/math.py
 
-"""
-Math formula rendering via matplotlib.mathtext → SVG → reportlab vector.
+"""Math rendering: matplotlib.mathtext → SVG → reportlab vector `Drawing`.
 
-Uses matplotlib's mathtext parser (LaTeX subset) to render formulas, then
-converts the SVG output to a reportlab `Drawing` via svglib. The result is
-a **true vector** embedded in the PDF (no bitmaps), sharp at any zoom.
+Renders LaTeX-subset formulas as true vector graphics (no bitmaps), sharp
+at any zoom. Entry points: `render_math_svg` (block) and
+`render_math_svg_with_baseline` (inline, returns baseline offset for alignment).
 
-Example:
   >>> from pdfmarq.math import render_math_svg
   >>> drawing = render_math_svg(r"E = mc^2", fontsize=11)
   >>> # drawing.width, drawing.height in pt
@@ -39,9 +37,9 @@ class MathFontConfig:
   """Per-renderer matplotlib mathtext settings.
 
   matplotlib's `rcParams` are process-global, so two `MarkdownRenderer`
-  instances with different `math_fontset` would clobber each other if we
-  set rcParams at construction time. We now hold the config per-renderer
-  and apply it via `apply()` immediately before each math render call.
+  instances with different `math_fontset` would clobber each other if set
+  at construction time. Held per-renderer and applied via `apply()` just
+  before each render call to keep renderers isolated.
   """
   fontset: str = "stixsans"
   rm: str|None = None
@@ -143,7 +141,6 @@ def _preprocess_formula(formula:str) -> str:
       result.append(formula[i])
       i += 1
       continue
-    # Found a bold command - find matching closing brace
     brace_start = m.end()  # position just after `{`
     depth = 1
     j = brace_start
@@ -240,7 +237,7 @@ def render_math_svg_with_baseline(
     fig = Figure(figsize=(10, 2), dpi=72)
     fig.patch.set_alpha(0)
     canvas_agg = FigureCanvasAgg(fig)
-    txt = fig.text(
+    fig.text(
       0, 0, f"${formula}$",
       fontsize=fontsize,
       color=color,
@@ -249,10 +246,10 @@ def render_math_svg_with_baseline(
     canvas_agg.draw()
     renderer = canvas_agg.get_renderer()
     tight_bbox_inches = fig.get_tightbbox(renderer)
-    # baseline at y=0 in figure coord; tight bbox origin is at tight.y0 inches
+    # text sits at y=0; tight bbox origin is at tight.y0 (negative), so
+    # negating it gives the baseline distance from the bottom of the crop.
     baseline_from_bottom_in = -tight_bbox_inches.y0
     baseline_from_bottom_pt = baseline_from_bottom_in * 72.0
-    # Save SVG with tight bbox
     buf = io.BytesIO()
     fig.savefig(
       buf, format="svg", transparent=True,
@@ -262,5 +259,4 @@ def render_math_svg_with_baseline(
     drawing = svg2rlg(buf)
     return drawing, baseline_from_bottom_pt
   except Exception:
-    pass  # silent failure - math is optional
-    return None, 0
+    return None, 0  # math is optional; caller falls back to plain text

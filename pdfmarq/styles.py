@@ -7,11 +7,10 @@ from .constants import Defaults, Align
 #----------------------------------------------------------------------------------- Helpers
 
 def _as_rgba(color:tuple) -> tuple[float, float, float, float]:
-  """Normalize 3-tuple to 4-tuple by appending alpha=1. Pass-through for 4-tuples.
+  """Normalize RGB 3-tuple to RGBA 4-tuple (alpha=1). Pass-through for 4-tuples.
 
-  `Style.color` is canonically 4-tuple - `PDF.color()` writes 4-tuples, and
-  fixing `with_defaults` and `_style.color` reads to expect the same shape
-  removes a silent inconsistency flagged in review.md.
+  `Style.color` is canonically 4-tuple - `PDF.color()` writes 4-tuples, so
+  normalizing here keeps the shape consistent throughout the pipeline.
   """
   if len(color) == 3:
     return (color[0], color[1], color[2], 1.0)

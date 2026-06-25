@@ -151,25 +151,20 @@ class MarkdownStyle:
   h2_underline: bool = True
   table_zebra: bool = True
 
-  # YAML frontmatter -> document header.
-  # When the document starts with `---\n...\n---`, the YAML block is parsed
-  # and rendered as a header layout instead of body text. Set
-  # `banner_render=False` to skip frontmatter without rendering.
+  # YAML frontmatter (`---\n...\n---`) is rendered as a header layout when
+  # present. Set `banner_render=False` to parse but skip rendering.
   banner_render: bool = True
-  # If the first body block is `# X` and `X` exactly matches frontmatter
-  # `title`, drop that h1 to avoid showing the title twice. Only active
-  # when the frontmatter header was actually rendered.
+  # Drop a leading `# title` that duplicates the frontmatter title (only
+  # when the banner was rendered, to avoid showing the title twice).
   skip_dup_title: bool = True
-  # Mini header on pages 2+ (compact: code | title | page N/M).
-  # Disable for single-page-style documents.
+  # Compact header on pages 2+ (code | title | page N/M). Disable for
+  # single-page-style documents.
   mini_banner_render: bool = True
-  # Date format for created/updated fields. Python strftime syntax.
-  # ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
+  # strftime syntax. ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
   date_format: str = "%Y-%m-%d"
-  # Word for page numbering. Set to None to disable page numbers entirely.
-  # Examples: "Page", "Strona", "Seite".
+  # Page number prefix; `None` disables footer entirely. Localize freely.
   page_number_label: str|None = "Page"
-  # Show total page count: `Page 1/5` instead of just `Page 1`. Default ON.
+  # `Page X / Y` vs just `Page X`.
   page_number_total: bool = True
 
   # Frontmatter header layout (mm)
@@ -209,20 +204,18 @@ class MarkdownStyle:
   # `(border_rgb, text_rgb)` in 0..1 range. Mirrors `docmarq.MarkdownStyle`.
   callout_colors: dict = field(default_factory=_default_callout_colors)
 
-  # Footnote section heading. `None` (default) emits just a thin HR above
-  # the footnote bibliography - the smaller font signals "reference matter".
-  # Set to a string (e.g. `"References"`, `"Bibliografia"`) to add an H2
-  # heading above the footnotes. Mirrors `docmarq.MarkdownStyle.footnote_label`.
+  # `None` emits a thin HR above footnotes; the smaller font signals reference
+  # matter. Set to a string (e.g. `"References"`) to add an H2 heading above.
+  # Mirrors `docmarq.MarkdownStyle.footnote_label`.
   footnote_label: str|None = None
 
-  # Local-link handling. Links like `[x](file.md)` or `[x](folder/doc)` have
-  # no schema and no `#` prefix. Without `link_root`, they get the link style
-  # (blue underline) but no clickable action - a dead link in a PDF context.
-  # When `link_root` is set, they resolve to:
-  #   absolute href `/x/y`         -> `{link_root}/x/y`
-  #   relative href `file.md`      -> `{link_root}/{link_base}/file.md`
+  # Local-link handling. `[x](file.md)` has no schema and no `#` prefix.
+  # Without `link_root`, the link renders styled (blue underline) but is
+  # not clickable - a PDF cannot follow a relative filesystem path.
+  # With `link_root`, hrefs resolve to:
+  #   absolute `/x/y`       -> `{link_root}/x/y`
+  #   relative `file.md`    -> `{link_root}/{link_base}/file.md`
   link_root: str|None = None
   link_base: str = ""
-  # Page break behavior. h1 page break is OFF by default - matches original
-  # behavior where h1 just gets extra top spacing like other headings.
+  # h1 defaults to extra top spacing, not a hard page break.
   h1_page_break: bool = False

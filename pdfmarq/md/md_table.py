@@ -1,16 +1,14 @@
 # pdfmarq/md/md_table.py
 
-"""
-Markdown table rendering with HTML auto-layout column widths.
+"""Markdown table rendering with HTML-style auto-layout column widths.
 
-Uses `measure_extent` (widest unbreakable word + total unwrapped width)
-to decide column widths: if everything fits, use natural widths; if not,
-distribute slack proportionally between `col_min` and `col_max`.
+Column widths use `measure_extent` (widest unbreakable word + total unwrapped
+width): natural widths when content fits; proportional distribution between
+`col_min` and `col_max` when it doesn't.
 
-Tables that don't fit on a single page are split across pages with the
-header row repeated at the top of each continuation page. A minimum of
-2 body rows must fit alongside the header; if there isn't enough space
-for that, a page break is inserted first.
+Tables that exceed one page split with the header repeated on each continuation
+page. At least 2 body rows must accompany the header; fewer triggers a page
+break first.
 """
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
@@ -22,16 +20,13 @@ from .md_images import (
 
 #----------------------------------------------------------------------------------- TableMixin
 class TableMixin:
-  """
-  Markdown table rendering with HTML-like auto-layout column widths and
-  inline image support in cells. Mixed into `MarkdownRenderer`.
-  """
+  """Markdown table rendering with HTML-like auto-layout and inline image
+  support. Mixed into `MarkdownRenderer`."""
 
   def _extract_cell_image(self, inline_token:Token|None) -> ImageInfo|None:
-    """If a cell contains only a single local image, return its `ImageInfo`.
-
-    Cells with mixed content, multiple images, or remote URLs return `None`
-    and flow through the regular `render_rich` path _(inline icon-sized)_.
+    """Return `ImageInfo` when the cell contains exactly one local image.
+    Mixed content, multiple images, or remote URLs return `None` and fall
+    through to `render_rich` as inline icon-sized images.
     """
     if inline_token is None:
       return None
@@ -85,9 +80,8 @@ class TableMixin:
       ncols = len(header_cells) if header_cells else (
         len(body_rows[0]) if body_rows else 1)
       aligns = [Align.LEFT] * ncols
-    # Header-only table (no body rows) is virtually always a headerless layout
-    # - markdown tables require a header per spec, so users emulate "card" or
-    # "labeled-row" tables by writing one row + separator. Demote to body.
+    # Markdown requires a separator row, so a single-row table is semantically
+    # a labeled-row layout, not a real header. Demote to body.
     if header_cells and not body_rows:
       body_rows = [header_cells]
       header_cells = []
@@ -115,8 +109,8 @@ class TableMixin:
     ncols = len(header) if header else (len(body[0]) if body else 1)
     h_pad = s.table_h_pad
     v_pad = s.table_pad
-    # `table_size=None` (default) → derive one ladder step below body so the
-    # same body_pt yields the same cell size in pdfmarq + docmarq output.
+    # One typographic ladder step below body keeps table text lighter than prose
+    # and matches docmarq output for the same body_pt.
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
     text_top_offset = cell_size * 0.30 / MM_TO_PT
 
@@ -141,14 +135,13 @@ class TableMixin:
         size=cell_size, color=s.body_color,
       )
       segs = self._inline_to_segments(inline_token, base) or fallback
-      # Inline segments may have inherited body_size from defaults - coerce
-      # to cell_size so tables consistently render at the smaller table font.
+      # Coerce body_size segments to cell_size; inline defaults inherit body_size.
       for seg in segs:
         if seg.math_drawing is None and seg.size == s.body_size:
           seg.size = cell_size
       return {"type": "text", "segs": segs}
 
-    # Pre-convert all cells (reused across pages)
+    # Convert all cells once; dicts are reused across page chunks.
     header_data: list[dict] = []
     if header:
       header_data = [cell_data(c, bold=True) for c in header]
@@ -156,14 +149,11 @@ class TableMixin:
       [cell_data(c, bold=False) for c in row] for row in body
     ]
 
-    # Column widths (calculated once from ALL rows, stays constant across pages)
+    # Widths calculated once from all rows; held constant across page chunks.
     col_widths, text_width_mm = self._compute_col_widths(
       header_data, body_data, ncols, total_w, h_pad)
 
-    # Row heights (pre-measured, reused)
     min_row_h = cell_size * s.line_height / MM_TO_PT + v_pad * 2
-
-    # Inline cap reused everywhere - derived from style
     inline_cap_mm = s.inline_image_max_h
 
     def cell_height(cd:dict, text_w_mm:float) -> float:
@@ -198,11 +188,10 @@ class TableMixin:
       body_heights.append(rh)
       body_cell_heights.append(pch)
 
-    # Render in chunks across pages
     row_idx = 0
     total_body = len(body_data)
-    min_rows = 2  # minimum body rows per chunk (with header)
-    tried_new_page = False  # guard: don't loop forever on rows taller than a page
+    min_rows = 2          # body rows required alongside header per chunk
+    tried_new_page = False  # prevents infinite loop when a row exceeds page height
 
     while row_idx < total_body:
       avail = pdf.content_height - pdf.y
@@ -226,8 +215,7 @@ class TableMixin:
         continue
       # else: fresh page already tried, render what we can (at least 1 row)
 
-      # Force at least 1 row even if it overflows the page; otherwise rows
-      # taller than `content_height` would loop forever.
+      # Always emit at least 1 row; rows taller than content_height must not loop.
       chunk_count = max(fit_count, 1)
       chunk_count = min(chunk_count, total_body - row_idx)
 
@@ -246,12 +234,10 @@ class TableMixin:
       row_idx += chunk_count
       tried_new_page = False
 
-      # Page break between chunks (not after last)
-      if row_idx < total_body:
+      if row_idx < total_body:  # page break between chunks, not after last
         pdf.new_page()
 
-    # Handle empty table (header only, no body)
-    if total_body == 0 and header_data:
+    if total_body == 0 and header_data:  # header-only table
       self._ensure_space(header_h)
       self._draw_table_chunk(
         header_data, header_h, header_cell_h,
@@ -271,16 +257,13 @@ class TableMixin:
     total_w: float,
     h_pad: float,
   ) -> tuple[list[float], list[float]]:
-    """HTML-style auto layout. Returns (col_widths, text_width_mm).
-    Image cells contribute their natural width as both min and max (they
-    can scale down when the column is narrower).
+    """HTML-style auto layout. Returns `(col_widths, text_width_mm)`.
+
+    Text and image contributions are tracked separately per column so an
+    image-only row cannot pin the column max below what the text rows need.
     """
     pdf = self.pdf
     s = self.style
-    # Separate text vs image contributions per col so a single image-only row
-    # can't pin the column's max width when other rows have wider text.
-    # Without this, "| ![](icon.png) | x |" + "| long descriptive text | y |"
-    # in the same col would force col width to icon size, wrapping the text.
     col_min_text = [0.0] * ncols
     col_max_text = [0.0] * ncols
     col_min_img = [0.0] * ncols
@@ -311,24 +294,20 @@ class TableMixin:
     col_min: list[float] = []
     col_max: list[float] = []
     for i in range(ncols):
-      # col_min: largest of either image col_min or text col_min (wider must fit)
       cmin = max(col_min_img[i], col_min_text[i])
-      # col_max: prefer text width when both present; pure-image cols use img max
       if has_text[i]:
-        cmax = max(col_max_text[i], col_min_img[i])  # text width, but at least image min
+        cmax = max(col_max_text[i], col_min_img[i])  # text width, floored at image min
       else:
         cmax = col_max_img[i]
       col_min.append(cmin)
       col_max.append(cmax)
     col_min = [m + 2 * h_pad for m in col_min]
     col_max = [m + 2 * h_pad for m in col_max]
-    is_image_col = has_image  # used by leftover-distribution to pin pure-image cols
+    is_image_col = has_image
     sum_max = sum(col_max)
     sum_min = sum(col_min)
     if sum_max <= total_w:
-      # Distribute leftover only to non-image cols. Image cols stay at col_max
-      # - letting them grow makes the image puff up to fill, which is wrong
-      # in tables with sparse content.
+      # Distribute leftover to text cols only; growing image cols inflates images.
       col_widths = list(col_max)
       leftover = total_w - sum_max
       growable = [i for i in range(ncols) if not is_image_col[i]]
@@ -343,9 +322,8 @@ class TableMixin:
       scale = total_w / sum_min
       col_widths = [m * scale for m in col_min]
     else:
-      # Overflow: solver shrinks each col proportionally between min and max.
-      # Image cols treated as text - they shrink alongside, but their col_min
-      # is icon-scale, so they never go below that floor.
+      # Shrink each col proportionally between min and max.
+      # Image cols shrink alongside text cols; col_min floors them at icon scale.
       slack = total_w - sum_min
       diffs = [col_max[i] - col_min[i] for i in range(ncols)]
       sum_diff = sum(diffs)
@@ -356,8 +334,7 @@ class TableMixin:
           col_min[i] + slack * (diffs[i] / sum_diff) for i in range(ncols)
         ]
     text_width_mm = [max(1.0, cw - 2 * h_pad) for cw in col_widths]
-    # Balance image cols vs text cols so cell heights match where possible.
-    # Solves: image_h(w_img) ≈ text_h(w_text) under fixed budget per image col.
+    # Redistribute width between image and text cols to equalise row heights.
     col_widths, text_width_mm = self._balance_image_cols(
       col_widths, text_width_mm, all_rows, is_image_col, has_text,
       ncols, total_w, h_pad, col_min,
@@ -376,19 +353,15 @@ class TableMixin:
     h_pad: float,
     col_min: list[float],
   ) -> tuple[list[float], list[float]]:
-    """Reflow widths so each pure-image col's rendered height matches the
-    height of its widest text-col partner. Skipped for mixed cols (image
-    rows + text rows in the same col) - there the col already needs full
-    text width and balancing would crush wider text rows.
+    """Reflow widths so a pure-image col's height matches its widest text-col
+    partner. Mixed cols (both image and text rows) are skipped — they need
+    full text width and balancing would truncate text.
 
-    Donor cols are non-image cols only.
-
-    Math per image col `i` against partner text col `j`:
+    Per image col `i` paired with text col `j`:
       image_h(w_i) = w_text_i × aspect_mean
-      text_h(w_j)  ≈ chars_per_row × char_w_avg × line_h / w_text_j
-                   = K / w_text_j
-    Budget: w_i + w_j = w_i_orig + w_j_orig (preserve sum, redistribute).
-    Solve `w_i × aspect = K / (budget - w_i)` → quadratic in w_i.
+      text_h(w_j)  ≈ K / w_text_j  (K = total_text_w × line_h)
+    Budget constraint: w_i + w_j = const. Equating heights yields a
+    quadratic in w_i.
     """
     if not any(is_image_col) or ncols < 2:
       return col_widths, text_width_mm
@@ -396,14 +369,11 @@ class TableMixin:
     s = self.style
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
     line_h_mm = cell_size * s.line_height / MM_TO_PT
-    char_w_pt = pdf._metrics.text_width("M", s.body_family, s.body_mode, cell_size)
-    char_w_mm = char_w_pt / MM_TO_PT
     for ic in range(ncols):
       if not is_image_col[ic]:
         continue
       if has_text[ic]:
-        continue  # Mixed col: text rows need full width, balancer would crush them
-      # Aspect (h/w) average of all image cells in this col
+        continue  # mixed col: text rows need full width
       aspects = []
       for row in all_rows:
         if ic < len(row) and row[ic]["type"] == "image":
@@ -412,50 +382,43 @@ class TableMixin:
             aspects.append(info.nat_h_mm / info.nat_w_mm)
       if not aspects: continue
       aspect = sum(aspects) / len(aspects)
-      # Find partner: widest non-image col with text in same rows
+      # Partner: widest non-image col (donor for width redistribution)
       partners = [j for j in range(ncols) if j != ic and not is_image_col[j]]
       if not partners: continue
       tc = max(partners, key=lambda j: col_widths[j])
-      # Estimate text "char-area" K_max across rows (use widest row's text)
+      # K = text char-area of the widest row (total_text_w × line_h)
       K = 0.0
       for row in all_rows:
         if tc >= len(row) or row[tc]["type"] != "text": continue
-        # Sum of segment widths approximates char-area: (total_text_w_mm × line_h)
         from ..inline import measure_extent
         _, text_w_mm = measure_extent(pdf, row[tc]["segs"])
         k = text_w_mm * line_h_mm
         if k > K: K = k
       if K <= 0: continue
-      # Bias: aim for image_h = text_h × bias. Bias < 1 makes images smaller
-      # when text is short. Equivalent to inflating the text-K by 1/bias².
+      # bias < 1 targets image_h = text_h × bias (smaller image for short text);
+      # equivalent to inflating K by 1/bias².
       K = K / (s.cell_image_balance_bias ** 2)
       budget = col_widths[ic] + col_widths[tc]
       pad2 = 2 * h_pad
-      # Solve aspect × w_i_text² − aspect × (budget − pad2 × 2) × w_i_text + K = 0
-      # where w_i_text = w_i_col − pad2; same for w_j.
-      # Easier: work in "text widths" directly: budget_text = budget − 4*h_pad
+      # Work in text widths directly: budget_text = (w_i + w_j) − 4·h_pad
       budget_text = budget - 2 * pad2
       if budget_text <= 0: continue
-      # aspect × w_i² − aspect × budget_text × w_i + K = 0
+      # quadratic: aspect·w_i² − aspect·budget_text·w_i + K = 0
       a = aspect
       b = -aspect * budget_text
       c = K
       disc = b*b - 4*a*c
       if disc < 0:
-        # text dominates - give image its min, text gets rest
+        # Text dominates; give image its minimum width.
         w_i_text = max(col_min[ic] - pad2, 1.0)
       else:
-        # Pick smaller root (image not too wide)
-        w_i_text = (-b - disc**0.5) / (2 * a)
-      # Clamp to [col_min, col_max range derived from current widths]
+        w_i_text = (-b - disc**0.5) / (2 * a)  # smaller root keeps image narrower
       img_min_text = col_min[ic] - pad2
-      img_max_text = col_widths[ic] - pad2  # don't grow image beyond linear-solver result
-      # But allow grow up to half of budget if text is heavy
-      img_max_text = max(img_max_text, budget_text * 0.45)
+      img_max_text = col_widths[ic] - pad2  # don't exceed linear-solver result
+      img_max_text = max(img_max_text, budget_text * 0.45)  # allow growth for heavy text
       w_i_text = max(img_min_text, min(w_i_text, img_max_text))
       w_j_text = budget_text - w_i_text
-      # Don't shrink partner below its existing min
-      partner_min_text = col_min[tc] - pad2
+      partner_min_text = col_min[tc] - pad2  # partner must not shrink below its min
       if w_j_text < partner_min_text:
         w_j_text = partner_min_text
         w_i_text = budget_text - w_j_text
@@ -495,14 +458,12 @@ class TableMixin:
     chunk_body_h = sum(body_heights)
     chunk_h = header_h + chunk_body_h
 
-    # Header background
-    if header_data:
+    if header_data:  # header background
       pdf.cursor(x_start, y)
       pdf.color(*s.table_header_bg[:3])
       pdf.rect(total_w, header_h)
 
-    # Zebra striping (uses row_offset for global index continuity)
-    if s.table_zebra:
+    if s.table_zebra:  # zebra striping; row_offset ensures continuity across chunks
       y_zebra = y + header_h
       for idx, rh in enumerate(body_heights):
         global_idx = row_offset + idx
@@ -513,7 +474,6 @@ class TableMixin:
         y_zebra += rh
     pdf.color_black()
 
-    # Horizontal lines
     pdf.stroke_color(*s.table_border[:3])
     pdf.cursor(x_start, y)
     pdf.line(total_w, 0, s.table_border_thick)
@@ -536,8 +496,7 @@ class TableMixin:
       pdf.line(0, chunk_h, s.table_border_thick)
     self._reset_stroke()
 
-    # Header content
-    if header_data:
+    if header_data:  # header content
       x_cell = x_start
       for idx, cd in enumerate(header_data):
         cw = col_widths[idx]
@@ -549,7 +508,6 @@ class TableMixin:
         )
         x_cell += cw
 
-    # Body content
     y_row = y + header_h
     for ri, row in enumerate(body_data):
       x_cell = x_start
@@ -583,7 +541,7 @@ class TableMixin:
         cell_image_max_w_mm=s.cell_image_max_w,
         cell_image_scale=s.cell_image_scale,
       )
-      # Position by column alignment (matches GitHub / VSCode preview)
+      # Honour column alignment (matches GitHub / VSCode preview behaviour)
       if align == Align.RIGHT:
         x_img = x_cell + cw - img_w - h_pad
       elif align == Align.CENTER:
