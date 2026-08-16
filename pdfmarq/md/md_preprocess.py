@@ -38,10 +38,16 @@ class PreprocessMixin:
         continue
       yield line, True
 
+  # A sub-item nests only when indented to the parent's content column
+  # (2 for `- `, 3 for `1. `). Below that it gets doubled; from 3 up it already
+  # clears the bar and doubling would push it past the 4-space code threshold.
+  _NEST_PROMOTE_BELOW = 3
+
   @staticmethod
   def _normalize_list_indent(md_text:str) -> str:
-    """2-space list indents → 4-space (markdown-it needs 4 for nesting)."""
+    """Promote a too-shallow list indent to one markdown-it accepts as nesting."""
     list_item_re = re.compile(r"^(\s*)([-*+]|\d+\.)\s")
+    limit = PreprocessMixin._NEST_PROMOTE_BELOW
     out: list[str] = []
     for line, is_content in PreprocessMixin._iter_content_lines(md_text):
       if not is_content:
@@ -50,7 +56,7 @@ class PreprocessMixin:
       m = list_item_re.match(line)
       if m:
         leading = m.group(1)
-        if "\t" not in leading and 0 < len(leading) < 8:
+        if "\t" not in leading and 0 < len(leading) < limit:
           out.append(" " * (len(leading) * 2) + line[len(leading):])
           continue
       out.append(line)

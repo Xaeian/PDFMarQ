@@ -39,7 +39,8 @@ class EstimateMixin:
           width = self.pdf.content_width - self._indent_mm
           page_avail = self.pdf.content_height
           h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
-          return max(min(h, page_avail * 0.9), body_line_mm * 2)  # cap: paragraph that splits anyway shouldn't force a heading break
+          # Capped: a paragraph that splits anyway must not force a heading break.
+          return max(min(h, page_avail * 0.9), body_line_mm * 2)
         except Exception:
           pass
       return body_line_mm * 2
@@ -48,7 +49,8 @@ class EstimateMixin:
       end = self._find_close(tokens, start, ttype, close_type)
       list_h = self._estimate_list_height(tokens, start, end)
       page_avail = self.pdf.content_height
-      if list_h <= page_avail * 0.9:  # giant lists that split anyway shouldn't force a heading break
+      # Giant lists split anyway, so they must not force a heading break.
+      if list_h <= page_avail * 0.9:
         return list_h
       return body_line_mm * s.line_height * 3
     if ttype == "table_open":
@@ -103,7 +105,8 @@ class EstimateMixin:
           if tokens[k].type == "inline":
             try:
               segs = self._inline_to_segments(tokens[k], base)
-              item_h = max(measure_rich(self.pdf, segs, width, line_gap=s.line_height), body_line_mm)
+              h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
+              item_h = max(h, body_line_mm)
             except Exception:
               pass
             break

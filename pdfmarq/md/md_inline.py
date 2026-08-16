@@ -90,10 +90,10 @@ class InlineMixin:
         color = s.code_inline_color
         bg = s.code_inline_bg
         size = _mono_inline_size(s, base.size)
-      if is_sub or is_sup:
-        size = base.size * 0.7
       if is_mark:
         bg = _resolve_highlight(s.mark_bg)
+      # Full size: `_effective_size` shrinks, `render_rich` shifts the baseline.
+      # Pre-shrinking would scale the glyph but leave it on the body baseline.
       return RichSegment(
         text=text,
         family=family,
@@ -105,6 +105,8 @@ class InlineMixin:
         strike=is_strike,
         link_url=link_url,
         link_target=link_target,
+        superscript=is_sup,
+        subscript=is_sub,
       )
     def make_emoji(ch):
       """OpenMoji drawing for an emoji char, fallback to raw glyph."""
@@ -226,9 +228,10 @@ class InlineMixin:
         segments.append(RichSegment(
           text=f"[{label}]",
           family=base.family, mode=base.mode,
-          size=base.size * 0.7, color=s.link_color,
+          size=base.size, color=s.link_color,
           underline=True,
           link_target=f"fn_{label}",
+          superscript=True,
         ))
       elif ct == "html_inline":
         html = child.content or ""
@@ -277,7 +280,7 @@ class InlineMixin:
 
   def _resolve_link(self, href:str) -> tuple[str|None, str|None]:
     """Resolve a link href into `(link_url, link_target)` for `RichSegment`.
-    - `#anchor`    -> internal target if slug is a known heading, else neither
+    - `#anchor` → internal target if slug is a known heading, else neither
     - schema url   -> external url
     - local path   -> external url under `style.link_root` (if set), else
       neither (renders as styled-but-dead link)

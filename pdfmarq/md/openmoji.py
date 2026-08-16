@@ -66,7 +66,7 @@ def _ensure_openmoji() -> Path|None:
 #------------------------------------------------------------------------------------ Detection
 
 # Unicode ranges containing emoji/pictographs common in technical docs.
-# Not exhaustive — covers the practical set without a full Unicode lookup.
+# Not exhaustive - covers the practical set without a full Unicode lookup.
 _EMOJI_RANGES = [
   (0x1F300, 0x1F5FF),  # Misc Symbols and Pictographs
   (0x1F600, 0x1F64F),  # Emoticons

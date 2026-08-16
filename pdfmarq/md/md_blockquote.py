@@ -141,7 +141,8 @@ class BlockquoteMixin:
     self.pdf.color(*bar_color)
     self.pdf.rect(bar_width, bar_h)
     self._reset_stroke()
-    # Restore para_gap after callout: interior used list_gap (tight) so the outer flow sees full spacing.
+    # Restore para_gap after a callout: the interior used the tighter list_gap,
+    # so the outer flow needs the difference back.
     final_y = y_after_content + (s.para_gap - s.list_gap) if callout else y_after_content
     self.pdf.cursor(x_start, final_y)
     return end + 1

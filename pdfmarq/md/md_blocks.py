@@ -203,7 +203,6 @@ class BlocksMixin:
   #------------------------------------------------------------------------------------- Images
   
   def _load_inline_image(self, src:str, fontsize_pt:float, attrs:dict|None=None):
-  
     """Load a local image → scaled reportlab Drawing, or `None` on failure.
 
     Used for inline mid-paragraph images: capped at `inline_image_max_h`
@@ -330,7 +329,6 @@ class BlocksMixin:
   #--------------------------------------------------------------------------------- Math block
   
   def _render_math_block(self, formula:str):
-  
     """Render a block-level math formula centered with auto-numbering."""
     s = self.style
     try:

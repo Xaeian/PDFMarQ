@@ -117,7 +117,6 @@ class MarkdownRenderer(
   #-------------------------------------------------------------------------------------- Entry
   
   def render(self, md_text:str):
-  
     """Parse markdown text and render to PDF."""
     self._frontmatter_data = None
     fm_rendered_title = None

@@ -46,12 +46,12 @@ def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
 # Keyword but not `3.`+). Simple regex-based highlighter instead.
 _MD_COLORS = {
   "heading": (0.035, 0.368, 0.855),
-  "list_marker": (0.0,   0.502, 0.0),
+  "list_marker": (0.0, 0.502, 0.0),
   "code": (0.729, 0.129, 0.129),
   "fence": (0.502, 0.502, 0.502),
   "link": (0.035, 0.368, 0.855),
   "quote": (0.502, 0.502, 0.502),
-  "default": (0.13,  0.13,  0.13),
+  "default": (0.13, 0.13, 0.13),
 }
 
 import re as _re
@@ -61,11 +61,11 @@ import re as _re
 #   full_line          - full line in one color, no inline tokenization
 #   quote              - 2 groups: marker+ws + content (content is quoted)
 _MD_BLOCKS = [
-  (_re.compile(r"^(#{1,6})(\s+)(.*)$"),   "heading",     "marker_sep_content"),
-  (_re.compile(r"^(```+|~~~+)(.*)$"),     "fence",       "full_line"),
-  (_re.compile(r"^([-*+])(\s+)(.*)$"),    "list_marker", "marker_sep_content"),
-  (_re.compile(r"^(\d+\.)(\s+)(.*)$"),    "list_marker", "marker_sep_content"),
-  (_re.compile(r"^(>+\s*)(.*)$"),         "quote",       "quote"),
+  (_re.compile(r"^(#{1,6})(\s+)(.*)$"), "heading", "marker_sep_content"),
+  (_re.compile(r"^(```+|~~~+)(.*)$"), "fence", "full_line"),
+  (_re.compile(r"^([-*+])(\s+)(.*)$"), "list_marker", "marker_sep_content"),
+  (_re.compile(r"^(\d+\.)(\s+)(.*)$"), "list_marker", "marker_sep_content"),
+  (_re.compile(r"^(>+\s*)(.*)$"), "quote", "quote"),
 ]
 
 def _highlight_md(
@@ -129,13 +129,13 @@ _MD_INLINE_PAT = _re.compile(
   r"|(\[)([^\]]+?)(\])(\()([^)]+?)(\))" # 13: [text](url)
 )
 _MD_INLINE_GROUPS = [
-  (1,  "code",    False),
-  (3,  None,      True),  # **bold**
-  (5,  None,      True),  # __bold__
-  (7,  None,      False),  # *italic*
-  (9,  None,      False),  # _italic_
-  (11, None,      False),  # ~~strike~~
-  (13, "link",    False),
+  (1, "code", False),
+  (3, None, True),    # **bold**
+  (5, None, True),    # __bold__
+  (7, None, False),   # *italic*
+  (9, None, False),   # _italic_
+  (11, None, False),  # ~~strike~~
+  (13, "link", False),
 ]
 
 def _tokenize_md_inline(

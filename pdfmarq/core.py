@@ -221,9 +221,11 @@ class PDF:
     For asymmetric left/right margins, pass a 4-tuple to the `PDF` constructor:
     `PDF(..., margin=(top, right, bot, left))`.
     """
+    top = top if top is not None else lr
+    bot = bot if bot is not None else top
     self._page.margin_left = self._page.margin_right = to_mm(lr, self.unit)
-    self._page.margin_top = to_mm(top if top is not None else lr, self.unit)
-    self._page.margin_bot = to_mm(bot if bot is not None else top if top is not None else lr, self.unit)
+    self._page.margin_top = to_mm(top, self.unit)
+    self._page.margin_bot = to_mm(bot, self.unit)
     return self
 
   #-------------------------------------------------------------------------------------- Fonts
@@ -411,7 +413,10 @@ class PDF:
                   (x_mm + w_mm) * mm, (y_mm - h_mm) * mm, thickness, dash)
     return self
 
-  def rect(self, width:float, height:float, thickness:float=0, dash:tuple|None=None, fill:bool=True) -> "PDF":
+  def rect(
+    self, width:float, height:float,
+    thickness:float=0, dash:tuple|None=None, fill:bool=True,
+  ) -> "PDF":
     """Draw rectangle at cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
@@ -450,7 +455,10 @@ class PDF:
     gfx.draw_circle(self._canvas, x_mm * mm, y_mm * mm, r_mm * mm, thickness, fill)
     return self
 
-  def path(self, points:list[tuple], close:bool=False, thickness:float=1, fill:bool=False) -> "PDF":
+  def path(
+    self, points:list[tuple],
+    close:bool=False, thickness:float=1, fill:bool=False,
+  ) -> "PDF":
     """Draw path through points (relative to cursor)."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     pts = [(x_mm * mm + to_mm(p[0], self.unit) * mm,

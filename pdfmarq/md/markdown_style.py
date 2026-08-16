@@ -135,7 +135,7 @@ class MarkdownStyle:
   mermaid_scale: float = 3
   mermaid_cli: str = "mmdc"
 
-  # Math formulas (matplotlib mathtext -> SVG -> vector in PDF).
+  # Math formulas (matplotlib mathtext → SVG → vector in PDF).
   # `math_fontset` accepts either a matplotlib preset (`"stix"`, `"stixsans"`,
   # `"cm"`, `"dejavusans"`, `"dejavuserif"`) or a font family name following
   # the standard `fonts/<Family>/<Family>-<Mode>.ttf` convention. When a
@@ -213,8 +213,8 @@ class MarkdownStyle:
   # Without `link_root`, the link renders styled (blue underline) but is
   # not clickable - a PDF cannot follow a relative filesystem path.
   # With `link_root`, hrefs resolve to:
-  #   absolute `/x/y`       -> `{link_root}/x/y`
-  #   relative `file.md`    -> `{link_root}/{link_base}/file.md`
+  #   absolute `/x/y` → `{link_root}/x/y`
+  #   relative `file.md` → `{link_root}/{link_base}/file.md`
   link_root: str|None = None
   link_base: str = ""
   # h1 defaults to extra top spacing, not a hard page break.

@@ -315,10 +315,14 @@ def _line_width_pt(line:list[_Word]) -> float:
 
 def _run_key(seg:RichSegment) -> tuple:
   """Visual-run key: consecutive words with same key share bg/underline/link.
-  Math segments get a unique id so they always form their own run."""
+  Math segments get a unique id so they always form their own run. Script flags
+  too - a run draws at one baseline, so `x^2^~n~` must not merge sup with sub."""
   math_id = id(seg.math_drawing) if seg.math_drawing is not None else None
-  return (seg.bg_color, seg.link_url, seg.link_target, seg.underline, seg.strike,
-          seg.family, seg.mode, seg.size, seg.color, math_id)
+  return (
+    seg.bg_color, seg.link_url, seg.link_target, seg.underline, seg.strike,
+    seg.family, seg.mode, seg.size, seg.color, math_id,
+    seg.superscript, seg.subscript,
+  )
 
 def _group_runs(line:list[_Word]) -> list[list[_Word]]:
   """Group consecutive words into runs sharing visual properties."""
@@ -371,9 +375,11 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
     # `` `x` `` clip the bg rect against the cell border.
     bg_extra_mm = (_BG_RUN_EXTRA_PT / MM_TO_PT) if seg.bg_color is not None else 0
     font_name = _font_name(seg, metrics.fonts)
+    # Match `_tokenize`: a script run reserves the width it actually draws at.
+    eff_size = _effective_size(seg)
     for part in re.findall(r"\S+|\s+", seg.text):
       part = _remap_for_font(part, font_name)
-      w = metrics.text_width(part, seg.family, seg.mode, seg.size) / MM_TO_PT
+      w = metrics.text_width(part, seg.family, seg.mode, eff_size) / MM_TO_PT
       if not part.isspace():
         word_w = w + bg_extra_mm  # any word may end up alone on a wrapped line
         if word_w > max_word: max_word = word_w

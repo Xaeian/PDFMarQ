@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmarq"
-version = "0.3.2"
+version = "0.3.3"
 description = "PDF generation library with fluent API and optional markdown support"
 readme = "readme.md"
 license = {text = "MIT"}
@@ -14,9 +14,13 @@ keywords = ["pdf", "reportlab", "document", "generation", "markdown"]
 dependencies = ["reportlab", "Pillow", "svglib"]
 
 [project.optional-dependencies]
+emoji = []
+highlight = ["pygments"]
+markdown = ["markdown-it-py"]
+math = ["matplotlib"]
 md = ["PyYAML", "Pygments", "emoji", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins"]
-test = ["pytest"]
-all = ["PyYAML", "Pygments", "emoji", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pytest"]
+mermaid = []
+all = ["PyYAML", "Pygments", "emoji", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pygments"]
 
 [project.urls]
 Repository = "https://github.com/Xaeian/PDFMarQ"
@@ -26,4 +30,4 @@ include = ["pdfmarq*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_functions = ["*"] # tests are named by behavior, no `test_` prefix
+python_functions = ["*"]

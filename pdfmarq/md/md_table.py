@@ -354,7 +354,7 @@ class TableMixin:
     col_min: list[float],
   ) -> tuple[list[float], list[float]]:
     """Reflow widths so a pure-image col's height matches its widest text-col
-    partner. Mixed cols (both image and text rows) are skipped — they need
+    partner. Mixed cols (both image and text rows) are skipped - they need
     full text width and balancing would truncate text.
 
     Per image col `i` paired with text col `j`:

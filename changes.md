@@ -1,5 +1,12 @@
 # Changes `pdfmarq`
 
+## `0.3.3` List numbering & scripts
+
+- Ordered lists follow the author's numbering
+- Fix: two-digit markers `10.` split across lines
+- Fix: `^sup^` / `~sub~` never shifted off the baseline
+- Fix: nested lists indented 4+ spaces flattened
+
 ## `0.3.2` Gutter & fixes
 
 - `render:` keys `gutter`, `header`

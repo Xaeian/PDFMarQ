@@ -382,7 +382,8 @@ class FrontmatterMixin:
     if author or updated:
       y = pdf.y
       if author:
-        segs = [RichSegment(text=f"{s.banner_label_author}: {author}", family=s.body_family, mode=s.body_mode,
+        segs = [RichSegment(text=f"{s.banner_label_author}: {author}",
+          family=s.body_family, mode=s.body_mode,
           size=s.banner_meta_size, color=s.body_color)]
         render_rich(pdf, segs, width, x_offset, y, Align.LEFT, 1.3)
       if updated:
