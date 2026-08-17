@@ -2,7 +2,6 @@
 
 """Core PDF class - main facade for document generation."""
 import random
-from pathlib import Path
 from typing import Callable
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm

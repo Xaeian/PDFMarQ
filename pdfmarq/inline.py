@@ -62,8 +62,7 @@ class RichSegment:
     - `mode`: explicit reportlab font mode (`"Regular"`/`"Bold"`/`"Italic"`/
       `"BoldItalic"`). Direct mapping to TTF lookup.
     - `bold` / `italic`: boolean flags. When set, `__post_init__` derives
-      `mode` from them, so the same
-      construction works in both libraries.
+      `mode` from them.
 
   Math mode: if `math_drawing` is set, the segment is a pre-rendered vector
   formula (from matplotlib → svglib). `text` is ignored, `math_width_pt` is

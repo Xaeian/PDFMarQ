@@ -139,7 +139,7 @@ class MarkdownRenderer(
     if self.style.skip_dup_title and fm_rendered_title:
       tokens = _skip_matching_h1(tokens, str(fm_rendered_title))
     # Slugs are collected after the drop, so a link to the removed title is an
-    # unknown anchor like any other instead of a destination that never lands.
+    # unknown anchor like any other.
     self._known_slugs = self._collect_heading_slugs(tokens)
     self._render_tokens(tokens)
     if self.style.sign_render:

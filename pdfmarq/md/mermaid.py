@@ -26,8 +26,8 @@ from pathlib import Path
 
 #-------------------------------------------------------------------------------------------- Cache
 
-# Shared location, keyed on source + theme + background + scale, so a hit only
-# lands when those match - a different scale is a different entry.
+# Keyed on source + theme + background + scale, so a different scale is a
+# different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 _RENDER_CACHE: dict = {}  # in-memory cache for current process
 
