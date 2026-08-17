@@ -14,13 +14,13 @@ from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
 from .md_images import load_image_info, size_block, size_inline
 
-#---------------------------------------------------------------------------------- BlocksMixin
+#-------------------------------------------------------------------------------------- BlocksMixin
 
 class BlocksMixin:
   """Headings, paragraphs, code blocks, horizontal rules, math blocks,
   and standalone block images. Mixed into `MarkdownRenderer`."""
 
-  #------------------------------------------------------------------------------------ Heading
+  #---------------------------------------------------------------------------------------- Heading
   
   def _render_heading(self, level:int, inline_token:Token, lookahead_mm:float=0):
     s = self.style
@@ -62,11 +62,13 @@ class BlocksMixin:
   @staticmethod
   def _slugify_inline(inline_token:Token) -> str:
     """GitHub-style slug from heading's inline token.
-    Concatenates text-type children so markdown syntax chars (`*`, `_`, etc.)
-    from `.content` don't pollute the slug. Preserves unicode letters (PL/DE/...).
+    Concatenates text and inline-code children so markdown syntax chars
+    (`*`, `_`, etc.) from `.content` don't pollute the slug while the words
+    inside backticks still count. Preserves unicode letters (PL/DE/...).
     """
     children = inline_token.children or []
-    parts = [c.content for c in children if c.type == "text" and c.content]
+    parts = [c.content for c in children
+      if c.type in ("text", "code_inline") and c.content]
     text = "".join(parts) if parts else (inline_token.content or "")
     s = text.lower().strip()
     s = re.sub(r"\s+", "-", s)
@@ -74,7 +76,7 @@ class BlocksMixin:
     s = re.sub(r"-+", "-", s).strip("-")
     return s
 
-  #---------------------------------------------------------------------------------- Paragraph
+  #-------------------------------------------------------------------------------------- Paragraph
   
   def _render_paragraph(self, inline_token:Token):
     s = self.style
@@ -111,7 +113,7 @@ class BlocksMixin:
     spacing = s.list_gap if self._list_depth > 0 else s.para_gap
     self.pdf.cursor(x, y + h + spacing)
 
-  #--------------------------------------------------------------------------------- Code block
+  #------------------------------------------------------------------------------------- Code block
   
   def _render_code_block(self, content:str, lang:str="", info_rest:str=""):
     s = self.style
@@ -200,7 +202,7 @@ class BlocksMixin:
       text_y += line_heights_mm[idx]
     self.pdf.cursor(x, y + block_h + s.code_block_gap)
 
-  #------------------------------------------------------------------------------------- Images
+  #----------------------------------------------------------------------------------------- Images
   
   def _load_inline_image(self, src:str, fontsize_pt:float, attrs:dict|None=None):
     """Load a local image → scaled reportlab Drawing, or `None` on failure.
@@ -313,7 +315,7 @@ class BlocksMixin:
     pdf.image(png_path, img_w_mm, img_h_mm)
     pdf.cursor(x_start, y + img_h_mm + s.para_gap)
 
-  #----------------------------------------------------------------------------------------- HR
+  #--------------------------------------------------------------------------------------------- HR
   
   def _render_hr(self):
     s = self.style
@@ -326,7 +328,7 @@ class BlocksMixin:
     self._reset_stroke()
     self.pdf.enter(s.para_gap)
 
-  #--------------------------------------------------------------------------------- Math block
+  #------------------------------------------------------------------------------------- Math block
   
   def _render_math_block(self, formula:str):
     """Render a block-level math formula centered with auto-numbering."""

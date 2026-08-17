@@ -15,9 +15,9 @@ Example:
   ...   pdf.text("Hello World", align=Align.CENTER)
 """
 
-#----------------------------------------------------------------------- Metadata for auto-toml
+#--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"
@@ -30,7 +30,7 @@ __dependencies__ = ["reportlab", "Pillow", "svglib"]
 # realize they need `pip install Pillow`.
 __import_names__ = {"Pillow": "PIL"}
 
-#----------------------------------------------------------------------------------- Public API
+#--------------------------------------------------------------------------------------- Public API
 
 from .constants import (
   Unit, PageSize, Align, Colors, Defaults, MM_TO_PT,

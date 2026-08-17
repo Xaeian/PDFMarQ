@@ -14,7 +14,7 @@ from markdown_it.token import Token
 from ..inline import RichSegment
 from . import md_html
 
-#----------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 def _mono_inline_size(s, base_size:float) -> float:
   """Mono size (pt) for inline code embedded at `base_size`.
@@ -23,10 +23,9 @@ def _mono_inline_size(s, base_size:float) -> float:
   if base_size >= 14: return base_size * 0.95
   return base_size * (s.mono_size / s.body_size)
 
-# Named highlight colors matching Word's `WD_COLOR_INDEX` palette so the
-# same `mark_bg="yellow"` produces a comparable visual in both libs. PDF
-# rendering uses these RGB values for the rounded background rect drawn
-# behind `==marked==` text.
+# Named highlight colors matching Word's `WD_COLOR_INDEX` palette, so a name
+# like `mark_bg="yellow"` means the same thing everywhere. These RGB values
+# fill the rounded background rect drawn behind `==marked==` text.
 _NAMED_HIGHLIGHTS = {
   "yellow": (1.0, 0.93, 0.3),
   "green": (0.65, 0.95, 0.50),
@@ -46,7 +45,7 @@ def _resolve_highlight(color) -> tuple:
     return _NAMED_HIGHLIGHTS.get(color.lower(), _NAMED_HIGHLIGHTS["yellow"])
   return color
 
-#---------------------------------------------------------------------------------- InlineMixin
+#-------------------------------------------------------------------------------------- InlineMixin
 
 class InlineMixin:
   """
@@ -281,8 +280,8 @@ class InlineMixin:
   def _resolve_link(self, href:str) -> tuple[str|None, str|None]:
     """Resolve a link href into `(link_url, link_target)` for `RichSegment`.
     - `#anchor` → internal target if slug is a known heading, else neither
-    - schema url   -> external url
-    - local path   -> external url under `style.link_root` (if set), else
+    - schema url → external url
+    - local path → external url under `style.link_root` (if set), else
       neither (renders as styled-but-dead link)
     Local hrefs without `link_root` intentionally get NO action - a PDF
     cannot follow a relative filesystem link, so leaving it un-clickable
@@ -312,7 +311,7 @@ class InlineMixin:
       return f"{root}/{base}/{href}", None
     return f"{root}/{href}", None
 
-#----------------------------------------------------------------------------- Checkbox drawing
+#--------------------------------------------------------------------------------- Checkbox drawing
 
 def _make_checkbox(fontsize_pt:float, checked:bool, fg:tuple, accent:tuple):
   """Draw a GitHub-style task-list checkbox as a vector reportlab `Drawing`.

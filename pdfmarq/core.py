@@ -1,7 +1,7 @@
 # pdfmarq/core.py
 
 """Core PDF class - main facade for document generation."""
-import random, subprocess, shutil
+import random
 from pathlib import Path
 from typing import Callable
 from reportlab.pdfgen import canvas
@@ -18,7 +18,7 @@ from .tables import TableBuilder, TableData
 from .structure import Metadata, BookmarkManager, LinkManager
 from . import graphics as gfx
 
-#------------------------------------------------------------------------------- NumberedCanvas
+#----------------------------------------------------------------------------------- NumberedCanvas
 
 class NumberedCanvas(canvas.Canvas):
   """Canvas subclass that buffers pages instead of emitting immediately.
@@ -81,7 +81,7 @@ class NumberedCanvas(canvas.Canvas):
       self._replaying = False
     super().save()
 
-#------------------------------------------------------------------------------------------ PDF
+#---------------------------------------------------------------------------------------------- PDF
 
 class PDF:
   """Main PDF generator with fluent API.
@@ -134,7 +134,7 @@ class PDF:
     self._page_callbacks: list[Callable] = []  # before showPage (header/footer)
     self._new_page_callbacks: list[Callable] = []  # after showPage + cursor reset
 
-  #---------------------------------------------------------------------------- Context manager
+  #-------------------------------------------------------------------------------- Context manager
   
   def __enter__(self) -> "PDF":
     return self
@@ -143,7 +143,7 @@ class PDF:
     if exc_type is None:
       self.save()
 
-  #--------------------------------------------------------------------------------- Properties
+  #------------------------------------------------------------------------------------- Properties
 
   @property
   def x(self) -> float:
@@ -193,7 +193,7 @@ class PDF:
     inspection."""
     return self._path
 
-  #--------------------------------------------------------------------------------------- Page
+  #------------------------------------------------------------------------------------------- Page
   
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
     """Set page size."""
@@ -228,7 +228,7 @@ class PDF:
     self._page.margin_bot = to_mm(bot, self.unit)
     return self
 
-  #-------------------------------------------------------------------------------------- Fonts
+  #------------------------------------------------------------------------------------------ Fonts
   
   def add_font(self, family:str, mode:str="Regular") -> "PDF":
     """Register font for use."""
@@ -266,7 +266,7 @@ class PDF:
       return builtin_name(family, mode)
     return f"{family}-{mode}"
 
-  #------------------------------------------------------------------------------------- Cursor
+  #----------------------------------------------------------------------------------------- Cursor
   
   def cursor(self, x:float|None=None, y:float|None=None, align:str|None=None) -> "PDF":
     """Set cursor position and/or alignment."""
@@ -288,7 +288,7 @@ class PDF:
     self._cursor.enter(h)
     return self
 
-  #------------------------------------------------------------------------------------- Colors
+  #----------------------------------------------------------------------------------------- Colors
   
   def color(self, r:float, g:float, b:float, a:float=1) -> "PDF":
     """Set fill color."""
@@ -321,7 +321,7 @@ class PDF:
     self._canvas.setStrokeColor(Color(r, g, b, a))
     return self
 
-  #--------------------------------------------------------------------------------------- Text
+  #------------------------------------------------------------------------------------------- Text
   
   def text(
     self,
@@ -398,7 +398,7 @@ class PDF:
     self._cursor.record_height(height_mm)
     return self
 
-  #----------------------------------------------------------------------------- Lines & Shapes
+  #--------------------------------------------------------------------------------- Lines & Shapes
   
   def line(self, width:float=0, height:float=0, thickness:float=1, dash:tuple|None=None) -> "PDF":
     """Draw line from cursor."""
@@ -466,7 +466,7 @@ class PDF:
     gfx.draw_path(self._canvas, pts, close, thickness, fill)
     return self
 
-  #------------------------------------------------------------------------------------- Images
+  #----------------------------------------------------------------------------------------- Images
   
   def image(self, path:str, width:float, height:float) -> "PDF":
     """Draw image at cursor."""
@@ -494,7 +494,7 @@ class PDF:
     self._cursor.record_height(h_mm)
     return self
 
-  #------------------------------------------------------------------------------------- Tables
+  #----------------------------------------------------------------------------------------- Tables
   
   def table(
     self,
@@ -594,7 +594,7 @@ class PDF:
       self.enter()
     return self
 
-  #---------------------------------------------------------------------------------- Structure
+  #-------------------------------------------------------------------------------------- Structure
   
   def bookmark(self, title:str, level:int=0) -> "PDF":
     """Add bookmark at current position."""
@@ -620,7 +620,7 @@ class PDF:
     if category: self._metadata.category = category
     return self
 
-  #---------------------------------------------------------------------------- Headers/Footers
+  #-------------------------------------------------------------------------------- Headers/Footers
   
   def on_page(self, callback:Callable) -> "PDF":
     """Register callback to run on each page (for headers/footers).
@@ -680,7 +680,7 @@ class PDF:
     self._bookmarks.apply_page(self._canvas, self._page_num)
     self._links.apply(self._canvas, self._page.height, self._page_num)
 
-  #------------------------------------------------------------------------------------- Output
+  #----------------------------------------------------------------------------------------- Output
   
   def save(self) -> "PDF":
     """Render and save PDF."""
@@ -688,40 +688,4 @@ class PDF:
     self._metadata.apply(self._canvas)
     self._bookmarks.apply_outline(self._canvas)  # add outline entries once, at the end
     self._canvas.save()
-    return self
-
-  def compress(self, quality:str="screen", raise_on_error:bool=False) -> "PDF":
-    """Compress PDF using ghostscript.
-
-    Quality: `screen`, `ebook`, `printer`, `prepress`.
-
-    Returns `self` (fluent). On failure (no `gs` in PATH, gs error):
-      - `raise_on_error=True`: re-raises with a clear message
-      - `raise_on_error=False` (default): emits a warning and leaves the
-        original file untouched.
-    """
-    import warnings
-    temp = self._path + ".tmp"
-    try:
-      subprocess.run([
-        "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
-        f"-dPDFSETTINGS=/{quality}", "-dNOPAUSE", "-dQUIET", "-dBATCH",
-        f"-sOutputFile={temp}", self._path
-      ], check=True)
-      shutil.move(temp, self._path)
-    except FileNotFoundError as e:
-      if Path(temp).exists():
-        Path(temp).unlink()
-      msg = ("ghostscript (`gs`) not found in PATH - install it to use "
-             f"PDF.compress(): {e}")
-      if raise_on_error:
-        raise FileNotFoundError(msg) from e
-      warnings.warn(msg, RuntimeWarning, stacklevel=2)
-    except subprocess.CalledProcessError as e:
-      if Path(temp).exists():
-        Path(temp).unlink()
-      msg = f"ghostscript failed during compression (exit {e.returncode})"
-      if raise_on_error:
-        raise RuntimeError(msg) from e
-      warnings.warn(msg, RuntimeWarning, stacklevel=2)
     return self

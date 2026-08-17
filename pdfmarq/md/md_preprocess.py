@@ -8,7 +8,7 @@
 """
 import re
 
-#------------------------------------------------------------------------------ PreprocessMixin
+#---------------------------------------------------------------------------------- PreprocessMixin
 
 class PreprocessMixin:
   """Source text preprocessing mixed into `MarkdownRenderer`.

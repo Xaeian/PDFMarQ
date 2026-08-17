@@ -21,7 +21,7 @@ Example:
   >>> md_to_pdf(open("doc.md").read(), "doc.pdf", style=style)
 """
 
-#------------------------------------------------------------------------- Extras for auto-toml
+#----------------------------------------------------------------------------- Extras for auto-toml
 
 # Declares the `pdfmarq[md]` extra; all packages are required so partial
 # installs never produce silent feature gaps.
@@ -35,7 +35,7 @@ __extras__ = ("md", [
   "mdit-py-emoji",
 ])
 
-#----------------------------------------------------------------------------------- Public API
+#--------------------------------------------------------------------------------------- Public API
 
 from .markdown_style import MarkdownStyle
 from .markdown import MarkdownRenderer, md_to_pdf

@@ -5,9 +5,11 @@
 from pathlib import Path
 import pytest
 from pdfmarq.md import md_to_pdf, MarkdownStyle as PdfStyle
+from pdfmarq.constants import A4 as PdfA4
 from docmarq.md import md_to_docx, MarkdownStyle as DocStyle
+from docmarq.constants import A4 as DocA4
 
-#------------------------------------------------------------------------------ Shared sources
+#----------------------------------------------------------------------------------- Shared sources
 
 _BASIC = "# Title\n\nFirst paragraph with **bold** and *italic*."
 _TABLE = (
@@ -21,11 +23,11 @@ _CALLOUT_QUOTE_HR = (
   "> [!NOTE]\n> Pay attention.\n\n> A normal quote.\n\n---\n\nAfter horizontal rule."
 )
 _FRONTMATTER = (
-  "---\ntitle: Cross-lib doc\nauthor: Xaeian\nrender:\n  landscape: false\n---\n\n"
+  "---\ntitle: Cross-lib doc\nauthor: Xaeian\n---\n\n"
   "# Body\n\nContent here."
 )
 
-#----------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 @pytest.fixture
 def is_pdf():
@@ -51,7 +53,7 @@ def render_both(tmp_path):
     return pdf_path, docx_path
   return _render
 
-#--------------------------------------------------------------------------- Same-source render
+#------------------------------------------------------------------------------- Same-source render
 
 @pytest.mark.parametrize("name, src", [
   ("basic", _BASIC),
@@ -67,11 +69,19 @@ def same_source_renders_in_both_libs(render_both, is_pdf, is_docx, name, src):
   assert pdf_path.stat().st_size > 200
   assert docx_path.stat().st_size > 2000
 
-def landscape_from_frontmatter_consistent(tmp_path):
-  # `render.landscape: true` in YAML flips orientation in BOTH libs
-  src = "---\nrender:\n  landscape: true\n---\n\n# Wide"
-  pdf = md_to_pdf(src, str(tmp_path / "ls.pdf"))
-  doc = md_to_docx(src, str(tmp_path / "ls.docx"))
+def frontmatter_never_sets_geometry(tmp_path):
+  # a leftover `render:` block is inert content in BOTH libs - geometry belongs
+  # to the caller. guards the content/form split against a quiet regression
+  src = "---\nrender:\n  landscape: true\n  page: A3\n---\n\n# Wide"
+  pdf = md_to_pdf(src, str(tmp_path / "inert.pdf"))
+  doc = md_to_docx(src, str(tmp_path / "inert.docx"))
+  assert (pdf.page_width, pdf.page_height) == (PdfA4.width, PdfA4.height)
+  assert (doc.page_width, doc.page_height) == (DocA4.width, DocA4.height)
+
+def page_landscape_flips_both(tmp_path):
+  # `page=A4.landscape()` is the only way to flip, and it works in both libs
+  pdf = md_to_pdf("# Wide", str(tmp_path / "ls.pdf"), page=PdfA4.landscape())
+  doc = md_to_docx("# Wide", str(tmp_path / "ls.docx"), page=DocA4.landscape())
   assert pdf.page_width > pdf.page_height, "pdfmarq did not flip"
   assert doc.page_width > doc.page_height, "docmarq did not flip"
 
@@ -86,7 +96,7 @@ def footnote_label_handled_in_both(tmp_path):
     assert (tmp_path / f"{name}.pdf").exists()
     assert (tmp_path / f"{name}.docx").exists()
 
-#-------------------------------------------------------------------------------- Visual parity
+#------------------------------------------------------------------------------------ Visual parity
 
 def smaller_size_function_parity():
   # both libs export `smaller_size` with identical ladder semantics
@@ -163,7 +173,34 @@ def md_to_signatures_share_arg_names():
   import inspect
   pdf_params = set(inspect.signature(md_to_pdf).parameters)
   doc_params = set(inspect.signature(md_to_docx).parameters)
-  shared = {"md_text", "output_path", "style", "width", "height", "margin",
-    "metadata", "landscape", "base_dir"}
+  shared = {"md_text", "output_path", "style", "page", "margin", "gutter",
+    "base_dir", "font_dir", "metadata"}
   assert not (shared - pdf_params), f"md_to_pdf missing: {shared - pdf_params}"
   assert not (shared - doc_params), f"md_to_docx missing: {shared - doc_params}"
+
+@pytest.mark.parametrize("name, src", [
+  ("absent", "# x"),
+  ("empty block", "---\n---\n\n# B"),
+  ("not a mapping", "---\n- a\n- b\n---\n\n# B"),
+  ("broken yaml", "---\ntitle: [\n---\n\n# B"),
+  ("unterminated", "---\ntitle: T\n\n# B"),
+  ("crlf", "---\r\ntitle: T\r\n---\r\n\r\n# B"),
+])
+def peek_frontmatter_agrees(name, src):
+  # two independent parsers (regex vs hand-rolled split) must read the same
+  # document the same way, `None` included - callers do `fm.get(...)`
+  from pdfmarq.md.md_frontmatter import peek_frontmatter as pdf_peek
+  from docmarq.md.renderer import peek_frontmatter as doc_peek
+  assert pdf_peek(src) == doc_peek(src), f"parsers disagree on {name!r}"
+
+def shared_helpers_are_identical():
+  # `_metadata_from_frontmatter` / `_skip_matching_h1` are vendored twice on
+  # purpose; this is what keeps the copies from drifting
+  import inspect
+  import pdfmarq.md.markdown as pdf_mod
+  import docmarq.md.renderer as doc_mod
+  assert (inspect.getsource(pdf_mod._skip_matching_h1)
+          == inspect.getsource(doc_mod._skip_matching_h1))
+  pdf_meta = inspect.getsource(pdf_mod._metadata_from_frontmatter)
+  doc_meta = inspect.getsource(doc_mod._metadata_from_frontmatter)
+  assert pdf_meta.replace("PDF.metadata", "X") == doc_meta.replace("DOCX.metadata", "X")

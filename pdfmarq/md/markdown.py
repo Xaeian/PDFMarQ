@@ -17,7 +17,7 @@ The `MarkdownRenderer` class is composed from mixins, each in its own
   - `md_footnotes`  - footnote block + definition list
 
 Example:
-  >>> from pdfmarq import md_to_pdf, MarkdownStyle
+  >>> from pdfmarq.md import md_to_pdf, MarkdownStyle
   >>> md_to_pdf(open("README.md").read(), "readme.pdf")
 """
 
@@ -31,6 +31,7 @@ except ImportError:
 
 from reportlab.lib.colors import Color
 from ..core import PDF
+from ..constants import PageSize, A4
 from .markdown_style import MarkdownStyle
 from .md_fonts import FontsMixin
 from .md_preprocess import PreprocessMixin
@@ -43,7 +44,7 @@ from .md_table import TableMixin
 from .md_footnotes import FootnotesMixin
 from .md_frontmatter import FrontmatterMixin, peek_frontmatter
 
-#----------------------------------------------------------------------------- MarkdownRenderer
+#--------------------------------------------------------------------------------- MarkdownRenderer
 
 class MarkdownRenderer(
   FontsMixin, PreprocessMixin, InlineMixin, EstimateMixin,
@@ -57,7 +58,7 @@ class MarkdownRenderer(
     import os
     self.pdf = pdf
     self.style = style or MarkdownStyle()
-    # Root for resolving relative image paths. Mirrors docmarq.MarkdownRenderer.base_dir.
+    # Root for resolving relative image paths.
     self.base_dir = base_dir or os.getcwd()
     # Auto-register default fonts before the first draw.
     self._ensure_default_font()
@@ -114,19 +115,18 @@ class MarkdownRenderer(
     except ImportError:
       warn_missing("md_plugins", "mdit-py-plugins", "superscript (^x^) and mark (==x==)")
 
-  #-------------------------------------------------------------------------------------- Entry
+  #------------------------------------------------------------------------------------------ Entry
   
   def render(self, md_text:str):
     """Parse markdown text and render to PDF."""
-    self._frontmatter_data = None
+    # The mini-banner and the signature block read frontmatter too, so it is
+    # captured regardless of `banner_render`.
+    data, md_text = self._extract_frontmatter(md_text)
+    self._frontmatter_data = data or None
     fm_rendered_title = None
-    if self.style.banner_render:
-      data, md_text = self._extract_frontmatter(md_text)
-      if data:
-        self._render_frontmatter_header(data)
-        fm_rendered_title = data.get("title")
-    else:
-      _, md_text = self._extract_frontmatter(md_text)
+    if self.style.banner_render and data:
+      self._render_frontmatter_header(data)
+      fm_rendered_title = data.get("title")
     # Page chrome: mini-header fires per-page (no total known yet);
     # footer page number deferred via on_final_page (total count available then).
     self.pdf.on_page(self._render_page_chrome)
@@ -136,23 +136,14 @@ class MarkdownRenderer(
     md_text = self._normalize_list_indent(md_text)
     md_text = self._emojize_outside_code(md_text)
     tokens = self._md.parse(md_text)
-    self._known_slugs = self._collect_heading_slugs(tokens)
     if self.style.skip_dup_title and fm_rendered_title:
-      tokens = self._skip_matching_h1(tokens, str(fm_rendered_title))
+      tokens = _skip_matching_h1(tokens, str(fm_rendered_title))
+    # Slugs are collected after the drop, so a link to the removed title is an
+    # unknown anchor like any other instead of a destination that never lands.
+    self._known_slugs = self._collect_heading_slugs(tokens)
     self._render_tokens(tokens)
-    if self._frontmatter_data and self._frontmatter_data.get("sign"):
+    if self.style.sign_render:
       self._render_signature_block()
-
-  @staticmethod
-  def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
-    """Drop first 3 tokens if they are `# <title>` matching frontmatter title."""
-    if len(tokens) < 3: return tokens
-    t0, t1, t2 = tokens[0], tokens[1], tokens[2]
-    if (t0.type == "heading_open" and t0.tag == "h1"
-        and t1.type == "inline" and t2.type == "heading_close"
-        and (t1.content or "").strip() == title.strip()):
-      return tokens[3:]
-    return tokens
 
   @staticmethod
   def _collect_heading_slugs(tokens:list[Token]) -> set:
@@ -245,7 +236,7 @@ class MarkdownRenderer(
       else:
         i += 1
 
-  #----------------------------------------------------------------------------- Shared helpers
+  #--------------------------------------------------------------------------------- Shared helpers
   
   @staticmethod
   def _is_image_only_inline(inline:Token) -> bool:
@@ -284,7 +275,7 @@ class MarkdownRenderer(
 
   def _resolve_image_path(self, src:str) -> str:
     """Join `src` with `base_dir` when relative. Absolute paths and URLs
-    pass through unchanged. Symmetric with docmarq's path resolution."""
+    pass through unchanged."""
     import os
     if not src or src.startswith(("http://", "https://", "data:")):
       return src
@@ -292,7 +283,7 @@ class MarkdownRenderer(
       return src
     return os.path.normpath(os.path.join(self.base_dir, src))
 
-  #-------------------------------------------------------------------------------- Directives
+  #------------------------------------------------------------------------------------- Directives
 
   def _find_group_close(self, tokens:list[Token], start:int) -> int:
     """Return index of the matching `<!-- /group -->` for the open at `start`.
@@ -365,71 +356,61 @@ class MarkdownRenderer(
     finally:
       self._in_group = was_in_group
 
-#------------------------------------------------------------------------------------ md_to_pdf
+#------------------------------------------------------------------------------------------ Helpers
+
+def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
+  """Drop first 3 tokens if they are `# <title>` matching the frontmatter title."""
+  if len(tokens) < 3: return tokens
+  t0, t1, t2 = tokens[0], tokens[1], tokens[2]
+  if (t0.type == "heading_open" and t0.tag == "h1"
+      and t1.type == "inline" and t2.type == "heading_close"
+      and (t1.content or "").strip() == title.strip()):
+    return tokens[3:]
+  return tokens
+
+#---------------------------------------------------------------------------------------- md_to_pdf
 
 def md_to_pdf(
   md_text: str,
   output_path: str,
+  *,
   style: MarkdownStyle|None = None,
-  width: float|None = None,
-  height: float|None = None,
-  margin: float|tuple|None = None,
-  font_dir: str = "./fonts",
-  metadata: dict|None = None,
-  landscape: bool|None = None,
+  page: PageSize = A4,
+  margin: float|tuple = 20,
+  gutter: float = 0,
   base_dir: str|None = None,
+  font_dir: str|None = None,
+  metadata: dict|None = None,
 ) -> PDF:
   """Convert markdown text to PDF file.
 
-  YAML frontmatter top-level fields auto-fill PDF metadata:
-    `title`    → PDF /Title
-    `author`   → PDF /Author
-    `subject`  → PDF /Subject
-    `keywords` → PDF /Keywords (string, or list joined with ", ")
-  Explicit `metadata={...}` arg overrides YAML values per-key.
+  Presentation comes from the caller, content from the document. `style` is
+  used verbatim - no layering, so a caller can set any value, including one
+  equal to a `MarkdownStyle()` default.
 
-  YAML frontmatter `render:` sub-block controls page geometry, fonts,
-  chrome, and locale. See `pdfmarq.md.render.RenderConfig`.
+  Frontmatter is read for content only: `title`/`author`/`subject`/`keywords`
+  seed PDF metadata (`metadata=` overrides per key), the rest feeds the banner.
 
-  Precedence: `MarkdownStyle()` defaults < `render.lang` preset <
-  other `render:` keys < caller's `style=` non-default fields.
+  Keyword-only after `output_path`, so the parameter order cannot silently
+  diverge from `md_to_docx`.
 
   Args:
-    width / height: Page dimensions in mm. `None` (default) reads
-      `render.page` from frontmatter, falling back to A4.
-    margin: Page margins in mm. `None` (default) reads `render.margin`,
-      falling back to 20.
-    landscape: Flip page to landscape. `None` (default) reads
-      `render.landscape`. Top-level `landscape:` is no longer honored
-      (warns and migrates).
-    base_dir: Root for resolving relative image paths. `None` uses cwd.
+    page: `PageSize` in mm. `page_size("a3")` resolves a preset name,
+      `A4.landscape()` flips it, `PageSize(200, 250)` is a custom sheet.
+    margin: mm, scalar or CSS-order 1-4 sequence.
+    gutter: binding margin in mm, folded into the left margin (PDF has no
+      native gutter).
+    base_dir: root for relative image paths. `None` uses cwd.
   """
-  from .render import (
-    parse_render_block, build_style, warn_top_level_landscape,
-  )
   fm = peek_frontmatter(md_text)
-  warn_top_level_landscape(fm)
-  render = parse_render_block(fm)
-  # Geometry precedence: caller arg > render block > A4 default.
-  if width is None:
-    width = render.page.width if render.page else 210
-  if height is None:
-    height = render.page.height if render.page else 297
-  if margin is None:
-    margin = render.margin if render.margin is not None else 20
-  # Gutter folds into the left margin (PDF has no native binding margin).
-  if render.gutter:
+  eff_style = style or MarkdownStyle()
+  if gutter:
     from ..utils import parse_margin
     mt, mr, mb, ml = parse_margin(margin)
-    margin = (mt, mr, mb, ml + render.gutter)
-  if landscape is None:
-    landscape = bool(render.landscape)
-  if landscape:
-    width, height = height, width
-  eff_style = build_style(fm, style, render)
+    margin = (mt, mr, mb, ml + gutter)
   pdf = PDF(
-    output_path, width=width, height=height,
-    margin=margin, font_dir=font_dir,
+    output_path, width=page.width, height=page.height,
+    margin=margin, font_dir=font_dir or "./fonts",
   )
   # YAML frontmatter seeds PDF metadata; explicit `metadata=` kwarg overrides per-key.
   meta = _metadata_from_frontmatter(fm) if fm else {}

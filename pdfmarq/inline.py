@@ -13,7 +13,7 @@ from reportlab.pdfbase import pdfmetrics
 from .constants import Align, MM_TO_PT
 from .fonts import is_builtin, builtin_name
 
-#-------------------------------------------------------------------------------- Layout ratios
+#------------------------------------------------------------------------------------ Layout ratios
 
 # Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light
 # look. Centralised here so future visual tweaks don't require code-hunting.
@@ -49,7 +49,7 @@ _SCRIPT_SIZE_RATIO = 0.70
 _SUP_BASELINE_RATIO = 0.40  # raise baseline by this fraction of full size
 _SUB_BASELINE_RATIO = 0.15  # lower baseline by this fraction of full size
 
-#---------------------------------------------------------------------------------- RichSegment
+#-------------------------------------------------------------------------------------- RichSegment
 
 @dataclass
 class RichSegment:
@@ -62,7 +62,7 @@ class RichSegment:
     - `mode`: explicit reportlab font mode (`"Regular"`/`"Bold"`/`"Italic"`/
       `"BoldItalic"`). Direct mapping to TTF lookup.
     - `bold` / `italic`: boolean flags. When set, `__post_init__` derives
-      `mode` from them. Symmetric with `docmarq.RichSegment` so the same
+      `mode` from them, so the same
       construction works in both libraries.
 
   Math mode: if `math_drawing` is set, the segment is a pre-rendered vector
@@ -83,7 +83,7 @@ class RichSegment:
   italic: bool = False
   underline: bool = False
   strike: bool = False
-  # Soft line break BEFORE this segment. Symmetric with docmarq's flag-based
+  # Soft line break BEFORE this segment. Flag-based rather than a
   # break; an alternative to embedding `\n` in `text`.
   break_line: bool = False
   # Vertical script. Render at smaller size with baseline offset. Useful for
@@ -96,7 +96,7 @@ class RichSegment:
 
   def __post_init__(self):
     # `bold`/`italic` flags win over `mode` when explicitly set. Lets users
-    # write `RichSegment(text="x", bold=True)` (docmarq-style) without
+    # write `RichSegment(text="x", bold=True)` without
     # spelling out the reportlab mode string.
     if self.bold and self.italic:
       self.mode = "BoldItalic"
@@ -105,7 +105,7 @@ class RichSegment:
     elif self.italic:
       self.mode = "Italic"
 
-#---------------------------------------------------------------------------- Glyph fallback
+#----------------------------------------------------------------------------------- Glyph fallback
 
 # Visually-equivalent codepoints. Many fonts (IBM Plex, Inter, ...) ship the
 # glyph under one of these but not the other; e.g. IBM Plex Sans has Ω only
@@ -166,7 +166,7 @@ def _remap_for_font(text:str, font_name:str) -> str:
   _remap_cache[key] = result
   return result
 
-#---------------------------------------------------------------------------------- _Word token
+#-------------------------------------------------------------------------------------- _Word token
 @dataclass
 class _Word:
   """Word-level token for wrapping. `is_space` means whitespace token."""
@@ -176,7 +176,7 @@ class _Word:
   is_space: bool
   is_break: bool = False  # hard line break
 
-#------------------------------------------------------------------------------------- Tokenize
+#----------------------------------------------------------------------------------------- Tokenize
 
 def _effective_size(seg:RichSegment) -> float:
   """Glyph size after super/subscript scaling."""
@@ -191,7 +191,6 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
   words = []
   for seg in segments:
     # `break_line` flag emits a hard break before the segment's content,
-    # symmetric with `docmarq.RichSegment.break_line`.
     if seg.break_line:
       words.append(_Word("", seg, 0, is_space=False, is_break=True))
     # Math segment - single atomic word (no splitting on spaces)
@@ -209,7 +208,7 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
       words.append(_Word(part, seg, w, is_space=part.isspace()))
   return words
 
-#----------------------------------------------------------------------------------------- Wrap
+#--------------------------------------------------------------------------------------------- Wrap
 @dataclass
 class _WrapResult:
   """Output of `_wrap`. `overflow=True` means a chunk still didn't fit
@@ -301,7 +300,7 @@ def _wrap(
   flush(current)
   return _WrapResult(lines, overflow)
 
-#------------------------------------------------------------------------------ Metrics helpers
+#---------------------------------------------------------------------------------- Metrics helpers
 
 def _font_name(seg:RichSegment, font_manager) -> str:
   """Resolve reportlab font name for segment."""
@@ -340,7 +339,7 @@ def _group_runs(line:list[_Word]) -> list[list[_Word]]:
   if current: runs.append(current)
   return runs
 
-#-------------------------------------------------------------------------------------- Measure
+#------------------------------------------------------------------------------------------ Measure
 
 def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
   """Return `(min_word_width_mm, total_width_mm)` for word-wrap planning.
@@ -416,7 +415,7 @@ def measure_rich(
     total_used_mm += max_size * line_gap / MM_TO_PT
   return total_used_mm
 
-#--------------------------------------------------------------------------------------- Render
+#------------------------------------------------------------------------------------------- Render
 
 def render_rich(
   pdf,

@@ -18,7 +18,7 @@ from docmarq import DOCX
 def metrics():
   return TextMetrics(FontManager("./fonts"))
 
-#--------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 @pytest.mark.parametrize("value, unit, expected", [
   (10, "mm", 10),
@@ -42,7 +42,7 @@ def mm_to_pt_many_returns_list():
   out = mm_to_pt(10, 20)
   assert isinstance(out, list) and len(out) == 2
 
-#-------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 @pytest.mark.parametrize("value, expected", [
   ("#FF0000", (1, 0, 0)),
@@ -76,7 +76,7 @@ def color_alpha_appends_alpha_channel():
 def color_hex_normalizes_to_uppercase(value, expected):
   assert color_hex(value) == expected
 
-#-------------------------------------------------------------------------------- RichSegment
+#-------------------------------------------------------------------------------------- RichSegment
 
 @pytest.mark.parametrize("kwargs, expected", [
   ({"bold": True}, "Bold"),
@@ -99,7 +99,7 @@ def rich_segment_superscript_subscript_fields():
   assert RichSegment(text="x", superscript=True).superscript is True
   assert RichSegment(text="x", subscript=True).subscript is True
 
-#------------------------------------------------------------------------------------ Defaults
+#----------------------------------------------------------------------------------------- Defaults
 
 def defaults_match_docmarq():
   # cross-lib parity: same numeric defaults so PDF and DOCX land comparable
@@ -108,7 +108,7 @@ def defaults_match_docmarq():
   assert Defaults.FONT_SIZE == DD.FONT_SIZE == 11
   assert Defaults.LINE_HEIGHT == DD.LINE_HEIGHT == 1.15
 
-#-------------------------------------------------------------------------------- Style flags
+#-------------------------------------------------------------------------------------- Style flags
 
 @pytest.mark.parametrize("kwargs, expected", [
   ({"bold": True}, "Bold"),
@@ -124,13 +124,13 @@ def styles_preset_heading4_exists():
 def styles_preset_code_exists():
   assert Styles.CODE.font_family == "Courier" and Styles.CODE.font_size == 10
 
-#------------------------------------------------------------------------------------ Metadata
+#----------------------------------------------------------------------------------------- Metadata
 
 def metadata_comments_category_fields():
   m = Metadata(title="T", comments="c", category="cat")
   assert m.comments == "c" and m.category == "cat"
 
-#------------------------------------------------------------------------- TableStyle parity
+#-------------------------------------------------------------------------------- TableStyle parity
 
 def table_style_shared_fields_match_docmarq():
   # cross-lib: the fields users tweak most must have matching names in both libs
@@ -154,7 +154,7 @@ def table_style_accepts_hex_colors():
   s = TableStyle(header_bg="#f6f8fa", border_color="#d0d7de")
   assert s.header_bg == "#f6f8fa"
 
-#--------------------------------------------------------------------------- output_path parity
+#------------------------------------------------------------------------------- output_path parity
 
 def output_path_property_pdf():
   import tempfile, os
@@ -168,7 +168,7 @@ def output_path_property_docx():
     p = os.path.join(d, "x.docx")
     assert DOCX(p).output_path == p
 
-#----------------------------------------------------------------------------- Version bump
+#------------------------------------------------------------------------------------- Version bump
 
 def versions_aligned():
   # both libs co-evolve, version bumps tracked together
@@ -177,7 +177,7 @@ def versions_aligned():
   assert pv >= "0.3.0"
   assert dv >= "0.2.0"
 
-#-------------------------------------------------------------------------------------- Margin
+#------------------------------------------------------------------------------------------- Margin
 
 @pytest.mark.parametrize("value, expected", [
   (10, (10, 10, 10, 10)),          # scalar
@@ -193,7 +193,7 @@ def parse_margin_rejects_invalid():
   with pytest.raises(ValueError):
     parse_margin("nope")
 
-#--------------------------------------------------------------------------------------- Fonts
+#-------------------------------------------------------------------------------------------- Fonts
 
 @pytest.mark.parametrize("family, mode", [
   ("Helvetica", "Regular"),
@@ -226,7 +226,7 @@ def is_builtin_times_roman_alias():
   assert is_builtin("Times", "Bold")
   assert is_builtin("Times-Roman", "Bold")
 
-#-------------------------------------------------------------------------------------- Cursor
+#------------------------------------------------------------------------------------------- Cursor
 
 def cursor_set_resets_x_base():
   c = Cursor()
@@ -257,7 +257,7 @@ def cursor_copy_is_independent():
   d.x = 99
   assert c.x == 5 and d.x == 99
 
-#-------------------------------------------------------------------------------- PageGeometry
+#------------------------------------------------------------------------------------- PageGeometry
 
 def page_content_dims_subtract_margins():
   p = PageGeometry(width=210, height=297, margin_left=20, margin_right=20, margin_top=15, margin_bot=15)
@@ -286,7 +286,7 @@ def page_margin_lr_compat_property():
   p.margin_lr = 25
   assert p.margin_left == 25 and p.margin_right == 25
 
-#------------------------------------------------------------------------------------- box_fit
+#------------------------------------------------------------------------------------------ box_fit
 
 def box_fit_simple_no_wrap(metrics):
   r = metrics.box_fit("Hi", width=200, family="Helvetica", mode="Regular", size=12)

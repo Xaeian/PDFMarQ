@@ -6,7 +6,7 @@ from PIL import ImageFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from .fonts import FontManager, is_builtin, builtin_name
 
-#--------------------------------------------------------------------------------- BoxFitResult
+#------------------------------------------------------------------------------------- BoxFitResult
 
 @dataclass
 class BoxFitResult:
@@ -17,7 +17,7 @@ class BoxFitResult:
   lines: int
   overflow: bool = False
 
-#---------------------------------------------------------------------------------- TextMetrics
+#-------------------------------------------------------------------------------------- TextMetrics
 
 class TextMetrics:
   """Text measurement with font support."""

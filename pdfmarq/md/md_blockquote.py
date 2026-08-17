@@ -11,7 +11,7 @@ import re
 from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
 
-#---------------------------------------------------------------------------------- Callout types
+#------------------------------------------------------------------------------------ Callout types
 
 # Per-type metadata that's NOT user-configurable (regex routing + emoji
 # icon + style-field name for label). Colors come from
@@ -33,7 +33,7 @@ def _callout_palette(style, name:str) -> tuple[tuple, tuple]:
   pal = (style.callout_colors or {}).get(name.lower())
   return pal if pal else default
 
-#------------------------------------------------------------------------------ BlockquoteMixin
+#---------------------------------------------------------------------------------- BlockquoteMixin
 
 class BlockquoteMixin:
   """

@@ -22,7 +22,7 @@ __extras__ = ("emoji", [])
 
 from pathlib import Path
 
-#---------------------------------------------------------------------------------------- Cache
+#-------------------------------------------------------------------------------------------- Cache
 
 _CACHE_DIR = Path.home() / ".cache" / "pdfmarq" / "openmoji"
 _DRAWING_CACHE: dict = {}  # (codepoint, fontsize_pt) -> Drawing
@@ -63,7 +63,7 @@ def _ensure_openmoji() -> Path|None:
     pass
   return None
 
-#------------------------------------------------------------------------------------ Detection
+#---------------------------------------------------------------------------------------- Detection
 
 # Unicode ranges containing emoji/pictographs common in technical docs.
 # Not exhaustive - covers the practical set without a full Unicode lookup.
@@ -118,7 +118,7 @@ def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
     runs.append(("".join(buf_text), False))
   return runs
 
-#-------------------------------------------------------------------------------------- Drawing
+#------------------------------------------------------------------------------------------ Drawing
 
 def get_emoji_drawing(codepoint: int, fontsize_pt: float):
   """Return a reportlab `Drawing` for the given emoji codepoint, scaled to

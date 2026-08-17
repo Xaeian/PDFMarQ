@@ -8,7 +8,7 @@ from reportlab.lib.colors import Color
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
 from ..constants import Align, MM_TO_PT
 
-#------------------------------------------------------------------------------- Item numbering
+#----------------------------------------------------------------------------------- Item numbering
 
 def _item_ranges(tokens:list[Token], start:int, end:int) -> list[tuple[int, int]]:
   """`(open, close)` index pair per direct child item; nested items skipped."""
@@ -57,7 +57,7 @@ def _marker_column_mm(pdf, style, numbers:list[int]) -> float:
     mode=style.body_mode, size=style.body_size, color=style.body_color)
   return max(style.list_indent, measure_extent(pdf, [seg])[1])
 
-#------------------------------------------------------------------------------------ ListMixin
+#---------------------------------------------------------------------------------------- ListMixin
 
 class ListMixin:
   """Bullet/ordered list rendering (task lists, nesting). Mixed into `MarkdownRenderer`."""

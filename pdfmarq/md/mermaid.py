@@ -7,8 +7,8 @@ Backends tried in priority order:
   2. mermaid.ink - public HTTP fallback, no local deps, needs internet.
   3. None - both failed; caller falls back to a plain code block.
 
-Output cached to `~/.cache/marq/mermaid/{hash}.png`, shared with
-`docmarq`, so identical diagrams are only rendered once across formats.
+Output cached to `~/.cache/marq/mermaid/{hash}.png`, keyed on source, theme,
+background and scale, so a diagram is rendered once per distinct look.
 
 Usage:
   >>> from pdfmarq.mermaid import render_mermaid
@@ -24,9 +24,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-#---------------------------------------------------------------------------------------- Cache
+#-------------------------------------------------------------------------------------------- Cache
 
-# Shared with docmarq - same diagram renders once regardless of output format.
+# Shared location, keyed on source + theme + background + scale, so a hit only
+# lands when those match - a different scale is a different entry.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 _RENDER_CACHE: dict = {}  # in-memory cache for current process
 
@@ -41,7 +42,7 @@ def _cache_key(code:str, theme:str, background:str, scale:float,
   payload = f"{code}\x00{theme}\x00{background}\x00{scale}\x00{font_family}".encode("utf-8")
   return hashlib.sha1(payload).hexdigest()[:16]
 
-#-------------------------------------------------------------------------------- Font CSS
+#----------------------------------------------------------------------------------------- Font CSS
 
 def _resolve_font_ttf(font_dir:str, family:str) -> Path|None:
   """Find `<family>-Regular.ttf` under `font_dir` (mirrors `FontManager`)."""
@@ -63,7 +64,7 @@ def _mmdc_css_with_font(ttf_path:Path, family:str) -> str:
     f"* {{ font-family: '{family}', sans-serif !important; }}\n"
   )
 
-#------------------------------------------------------------------------- Backend: mermaid-cli
+#----------------------------------------------------------------------------- Backend: mermaid-cli
 
 def _try_mmdc(code:str, out_path:Path, *, cli:str, theme:str,
     background:str, scale:float,
@@ -95,7 +96,7 @@ def _try_mmdc(code:str, out_path:Path, *, cli:str, theme:str,
     in_path.unlink(missing_ok=True)
     css_path.unlink(missing_ok=True)
 
-#------------------------------------------------------------------------- Backend: mermaid.ink
+#----------------------------------------------------------------------------- Backend: mermaid.ink
 
 def _try_mermaid_ink(code:str, out_path:Path, *, theme:str,
     background:str) -> bool:
@@ -118,14 +119,14 @@ def _try_mermaid_ink(code:str, out_path:Path, *, theme:str,
     req = urllib.request.Request(url, headers={"User-Agent": "pdfmarq"})
     with urllib.request.urlopen(req, timeout=15) as resp:
       data = resp.read()
-    if data and len(data) > 100:
+    if data.startswith(b"\x89PNG"):
       out_path.write_bytes(data)
       return True
   except Exception:
     pass
   return False
 
-#----------------------------------------------------------------------------------- Public API
+#--------------------------------------------------------------------------------------- Public API
 
 def render_mermaid(code:str, *, cli:str="mmdc", theme:str="default",
     background:str="transparent", scale:float=4,

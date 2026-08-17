@@ -17,7 +17,7 @@ from markdown_it.rules_inline import StateInline
 WHITESPACE_RE = re.compile(r"(^|[^\\])(\\\\)*\s")
 UNESCAPE_RE = re.compile(r'\\([ \\!"#$%&\'()*+,.\/:;<=>?@[\]^_`{|}~-])')
 
-#--------------------------------------------------------------------------- Superscript ^text^
+#------------------------------------------------------------------------------- Superscript ^text^
 
 def _tokenize_sup(state: StateInline, silent: bool) -> bool:
   if silent:
@@ -58,7 +58,7 @@ def sup_plugin(md: MarkdownIt) -> None:
   """Register superscript `^text^` → sup_open / text / sup_close tokens."""
   md.inline.ruler.after("emphasis", "sup", _tokenize_sup)
 
-#--------------------------------------------------------------------------- Highlight ==text==
+#------------------------------------------------------------------------------- Highlight ==text==
 
 def _tokenize_mark(state: StateInline, silent: bool) -> bool:
   if silent:

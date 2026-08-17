@@ -9,7 +9,7 @@ them on the same page."""
 from markdown_it.token import Token
 from ..constants import MM_TO_PT
 
-#-------------------------------------------------------------------------------- EstimateMixin
+#------------------------------------------------------------------------------------ EstimateMixin
 
 class EstimateMixin:
   """

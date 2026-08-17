@@ -6,7 +6,7 @@ from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF
 
-#--------------------------------------------------------------------------------------- Shapes
+#------------------------------------------------------------------------------------------- Shapes
 
 def draw_line(
   canvas,
@@ -90,7 +90,7 @@ def draw_path(
     p.close()
   canvas.drawPath(p, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
 
-#--------------------------------------------------------------------------------------- Images
+#------------------------------------------------------------------------------------------- Images
 
 def draw_image(
   canvas,
@@ -133,7 +133,7 @@ def draw_svg(
   renderPDF.draw(drawing, canvas, 0, 0)
   canvas.restoreState()
 
-#------------------------------------------------------------------------------------ Gradients
+#---------------------------------------------------------------------------------------- Gradients
 
 def draw_linear_gradient(
   canvas,

@@ -18,7 +18,7 @@ from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
 )
 
-#----------------------------------------------------------------------------------- TableMixin
+#--------------------------------------------------------------------------------------- TableMixin
 class TableMixin:
   """Markdown table rendering with HTML-like auto-layout and inline image
   support. Mixed into `MarkdownRenderer`."""
@@ -91,7 +91,7 @@ class TableMixin:
     self.pdf.enter(s.para_gap)
     return end + 1
 
-  #--------------------------------------------------------------------------------- Layout
+  #----------------------------------------------------------------------------------------- Layout
 
   def _draw_md_table(
     self,
@@ -110,7 +110,6 @@ class TableMixin:
     h_pad = s.table_h_pad
     v_pad = s.table_pad
     # One typographic ladder step below body keeps table text lighter than prose
-    # and matches docmarq output for the same body_pt.
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
     text_top_offset = cell_size * 0.30 / MM_TO_PT
 
@@ -247,7 +246,7 @@ class TableMixin:
         row_offset=0,
       )
 
-  #----------------------------------------------------------------------------- Column widths
+  #---------------------------------------------------------------------------------- Column widths
 
   def _compute_col_widths(
     self,
@@ -428,7 +427,7 @@ class TableMixin:
       text_width_mm[tc] = max(1.0, w_j_text)
     return col_widths, text_width_mm
 
-  #----------------------------------------------------------------------------- Chunk renderer
+  #--------------------------------------------------------------------------------- Chunk renderer
 
   def _draw_table_chunk(
     self,

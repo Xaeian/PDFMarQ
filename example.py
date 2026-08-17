@@ -9,7 +9,7 @@ Showcases:
   - custom TTF fonts loaded from `./fonts/`
   - `link_root` for cross-document references in the rendered PDF
   - `base_dir` so relative image paths in the markdown resolve correctly
-  - YAML frontmatter → page-1 banner + chrome (`render:` block)
+  - YAML frontmatter → page-1 banner (content only; chrome comes from `style`)
   - Ghostscript post-process for a smaller, distribution-ready PDF
 """
 import sys
@@ -24,7 +24,7 @@ LINK_ROOT = "https://github.com/{owner}/docs/blob/main"
 FONTS = dict(body_family="IBMPlexSans", mono_family="IBMPlexMono", head_family="Sora")
 COMPRESS = "/printer" # /screen | /ebook | /printer | /prepress | None
 
-#----------------------------------------------------------------------------------- Renderer
+#----------------------------------------------------------------------------------------- Renderer
 
 def render(in_path:str) -> str:
   """Convert markdown at `in_path` to a sibling `.pdf`. Returns output path."""
@@ -42,7 +42,7 @@ def render(in_path:str) -> str:
   )
   return out_path
 
-#-------------------------------------------------------------------------------------- Entry
+#-------------------------------------------------------------------------------------------- Entry
 
 def main():
   if len(sys.argv) != 2:

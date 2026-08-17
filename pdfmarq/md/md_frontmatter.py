@@ -2,14 +2,13 @@
 
 """YAML frontmatter parsing and document banner rendering.
 
-Detects ``---\\n...\\n---`` block at the top of markdown text, parses with
-PyYAML, and renders:
+Detects ``---\\n...\\n---`` at the top of markdown text, parses with PyYAML,
+and renders the page-1 banner plus the compact mini-banner on continuation
+pages. Both are gated by their own style flag.
 
-- Full document banner on page 1 (logo + entity/address/title/dates/status)
-- Compact mini-banner on continuation pages (when configured)
-- Optional signature block at the end (``sign: true``)
+Frontmatter is **content only** - it never influences the style, the page or
+the fonts. Those come from the caller. Supported keys, all optional:
 
-Supported YAML keys (all optional):
   id        Document code in code-style box (e.g. "MD-001")
   title     Main title (centered, large)
   version   Version in code-style box (e.g. "1.2.3")
@@ -19,13 +18,9 @@ Supported YAML keys (all optional):
   address   Address (right of banner, muted)
   created   ISO date YYYY-MM-DD (formatted via style.date_format)
   updated   Same as created
-  sign      True adds a dashed signature line + label at end
-  landscape True flips page to landscape orientation (consumed by md_to_pdf)
-  logo      Path to logo (.svg, .png, .jpg) - resolved from markdown file dir
-  subject   Not rendered, written to PDF metadata `/Subject`.
+  logo      Path to logo (.svg, .png, .jpg) - resolved against `base_dir`
+  subject   Not rendered, written to PDF metadata `/Subject`
   keywords  Not rendered, written to PDF metadata `/Keywords`. String or list.
-
-Aliases: `code` -> `id`, `company` -> `entity` (legacy compatibility).
 """
 import os, re, warnings
 from datetime import date, datetime
@@ -35,17 +30,17 @@ from svglib.svglib import svg2rlg
 from ..inline import RichSegment, render_rich
 from ..constants import MM_TO_PT, Align
 
-#------------------------------------------------------------------------------------ Constants
+#---------------------------------------------------------------------------------------- Constants
 
 _FM_RE = re.compile(r"\A---\s*\n(.*?\n)---\s*(?:\n|$)", re.DOTALL)
 
-#---------------------------------------------------------------------------------- Public util
+#-------------------------------------------------------------------------------------- Public util
 
 def peek_frontmatter(md_text:str) -> dict|None:
   """Lightweight YAML frontmatter parse without markdown rendering.
   Returns the parsed dict or None if no frontmatter / parse failure.
-  Used by `md_to_pdf` to read page-setup fields (e.g. `landscape`) before
-  instantiating the `PDF` object.
+  Public so a caller can read a document's content keys and decide how to
+  render it. The library itself never derives form from them.
   """
   m = _FM_RE.match(md_text)
   if not m: return None
@@ -56,7 +51,7 @@ def peek_frontmatter(md_text:str) -> dict|None:
   except Exception:
     return None
 
-#----------------------------------------------------------------------------- FrontmatterMixin
+#--------------------------------------------------------------------------------- FrontmatterMixin
 
 class FrontmatterMixin:
   """
@@ -107,7 +102,7 @@ class FrontmatterMixin:
       return None
     return self._resolve_image_path(raw)
 
-  #------------------------------------------------------------------------------------- Header
+  #----------------------------------------------------------------------------------------- Header
   
   def _render_frontmatter_header(self, data:dict):
     """Render the full document header on the current (first) page.
@@ -117,7 +112,6 @@ class FrontmatterMixin:
     s = self.style
     pdf = self.pdf
     pdf.enter(s.banner_pad_top)
-    self._frontmatter_data = data
     content_w = pdf.content_width
     # Missing logo warns and skips; relative path resolves against `base_dir`.
     logo_path = self._resolved_logo(data)
@@ -227,11 +221,11 @@ class FrontmatterMixin:
     """
     s = self.style
     h_mm = 0
-    entity = data.get("entity") or data.get("company")
+    entity = data.get("entity")
     address = data.get("address")
     if entity or address:
       h_mm += s.banner_meta_size / MM_TO_PT * 1.3 + 2  # single row, one line each side
-    doc_id = data.get("id") or data.get("code")
+    doc_id = data.get("id")
     version = data.get("version")
     status = data.get("status")
     if doc_id or version or status:
@@ -276,12 +270,12 @@ class FrontmatterMixin:
     """
     s = self.style
     pdf = self.pdf
-    entity = data.get("entity") or data.get("company")
+    entity = data.get("entity")
     address = data.get("address")
     if entity or address:
       h = self._fm_entity_address_row(entity, address, x_offset, width)
       pdf.enter(h + 2)
-    doc_id = data.get("id") or data.get("code")
+    doc_id = data.get("id")
     version = data.get("version")
     status = data.get("status")
     if doc_id or version or status:
@@ -403,7 +397,7 @@ class FrontmatterMixin:
     pdf.line(width, 0, s.banner_rule)
     pdf.cursor(0, pdf.y)
 
-  #-------------------------------------------------------------------------- Page chrome
+  #------------------------------------------------------------------------------------ Page chrome
   
   def _render_page_chrome(self, pdf, page_num:int):
     """Per-page callback. Mini-header on pages 2+ only.
@@ -432,7 +426,7 @@ class FrontmatterMixin:
     """
     s = self.style
     data = self._frontmatter_data
-    doc_id = data.get("id") or data.get("code") or ""
+    doc_id = data.get("id") or ""
     title = data.get("title") or ""
     # Page 1 already warned on a missing logo; skip silently here.
     logo_path = self._resolved_logo(data)
@@ -627,7 +621,7 @@ class FrontmatterMixin:
     except Exception:
       pass
 
-  #---------------------------------------------------------------------------------- Signature
+  #-------------------------------------------------------------------------------------- Signature
   
   def _render_signature_block(self):
     """Right-aligned dashed signature line + italic label at document end.

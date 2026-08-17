@@ -4,7 +4,7 @@
 from dataclasses import dataclass, fields, replace
 from .constants import Defaults, Align
 
-#----------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 def _as_rgba(color:tuple) -> tuple[float, float, float, float]:
   """Normalize RGB 3-tuple to RGBA 4-tuple (alpha=1). Pass-through for 4-tuples.
@@ -18,7 +18,7 @@ def _as_rgba(color:tuple) -> tuple[float, float, float, float]:
     return tuple(color)  # type: ignore[return-value]
   raise ValueError(f"Color must be 3- or 4-tuple, got {len(color)}: {color}")
 
-#---------------------------------------------------------------------------------------- Style
+#-------------------------------------------------------------------------------------------- Style
 
 @dataclass
 class Style:
@@ -30,7 +30,7 @@ class Style:
     - `font_mode` (`"Regular"`/`"Bold"`/`"Italic"`/`"BoldItalic"`): direct
       TTF lookup, matches reportlab font registration.
     - `bold` / `italic` / `underline` / `strike` flags: symmetric with
-      `docmarq.Style` for cross-lib parity. `with_defaults()` derives
+      `with_defaults()` derives
       `font_mode` from the flags when both are present.
   """
   font_family: str|None = None
@@ -81,11 +81,11 @@ class Style:
     valid = {k: v for k, v in overrides.items() if k in {f.name for f in fields(self)}}
     return replace(self, **valid)
 
-#----------------------------------------------------------------------------------- TableStyle
+#--------------------------------------------------------------------------------------- TableStyle
 
 @dataclass
 class TableStyle:
-  """Table styling. Shape mirrors `docmarq.TableStyle` for cross-lib parity.
+  """Table styling.
 
   Colors accept either `(r, g, b)` 0-1 floats or `#hex` strings. Default
   palette matches GitHub-light - subtle grey header, near-imperceptible
@@ -106,7 +106,7 @@ class TableStyle:
   border_size: float = 0.33
   border_size_header: float = 1.0
   border_size_outer: float = 0.2
-  # Cell padding (mm) - asymmetric vertical mirrors docmarq's optical pushdown.
+  # Cell padding (mm) - vertical is asymmetric, an optical pushdown.
   cell_pad_top: float = 0.5
   cell_pad_bot: float = 0.5
   cell_pad_h: float = 0.5
@@ -118,7 +118,7 @@ class TableStyle:
   table_align: str|None = None
   fill_content_width: bool = True
 
-#-------------------------------------------------------------------------------------- Presets
+#------------------------------------------------------------------------------------------ Presets
 
 class _Preset:
   """Descriptor returning a fresh `Style` on each access - prevents shared mutation."""
@@ -130,7 +130,7 @@ class _Preset:
 class Styles:
   """Predefined style presets. Each access returns a fresh `Style` instance.
 
-  Sizes match `docmarq.Styles` so a heading rendered through both libs
+  Sizes are a typographic ladder so a heading
   comes out the same. Use `font_mode` or the `bold`/`italic` flags
   interchangeably.
   """

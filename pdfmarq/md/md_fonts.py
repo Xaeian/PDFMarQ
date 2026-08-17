@@ -9,7 +9,7 @@ only when the user has not overridden the family.
 
 from .markdown_style import MarkdownStyle
 
-#------------------------------------------------------------------------------------ Constants
+#---------------------------------------------------------------------------------------- Constants
 
 _FONT_FILES = {
   "Regular": "{family}.ttf",
@@ -23,7 +23,7 @@ _FONT_DIRS = [
   "C:/Windows/Fonts",
 ]
 
-#----------------------------------------------------------------------------------- FontsMixin
+#--------------------------------------------------------------------------------------- FontsMixin
 
 class FontsMixin:
   """Font auto-registration mixin for `MarkdownRenderer`.

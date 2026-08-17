@@ -12,7 +12,7 @@ Each preset is a dict of fields applied to a fresh `MarkdownStyle` via
 
 from .markdown_style import MarkdownStyle
 
-#---------------------------------------------------------------------------------- Presets
+#------------------------------------------------------------------------------------------ Presets
 
 # `en` keeps the MarkdownStyle defaults - empty preset is intentional.
 LANG_PRESETS:dict[str, dict] = {
@@ -110,7 +110,7 @@ LANG_PRESETS:dict[str, dict] = {
   },
 }
 
-#---------------------------------------------------------------------------------- Builder
+#------------------------------------------------------------------------------------------ Builder
 
 def lang_style(lang:str, **overrides) -> MarkdownStyle:
   """Build a `MarkdownStyle` from a language preset + caller overrides.

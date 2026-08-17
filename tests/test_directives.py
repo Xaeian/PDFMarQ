@@ -16,7 +16,7 @@ from docmarq.md.tokens import (
   is_group_close_directive as docx_is_gc,
 )
 
-#--------------------------------------------------------------------- Directive detectors
+#------------------------------------------------------------------------------ Directive detectors
 
 @pytest.mark.parametrize("content, expected", [
   ("<!-- pagebreak -->\n", True),
@@ -52,7 +52,7 @@ def group_close_detector_matches_both_libs(content, expected):
   assert is_group_close_directive(content) is expected
   assert docx_is_gc(content) is expected
 
-#--------------------------------------------------------------------------------- pagebreak
+#---------------------------------------------------------------------------------------- pagebreak
 
 def pagebreak_pdf_forces_new_page(tmp_path):
   src = "# A\n\nFirst.\n\n<!-- pagebreak -->\n\n# B\n\nSecond."
@@ -85,7 +85,7 @@ def pagebreak_invalid_extra_tokens_drops_silently(tmp_path):
   pdf = md_to_pdf(src, str(tmp_path / "pb_invalid.pdf"))
   assert pdf.page_num == 1 # no break
 
-#------------------------------------------------------------------------------------- group
+#-------------------------------------------------------------------------------------------- group
 
 def group_fitting_content_renders_normally(tmp_path):
   # small group at top of page: no preemptive break expected
@@ -114,7 +114,7 @@ def group_docx_sets_keep_with_next(tmp_path):
   assert flags[0] is True, f"first group para should keep_with_next, got {flags}"
   assert not flags[-1], f"trailing para outside group should not, got {flags}"
 
-#------------------------------------------------------------------------- Malformed input
+#---------------------------------------------------------------------------------- Malformed input
 
 def stray_close_emits_warning_pdf(tmp_path):
   src = "A.\n\n<!-- /group -->\n\nB."
@@ -159,7 +159,7 @@ def nested_group_collapses(tmp_path):
   assert pdf.page_num >= 1
   assert_valid_pdf(path)
 
-#-------------------------------------------------------------- Auto-pagebreak coexistence
+#----------------------------------------------------------------------- Auto-pagebreak coexistence
 
 def auto_pagebreak_still_active_inside_group(tmp_path):
   # inside a group, auto-pagebreak (heading lookahead etc.) must keep working

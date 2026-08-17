@@ -187,6 +187,7 @@ Styles.CODE      # font_family="Courier", font_size=10
 
 ```py
 from pdfmarq.md import md_to_pdf, MarkdownStyle, lang_style
+from pdfmarq import A4
 
 md_to_pdf(open("doc.md").read(), "doc.pdf")
 # With localization preset
@@ -194,8 +195,8 @@ style = lang_style("pl", body_size=11, footnote_label="Bibliografia")
 md_to_pdf(text, "doc.pdf", style=style)
 # Relative image paths resolved against base_dir
 md_to_pdf(text, "doc.pdf", base_dir="./assets")
-# Landscape via YAML frontmatter `render.landscape: true` or explicit kwarg
-md_to_pdf(text, "doc.pdf", landscape=True)
+# Landscape, or any preset, via `page=`
+md_to_pdf(text, "doc.pdf", page=A4.landscape())
 ```
 
 Supported markdown: headings, paragraphs, lists, tables, code blocks
@@ -206,9 +207,5 @@ YAML frontmatter with banner rendering.
 
 ## Compression
 
-```py
-pdf.save().compress(quality="ebook") # screen / ebook / printer / prepress
-pdf.save().compress(quality="ebook", raise_on_error=True) # raise if `gs` missing
-```
-
-Requires ghostscript installed on the system.
+Not this library's job. Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Xaeian)
+on the saved file - see [`example.py`](example.py).

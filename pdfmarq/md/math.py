@@ -26,7 +26,7 @@ try:
 except ImportError:
   _HAS_MATPLOTLIB = False
 
-#------------------------------------------------------------------------------- Fontset config
+#----------------------------------------------------------------------------------- Fontset config
 
 from dataclasses import dataclass
 
@@ -117,7 +117,7 @@ def _register_ttf(path:"Path") -> str|None:
   except Exception:
     return path.stem
 
-#----------------------------------------------------------------------------------- Preprocess
+#--------------------------------------------------------------------------------------- Preprocess
 
 import re as _re
 _BOLD_CMD_RE = _re.compile(r"\\(?:mathbf|boldsymbol|bm)\s*\{")
@@ -160,7 +160,7 @@ def _preprocess_formula(formula:str) -> str:
     i = j
   return "".join(result)
 
-#--------------------------------------------------------------------------------------- Render
+#------------------------------------------------------------------------------------------- Render
 
 def render_math_svg(
   formula: str,
@@ -209,7 +209,7 @@ def render_math_svg(
   except Exception:
     return None
 
-#----------------------------------------------------------------------------- Measure baseline
+#--------------------------------------------------------------------------------- Measure baseline
 
 def render_math_svg_with_baseline(
   formula: str,

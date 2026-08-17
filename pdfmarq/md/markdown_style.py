@@ -3,12 +3,12 @@
 """GitHub-flavored markdown visual style."""
 from dataclasses import dataclass, field
 
-#--------------------------------------------------------------------- Callout palette default
+#-------------------------------------------------------------------------- Callout palette default
 
 def _default_callout_colors() -> dict:
   """GitHub-style callout colors per type (border, text/icon).
   Each entry: lowercase type → `(border_rgb, text_rgb)` in 0..1 range.
-  Mirrors `docmarq.md.style._default_callout_colors`."""
+  """
   return {
     "note": ((0.035, 0.41, 0.855), (0.035, 0.41, 0.855)),  # blue
     "tip": ((0.12, 0.53, 0.24), (0.12, 0.53, 0.24)),  # green
@@ -17,7 +17,7 @@ def _default_callout_colors() -> dict:
     "caution": ((0.81, 0.13, 0.18), (0.81, 0.13, 0.18)),  # red
   }
 
-#------------------------------------------------------------------------------- Status palette
+#----------------------------------------------------------------------------------- Status palette
 
 def _default_status_colors() -> dict:
   """Default badge colors for document status.
@@ -31,7 +31,7 @@ def _default_status_colors() -> dict:
     "archived": ((0.92, 0.87, 0.96), (0.45, 0.25, 0.55)),  # violet
   }
 
-#-------------------------------------------------------------------------------- MarkdownStyle
+#------------------------------------------------------------------------------------ MarkdownStyle
 
 @dataclass
 class MarkdownStyle:
@@ -57,8 +57,7 @@ class MarkdownStyle:
   mono_mode: str = "Regular"
   heavy_mode: str = "Black" # `**bold**` inside bold base escalates to this
 
-  # Font sizes (pt). Heading sizes match `docmarq.Defaults.HEAD_SIZES` so
-  # the same markdown source renders at the same scale in both libs.
+  # Font sizes (pt).
   body_size: float = 11
   h1_size: float = 20
   h2_size: float = 16
@@ -71,8 +70,6 @@ class MarkdownStyle:
   # Table cell font size in pt. `None` (default) auto-derives one step
   # below body on the typographic ladder (11→10, 12→11, 14→12, ...) via
   # `smaller_size`. Set explicitly to override - mirrors how
-  # `docmarq.TableStyle.font_size` behaves so the same body size yields
-  # the same table cell size in both libs.
   table_size: float|None = None
 
   # Colors (rgb 0-1) - GitHub light theme
@@ -93,7 +90,6 @@ class MarkdownStyle:
   # `==text==` highlight background. Accepts either an RGB tuple or a
   # named highlight color matching Word: `yellow` / `green` / `cyan` /
   # `magenta` / `blue` / `red` / `grey`. Default `"yellow"` matches
-  # `docmarq.MarkdownStyle.mark_bg` so cross-format renders stay aligned.
   mark_bg: tuple|str = "yellow"
 
   # Spacing (mm) - tightened for GitHub feel
@@ -128,7 +124,7 @@ class MarkdownStyle:
   # Mermaid diagrams (```mermaid fenced blocks). Rendered via local `mmdc`
   # CLI (Node.js) when available, falling back to mermaid.ink HTTP service.
   # Set `mermaid_enable=False` to skip rendering and emit the source as a
-  # plain code block. Mirrors `docmarq.MarkdownStyle.mermaid_*`.
+  # plain code block.
   mermaid_enable: bool = True
   mermaid_theme: str = "default"
   mermaid_background: str = "transparent"
@@ -160,6 +156,9 @@ class MarkdownStyle:
   # Compact header on pages 2+ (code | title | page N/M). Disable for
   # single-page-style documents.
   mini_banner_render: bool = True
+  # Dashed signature line + label at the very end of the document. Independent
+  # of `banner_render` - a document can be signed without carrying a banner.
+  sign_render: bool = False
   # strftime syntax. ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
   date_format: str = "%Y-%m-%d"
   # Page number prefix; `None` disables footer entirely. Localize freely.
@@ -172,7 +171,7 @@ class MarkdownStyle:
   banner_pad_bot: float = 3  # mm below header block before body
   banner_logo_max_h: float = 50  # mm - cap on logo height (page 1, big left column)
   banner_logo_max_w: float = 60  # mm - cap on logo width; overrides height if aspect wide
-  banner_title_size: float = 20  # pt - main title (matches `docmarq`)
+  banner_title_size: float = 20 # pt - main title
   banner_id_size: float = 9  # pt - document id
   banner_version_size: float = 9  # pt - version
   banner_meta_size: float = 9  # pt - author/date/entity text
@@ -201,12 +200,11 @@ class MarkdownStyle:
   callout_label_warning: str = "Warning"
   callout_label_caution: str = "Caution"
   # Callout palette (border + text colors per type). Lowercase type → tuple
-  # `(border_rgb, text_rgb)` in 0..1 range. Mirrors `docmarq.MarkdownStyle`.
+  # `(border_rgb, text_rgb)` in 0..1 range.
   callout_colors: dict = field(default_factory=_default_callout_colors)
 
   # `None` emits a thin HR above footnotes; the smaller font signals reference
   # matter. Set to a string (e.g. `"References"`) to add an H2 heading above.
-  # Mirrors `docmarq.MarkdownStyle.footnote_label`.
   footnote_label: str|None = None
 
   # Local-link handling. `[x](file.md)` has no schema and no `#` prefix.

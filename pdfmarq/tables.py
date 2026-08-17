@@ -6,7 +6,7 @@ from .styles import TableStyle
 from .text import TextMetrics
 from .constants import Align, MM_TO_PT
 
-#----------------------------------------------------------------------------------------- Cell
+#--------------------------------------------------------------------------------------------- Cell
 
 @dataclass
 class Cell:
@@ -17,7 +17,7 @@ class Cell:
   align: str|None = None
   style: dict|None = None
 
-#------------------------------------------------------------------------------------ TableData
+#---------------------------------------------------------------------------------------- TableData
 
 @dataclass
 class TableData:
@@ -33,7 +33,7 @@ class TableData:
   total_width: float = 0
   total_height: float = 0
 
-#--------------------------------------------------------------------------------- TableBuilder
+#------------------------------------------------------------------------------------- TableBuilder
 
 class TableBuilder:
   """Fluent builder that turns row/column inputs into a `TableData` ready
@@ -131,7 +131,7 @@ class TableBuilder:
     data.total_height = data.header_height + sum(data.body_heights)
     return data
 
-#-------------------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 def _max_height(heights:list, fallback:float) -> float:
   """Max of heights, filtering None from `box_fit` edge cases."""

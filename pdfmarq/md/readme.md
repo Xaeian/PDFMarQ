@@ -7,8 +7,9 @@ Markdown-to-PDF renderer with YAML frontmatter. Requires `pip install pdfmarq[md
 ```py
 from pdfmarq.md import md_to_pdf
 md_to_pdf(open("doc.md").read(), "doc.pdf", font_dir="./fonts")
-# Force landscape orientation (overrides `landscape: true` in YAML)
-md_to_pdf(md_text, "out.pdf", landscape=True)
+# Landscape, and relative images resolved against a directory
+from pdfmarq.constants import A4
+md_to_pdf(md_text, "out.pdf", page=A4.landscape(), base_dir="./assets")
 ```
 
 ## Banner (YAML frontmatter)
@@ -26,7 +27,6 @@ entity: Texas Ranger Division
 address: 1 Lone Star Boulevard, Dallas TX 75201
 created: 1993-04-21
 updated: 2026-03-15
-sign: true
 logo: ./ranger-badge.svg
 ---
 
@@ -44,49 +44,37 @@ logo: ./ranger-badge.svg
 | `address`   | Address (right of banner, muted)                                                     |
 | `created`   | ISO date, formatted via `style.date_format`                                          |
 | `updated`   | Same                                                                                 |
-| `sign`      | `true` adds a dashed signature line + label at the end                               |
 | `logo`      | Path to `.svg`/`.png`/`.jpg`, aspect-aware _(tall logos take less horizontal space)_ |
 | `subject`   | Written to PDF metadata `/Subject`, not rendered                                     |
 | `keywords`  | Written to PDF metadata `/Keywords`, string or YAML list                             |
 
-Aliases: `code` → `id`, `company` → `entity` _(legacy)_.
-
 PDF metadata _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ is auto-filled from matching YAML keys. Pass `metadata={...}` to `md_to_pdf()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Disable with `skip_dup_title=False`.
+If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner_render=False` never costs you the heading. Disable with `skip_dup_title=False`.
 
-## Render block
+## Presentation
 
-Geometry, fonts, chrome, and locale live under a nested `render:` key in the same frontmatter. All optional; library defaults apply when absent.
+Frontmatter carries content only. Everything visual comes from the caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
 
-```yaml
----
-title: Report
-render:
-  page: A4              # A4 / A3 / A5 / LETTER / LEGAL
-  margin: 25            # mm; or list [top, right, bot, left]
-  gutter: 0             # mm binding margin added to the inner/left side
-  landscape: false      # flip page
-  font_body: IBMPlexSans
-  font_head: Sora       # defaults to `font_body`
-  font_mono: IBMPlexMono
-  font_size: 11         # body pt
-  line_height: 1.4
-  img_max_h: 120        # mm cap on every image (per-image DSL still overrides)
-  banner: true          # page-1 banner from frontmatter
-  banner_min: true      # mini-banner on continuation pages (alias: `header`)
-  page_number: true     # footer numbering
-  lang: pl              # banner/footer labels (en/pl/de/fr/es/it/cs/sk)
-  mermaid_theme: default # default / dark / forest / neutral
-  syntax_theme: default  # Pygments style name for fenced code
----
+```python
+from pdfmarq.md import md_to_pdf, lang_style
+from pdfmarq.constants import A4, page_size
+
+style = lang_style("pl",  # banner/footer labels
+  body_family="IBMPlexSans", head_family="Sora", mono_family="IBMPlexMono",
+  body_size=11, line_height=1.4, image_max_h=120,
+  banner_render=True, mini_banner_render=True, sign_render=True,
+  mermaid_theme="default", syntax_theme="default",
+)
+md_to_pdf(md, "out.pdf", style=style,
+  page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
 ```
 
-`render.lang:` overrides any explicit `MarkdownStyle()` language preset. For one-off custom page dimensions pass `width=` and `height=` to `md_to_pdf()` directly; `render.page:` only accepts preset names. Mermaid diagrams use `font_body` for label text when a matching TTF lives in the configured `font_dir`.
+`page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
-Precedence: `MarkdownStyle()` defaults < lang preset < frontmatter `render:` keys < caller's `style=` non-default fields. Caller-passed style wins on top.
+Everything after `output_path` is keyword-only, so the argument order cannot silently diverge from `docmarq.md.md_to_docx`.
 
-Top-level `landscape:` in frontmatter is deprecated and warns at parse time; move it under `render.landscape:`.
+Mermaid diagrams use `body_family` for label text when a matching TTF lives in `font_dir`.
 
 ## Internal links
 
@@ -118,22 +106,16 @@ Resolution:
 
 ## Style
 
+Beyond the fields shown above:
+
 ```py
-from pdfmarq.md import MarkdownStyle
-style = MarkdownStyle(
-  body_family="IBMPlexSans",
-  mono_family="IBMPlexMono",
-  head_family="Sora",
+MarkdownStyle(
   page_number_label="Strona",  # "Strona 1/5" footer; None to disable
   page_number_total=True,      # False → "Strona 1" without total
   date_format="%d.%m.%Y",      # strftime pattern
   h1_page_break=False,         # True for chaptered documents
-  mini_banner_render=True,     # mini-banner on pages 2+
-  banner_render=True,          # page 1 full banner
   skip_dup_title=True,         # drop `# X` if it matches frontmatter title
-  image_max_h=120,             # mm - cap tall images and diagrams (default 120)
 )
-md_to_pdf(md_text, "out.pdf", style=style)
 ```
 
 ### Banner labels (i18n)

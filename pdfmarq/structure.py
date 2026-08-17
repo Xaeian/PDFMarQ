@@ -4,7 +4,7 @@
 from dataclasses import dataclass, field
 from reportlab.lib.units import mm as RL_MM
 
-#------------------------------------------------------------------------------------- Bookmark
+#----------------------------------------------------------------------------------------- Bookmark
 
 @dataclass
 class Bookmark:
@@ -15,7 +15,7 @@ class Bookmark:
   level: int = 0
   children: list["Bookmark"] = field(default_factory=list)
 
-#------------------------------------------------------------------------------------- TOCEntry
+#----------------------------------------------------------------------------------------- TOCEntry
 
 @dataclass
 class TOCEntry:
@@ -24,14 +24,13 @@ class TOCEntry:
   page: int
   level: int = 0
 
-#------------------------------------------------------------------------------------- Metadata
+#----------------------------------------------------------------------------------------- Metadata
 
 @dataclass
 class Metadata:
   """PDF document metadata.
 
-  `comments` and `category` are accepted for cross-lib parity with
-  `docmarq.Metadata`; they are stored but NOT applied to the PDF /Info
+  `comments` and `category` are accepted and stored but NOT applied to the PDF /Info
   dictionary because reportlab's `Canvas` has no native setter for them.
   Round-tripping through the dataclass works; the resulting PDF file
   won't carry those fields.
@@ -54,7 +53,7 @@ class Metadata:
     if self.creator: canvas.setCreator(self.creator)
     if self.producer: canvas.setProducer(self.producer)
 
-#------------------------------------------------------------------------------ BookmarkManager
+#---------------------------------------------------------------------------------- BookmarkManager
 
 class BookmarkManager:
   """Manages PDF bookmarks/outlines.
@@ -87,7 +86,7 @@ class BookmarkManager:
     """Generate TOC entries from bookmarks."""
     return [TOCEntry(bm.title, bm.page, bm.level) for bm in self._bookmarks]
 
-#---------------------------------------------------------------------------------- LinkManager
+#-------------------------------------------------------------------------------------- LinkManager
 
 class LinkManager:
   """Manages hyperlinks."""

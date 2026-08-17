@@ -3,7 +3,7 @@
 """Utility functions - unit conversion, color parsing, helpers."""
 from .constants import Unit, MM_TO_PT
 
-#---------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 def to_mm(value:float, unit:str="mm") -> float:
   """Convert value from given unit to millimeters."""
@@ -23,7 +23,7 @@ def mm_to_pt(*values:float) -> list[float]|float:
   result = [v * MM_TO_PT for v in values]
   return result[0] if len(result) == 1 else result
 
-#--------------------------------------------------------------------------- Typographic ladder
+#------------------------------------------------------------------------------- Typographic ladder
 
 # Word's font-size dropdown values - the de facto standard typographic
 # ladder. Jumps are non-linear: 12→14→16 skips 13/15 because those don't
@@ -33,7 +33,7 @@ _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
   """Next-smaller standard typographic size below `body_pt`. Mirrors
-  `docmarq.utils.smaller_size`. Used by tables and bibliography to derive
+  Used by tables and bibliography to derive
   a "one step smaller" reading size that hits expected Word ladder values
   (11→10, 12→11, 14→12, 16→14, 18→16) instead of arbitrary `body - 1`
   deltas that produce non-standard sizes like 13. Clamps at `min_pt`."""
@@ -42,7 +42,7 @@ def smaller_size(body_pt:float, min_pt:float=7) -> float:
       return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
   return max(min_pt, _SIZE_LADDER[-2])
 
-#--------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
@@ -79,12 +79,11 @@ def color_alpha(color:tuple, alpha:float) -> tuple[float, float, float, float]:
 def color_hex(color:tuple|str) -> str:
   """Return `RRGGBB` uppercase hex string (no `#` prefix).
 
-  Symmetric with `docmarq.color_hex` for cross-lib API parity.
   """
   r, g, b = parse_color(color)
   return f"{int(round(r * 255)):02X}{int(round(g * 255)):02X}{int(round(b * 255)):02X}"
 
-#--------------------------------------------------------------------------------------- Margin
+#------------------------------------------------------------------------------------------- Margin
 
 def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
   """Parse margin to `(top, right, bot, left)` tuple. CSS-style.
@@ -96,7 +95,6 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
     `(t, h, b)`      → top, horizontal, bottom
     `(t, r, b, l)`   → top, right, bottom, left (full CSS form)
 
-  Matches `docmarq.parse_margin` shape.
   """
   if isinstance(margin, (int, float)):
     return (margin, margin, margin, margin)
@@ -108,7 +106,7 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
     if n == 4: return (margin[0], margin[1], margin[2], margin[3])
   raise ValueError(f"Invalid margin: {margin}")
 
-#----------------------------------------------------------------------------------------- Text
+#--------------------------------------------------------------------------------------------- Text
 
 def sanitize_text(text:str, link_char:str="·", enter_in:str="\n", enter_out:str="\n") -> str:
   """Normalize text before rendering: replace link sentinel with pilcrow, remap line endings."""

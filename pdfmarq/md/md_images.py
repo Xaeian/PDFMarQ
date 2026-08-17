@@ -29,7 +29,7 @@ import os
 from dataclasses import dataclass
 from ..constants import MM_TO_PT
 
-#-------------------------------------------------------------------------------- ImageInfo
+#---------------------------------------------------------------------------------------- ImageInfo
 
 @dataclass
 class ImageInfo:
@@ -46,7 +46,7 @@ class ImageInfo:
   align: str|None = None  # DSL `align=L/C/R` block-level horizontal alignment
   alt: str = ""
 
-#--------------------------------------------------------------------------- Loaders
+#------------------------------------------------------------------------------------------ Loaders
 
 def load_image_info(
   src: str,
@@ -131,7 +131,7 @@ def _load_raster_dims(src:str, default_dpi:int) -> tuple[float, float, bool]|Non
   except Exception:
     return None
 
-#-------------------------------------------------------------------------------- Title DSL
+#---------------------------------------------------------------------------------------- Title DSL
 
 @dataclass
 class ImageDSL:
@@ -223,7 +223,7 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     elif key == "scale": out.scale = fv
   return out
 
-#--------------------------------------------------------------------- Attribute parsing
+#-------------------------------------------------------------------------------- Attribute parsing
 
 def _parse_attrs_dims(attrs, nat_w_mm:float, nat_h_mm:float):
   """Extract `width`/`height` from token attrs (dict, list-of-pairs, or
@@ -257,7 +257,7 @@ def _parse_dim(val, ref_mm:float) -> float|None:
   try: return float(s) * _UNITS["px"]
   except ValueError: return None
 
-#---------------------------------------------------------------------- Sizing rules
+#------------------------------------------------------------------------------------- Sizing rules
 
 def size_block(
   info: ImageInfo,
@@ -380,7 +380,7 @@ def size_cell(
     h = max_h_mm
   return w, h
 
-#--------------------------------------------------------------------------- Helpers
+#------------------------------------------------------------------------------------------ Helpers
 
 def _clamp_no_upscale(
   nw:float, nh:float, max_w:float, max_h:float,

@@ -8,7 +8,7 @@ from pdfmarq import (
   PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich,
 )
 
-#---------------------------------------------------------------------------------- PDF basic
+#---------------------------------------------------------------------------------------- PDF basic
 
 def pdf_context_manager_writes_file(tmp_path):
   path = tmp_path / "empty.pdf"
@@ -42,7 +42,7 @@ def pdf_landscape_swaps_dimensions(tmp_path):
   assert pdf.page_width > pdf.page_height
   assert_valid_pdf(path)
 
-#-------------------------------------------------------------------------------------- Fonts
+#-------------------------------------------------------------------------------------------- Fonts
 
 def font_all_builtins_render(tmp_path):
   path = tmp_path / "fonts.pdf"
@@ -64,7 +64,7 @@ def font_partial_update_keeps_other_fields(tmp_path):
     pdf.font(size=11, mode="Regular").text("Body").enter()
   assert_valid_pdf(path)
 
-#--------------------------------------------------------------------------------------- Text
+#--------------------------------------------------------------------------------------------- Text
 
 def text_wrapped_to_width(tmp_path):
   path = tmp_path / "wrap.pdf"
@@ -99,7 +99,7 @@ def text_none_content_is_silent(tmp_path):
     pdf.text(None)
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Shapes
+#------------------------------------------------------------------------------------------- Shapes
 
 def shapes_all_render(tmp_path):
   path = tmp_path / "shapes.pdf"
@@ -120,7 +120,7 @@ def pdf_path_polygon_is_reachable(tmp_path):
     pdf.path([(0, 0), (10, 5), (20, 0)], close=True)
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 def colors_all_setters_render(tmp_path):
   path = tmp_path / "color.pdf"
@@ -132,7 +132,7 @@ def colors_all_setters_render(tmp_path):
     pdf.stroke_color(0, 0, 1).line(40, 0, 1)
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Tables
+#------------------------------------------------------------------------------------------- Tables
 
 def table_simple_with_header(tmp_path):
   path = tmp_path / "table.pdf"
@@ -161,7 +161,7 @@ def table_builder_drives_draw_table(tmp_path):
     pdf._draw_table(data, style)
   assert_valid_pdf(path)
 
-#-------------------------------------------------------------------------------------- Pages
+#-------------------------------------------------------------------------------------------- Pages
 
 def multi_page_tracks_page_num(tmp_path):
   path = tmp_path / "pages.pdf"
@@ -207,7 +207,7 @@ def metadata_render(tmp_path):
     pdf.text("body")
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Inline
+#------------------------------------------------------------------------------------------- Inline
 
 def render_rich_basic(tmp_path):
   path = tmp_path / "rich.pdf"
@@ -223,7 +223,7 @@ def render_rich_basic(tmp_path):
     render_rich(pdf, segs, width_mm=120, x_mm=0, y_mm=0)
   assert_valid_pdf(path)
 
-#------------------------------------------------------------------------------------- Styles
+#------------------------------------------------------------------------------------------- Styles
 
 def style_presets_are_independent_copies():
   # each access must yield a fresh Style so users can't mutate shared state

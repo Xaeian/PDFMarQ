@@ -1,46 +1,49 @@
 # Changes `pdfmarq`
 
-## `0.3.3` List numbering & scripts
+## `0.4.0` Caller-owned styling
+
+- Breaking: `render:` block dropped, `page=A4` replaces `width` / `height` / `landscape`
+- Breaking: `compress()` removed
+- Fixes across fonts, heading anchors and mermaid
+
+## `0.3.3` List numbering
 
 - Ordered lists follow the author's numbering
 - Fix: two-digit markers `10.` split across lines
-- Fix: `^sup^` / `~sub~` never shifted off the baseline
+- Fix: `^sup^` / `~sub~` baseline
 - Fix: nested lists indented 4+ spaces flattened
 
-## `0.3.2` Gutter & fixes
+## `0.3.2` Gutter
 
 - `render:` keys `gutter`, `header`
 - Fix: PDF generation without markdown
 
-## `0.3.1` Fonts, mermaid & render keys
+## `0.3.1` Fonts & mermaid
 
-- fixing weird unicode chars like **Ω**
-- Font mode fallback + `heavy_mode` in headings
+- Font mode fallback, `heavy_mode` in headings
 - Frontmatter `logo:` via `base_dir`
-- New `render:` keys
-- Mermaid: info-string DSL + `font_body` labels
+- Mermaid: info-string DSL, `font_body` labels
+- Fix: unicode glyphs like **Ω**
 
-## `0.3.0` Directives, DSL & docmarq parity
+## `0.3.0` Directives & image DSL
 
 - Directives `<!-- pagebreak -->`, `<!-- group -->`
 - Image title DSL: `max_w max_h w h scale align`
 - Frontmatter `render:` block
-- API parity with `docmarq`
 - Auto-derived table + footnote font sizes
 
-## `0.2.0` HTML, Table IMG & Lang
+## `0.2.0` HTML, tables & languages
 
-- Improved image handling in tables
 - Basic HTML tags: `<b>`, `<i>`, `<code>`, `<br>`, `<hr>`
 - Headerless tables _(single-row card layout)_
-- Callout _(Note/Tip/Important/Warning/Caution)_ labels
-- Language presets: `en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`
+- Callout labels, language presets `en` `pl` `de` `fr` `es` `it` `cs` `sk`
+- Improved image handling in tables
 
 ## `0.1.1` Names
 
-Shortened variable names and metadata
+- Shorter variable names and metadata
 
 ## `0.1.0` Initial release
 
-Python library for generating PDF documents with a fluent, cursor-based API.
-Optional `[md]` extra adds markdown-to-PDF rendering with YAML frontmatter headers, syntax highlighting, math, mermaid, and footnotes.
+Fluent, cursor-based PDF generation. The `[md]` extra renders markdown with banner headers,
+syntax highlighting, math, mermaid and footnotes.

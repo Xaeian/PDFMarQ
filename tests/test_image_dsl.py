@@ -10,7 +10,7 @@ from docmarq.md.image_utils import parse_image_dsl as doc_parse, ImageDSL as Doc
 from pdfmarq.md import md_to_pdf
 from docmarq.md import md_to_docx
 
-#-------------------------------------------------------------------------- Pure parser
+#-------------------------------------------------------------------------------------- Pure parser
 
 @pytest.mark.parametrize("parser", [pdf_parse, doc_parse])
 class TestParser:
@@ -100,7 +100,7 @@ class TestParser:
     assert d.scale == 0.5
     assert any("key=value" in str(x.message) for x in w)
 
-#----------------------------------------------------------------------- Cross-parser parity
+#------------------------------------------------------------------------------ Cross-parser parity
 
 def parsers_produce_same_field_set():
   # both libs share field names so a parsed DSL is interchangeable shape
@@ -125,7 +125,7 @@ def parsers_produce_same_result(title):
     assert getattr(a, f) == getattr(b, f), \
       f"{f}: pdf={getattr(a, f)} doc={getattr(b, f)}"
 
-#------------------------------------------------------------------------- End-to-end render
+#-------------------------------------------------------------------------------- End-to-end render
 
 @pytest.fixture
 def make_img(tmp_path):

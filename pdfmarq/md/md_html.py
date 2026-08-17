@@ -23,7 +23,7 @@ Directives reject extra tokens: `<!-- pagebreak xxx -->` is a plain comment.
 """
 import re
 
-#---------------------------------------------------------------------------------- Block
+#-------------------------------------------------------------------------------------------- Block
 
 _HR_BLOCK_RE = re.compile(r"\s*<hr\s*/?>\s*", re.IGNORECASE)
 
@@ -31,7 +31,7 @@ def is_hr_block(content:str) -> bool:
   """True for `<hr>` / `<hr/>` / `<hr />` html_block content."""
   return bool(_HR_BLOCK_RE.fullmatch(content))
 
-#------------------------------------------------------------------------------ Directives
+#--------------------------------------------------------------------------------------- Directives
 
 _PAGEBREAK_RE = re.compile(r"\s*<!--\s*pagebreak\s*-->\s*", re.IGNORECASE)
 _GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group\s*-->\s*", re.IGNORECASE)
@@ -49,12 +49,12 @@ def is_group_close_directive(content:str) -> bool:
   """True for `<!-- /group -->` closing directive."""
   return bool(_GROUP_CLOSE_RE.fullmatch(content))
 
-#---------------------------------------------------------------------------------- Inline
+#------------------------------------------------------------------------------------------- Inline
 
-BOLD_OPEN    = frozenset(("<b>", "<strong>"))
-BOLD_CLOSE   = frozenset(("</b>", "</strong>"))
-ITALIC_OPEN  = frozenset(("<i>", "<em>"))
+BOLD_OPEN = frozenset(("<b>", "<strong>"))
+BOLD_CLOSE = frozenset(("</b>", "</strong>"))
+ITALIC_OPEN = frozenset(("<i>", "<em>"))
 ITALIC_CLOSE = frozenset(("</i>", "</em>"))
-CODE_OPEN    = frozenset(("<code>",))
-CODE_CLOSE   = frozenset(("</code>",))
-BREAK        = frozenset(("<br>", "<br/>", "<br />", "<hr>", "<hr/>", "<hr />"))
+CODE_OPEN = frozenset(("<code>",))
+CODE_CLOSE = frozenset(("</code>",))
+BREAK = frozenset(("<br>", "<br/>", "<br />", "<hr>", "<hr/>", "<hr />"))

@@ -14,7 +14,7 @@ from ..inline import RichSegment, render_rich
 from ..constants import Align, MM_TO_PT
 from ..utils import smaller_size
 
-#------------------------------------------------------------------------------- FootnotesMixin
+#----------------------------------------------------------------------------------- FootnotesMixin
 
 class FootnotesMixin:
   """Footnote section rendering and definition lists. Mixed into `MarkdownRenderer`."""
@@ -47,7 +47,7 @@ class FootnotesMixin:
     if s.footnote_label:
       self._render_footnote_heading(s.footnote_label)
     else:
-      # Full-width HR separator; matches docmarq's `doc.hr()` at this point.
+      # Full-width HR separator.
       x = self._indent_mm
       w = self.pdf.content_width - x
       self.pdf.cursor(x, self.pdf.y)
@@ -55,7 +55,7 @@ class FootnotesMixin:
       self.pdf.line(w, 0, s.hr_thick)
       self._reset_stroke()
       self.pdf.enter(s.para_gap)
-    # One typographic ladder step below body; matches docmarq so the
+    # One typographic ladder step below body, so the
     # bibliography reads at the same relative weight in both formats.
     biblio_pt = smaller_size(s.body_size)
     i = start + 1

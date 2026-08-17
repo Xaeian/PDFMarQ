@@ -6,7 +6,7 @@ from dataclasses import dataclass
 # Exact mm ↔ pt conversion (1 inch = 72pt = 25.4mm)
 MM_TO_PT = 72 / 25.4  # ≈ 2.8346456692913384
 
-#---------------------------------------------------------------------------------------- Units
+#-------------------------------------------------------------------------------------------- Units
 
 class Unit:
   """Unit conversion factors to millimeters."""
@@ -16,7 +16,7 @@ class Unit:
   PT = 25.4 / 72  # ≈ 0.35278 mm - exact
   PX = 25.4 / 96  # ≈ 0.26458 mm - 96 DPI
 
-#------------------------------------------------------------------------------------- PageSize
+#----------------------------------------------------------------------------------------- PageSize
 
 @dataclass
 class PageSize:
@@ -33,7 +33,25 @@ A5 = PageSize(148, 210)
 LETTER = PageSize(215.9, 279.4)
 LEGAL = PageSize(215.9, 355.6)
 
-#---------------------------------------------------------------------------------------- Align
+# Named presets are the only page sizes callers can select by string. Arbitrary
+# `[w, h]` stays available through `PageSize(w, h)`, where the units are
+# explicit and a typo cannot silently produce a 5x5000mm page.
+PAGE_PRESETS: dict[str, PageSize] = {
+  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL,
+}
+
+def page_size(name:str) -> PageSize:
+  """Resolve a preset name to a `PageSize`, case-insensitively.
+
+  Raises `ValueError` for an unknown name - callers validate user input at
+  their own boundary, so reaching here with a bad name is a programming error.
+  """
+  key = str(name).strip().upper()
+  if key not in PAGE_PRESETS:
+    raise ValueError(f"Unknown page preset {name!r}; supported: {sorted(PAGE_PRESETS)}")
+  return PAGE_PRESETS[key]
+
+#-------------------------------------------------------------------------------------------- Align
 
 class Align:
   """Text/element alignment constants."""
@@ -42,7 +60,7 @@ class Align:
   CENTER = "C"
   JUSTIFY = "J"
 
-#--------------------------------------------------------------------------------------- Colors
+#------------------------------------------------------------------------------------------- Colors
 
 class Colors:
   """Predefined colors as (r, g, b) tuples (0-1 range)."""
@@ -55,12 +73,10 @@ class Colors:
   LIGHT_GREY = (0.8, 0.8, 0.8)
   DARK_GREY = (0.3, 0.3, 0.3)
 
-#------------------------------------------------------------------------------------- Defaults
+#----------------------------------------------------------------------------------------- Defaults
 
 class Defaults:
-  """Default values for PDF generation. Numerics match `docmarq.Defaults`
-  for cross-lib consistency; `FONT_FAMILY` differs by format (reportlab
-  built-in vs. Word built-in)."""
+  """Default values for PDF generation."""
   PAGE_WIDTH = 210
   PAGE_HEIGHT = 297
   MARGIN = 20

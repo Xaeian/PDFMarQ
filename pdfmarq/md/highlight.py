@@ -28,7 +28,7 @@ try:
 except ImportError:
   _HAS_PYGMENTS = False
 
-#-------------------------------------------------------------------------------- Color helpers
+#------------------------------------------------------------------------------------ Color helpers
 
 def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
   """Parse 6-char hex color to (r, g, b) 0-1."""
@@ -40,7 +40,7 @@ def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
   b = int(hex_str[4:6], 16) / 255
   return (r, g, b)
 
-#------------------------------------------------------------------ Markdown custom highlighter
+#---------------------------------------------------------------------- Markdown custom highlighter
 
 # Pygments' markdown lexer has known bugs (e.g. only tags `1.` and `2.` as
 # Keyword but not `3.`+). Simple regex-based highlighter instead.
@@ -162,7 +162,7 @@ def _tokenize_md_inline(
   if pos < len(text):
     out.append(seg(text[pos:], base_color))
 
-#------------------------------------------------------------------------------------ Highlight
+#---------------------------------------------------------------------------------------- Highlight
 
 def highlight_code(
   code: str,

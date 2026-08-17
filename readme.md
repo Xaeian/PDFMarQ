@@ -60,7 +60,7 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block)_
-- Nested `render:` block in frontmatter controls page geometry, fonts, banner toggles, locale _(see [`md-guide`](md-guide.md))_
+- Page geometry, fonts, banner toggles and locale come from the caller's `style=`, never from the document _(see [`md-guide`](md-guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
@@ -84,4 +84,4 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 
 ## See also
 
-Need `.docx` instead of PDF? Check [**DocMarQ**](https://github.com/Xaeian/DocMarQ), the sibling library with the same API shape and `.docx` output. Math and syntax highlighting are PDF-only. Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.
+Need `.docx` instead of PDF? Check [**DocMarQ**](https://github.com/Xaeian/DocMarQ), the sibling library with the same API shape and `.docx` output. Syntax highlighting is PDF-only, and math there covers a wider slice of LaTeX _(DocMarQ emits native Word equations for the common subset)_. Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.

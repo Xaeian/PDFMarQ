@@ -11,11 +11,13 @@ _MODE_FALLBACK = {
   "Italic": ["Regular"],
   "Bold": ["Regular"],
   "BoldItalic": ["Bold", "Italic", "Regular"],
+  "Black": ["Bold", "Regular"],
+  "BlackItalic": ["BoldItalic", "Black", "Bold", "Italic", "Regular"],
   "Oblique": ["Italic", "Regular"],
   "BoldOblique": ["BoldItalic", "Bold", "Italic", "Regular"],
 }
 
-#---------------------------------------------------------------------------------- FontManager
+#-------------------------------------------------------------------------------------- FontManager
 
 class FontManager:
   """Font registry with lazy loading and path resolution."""
@@ -45,11 +47,18 @@ class FontManager:
 
   def register(self, family:str, mode:str="Regular") -> str:
     """Register font, return reportlab name. Missing variants fall back
-    through `_MODE_FALLBACK`. Raises when nothing in the chain exists."""
+    through `_MODE_FALLBACK`, and a base-14 built-in satisfies any step of that
+    chain. Raises when nothing in the chain exists.
+
+    The built-in check runs per step, not once at the end: `Courier` has no
+    `Black`, so `Black` reaches its `Bold` fallback, which the built-in serves.
+    """
     for try_mode in [mode] + _MODE_FALLBACK.get(mode, []):
       key = self._font_key(family, try_mode)
       if key in self._registered:
         return key
+      if is_builtin(family, try_mode):
+        return builtin_name(family, try_mode)
       try:
         path = self._resolve_path(family, try_mode)
       except FileNotFoundError:
@@ -80,7 +89,7 @@ class FontManager:
     key = self.register(family, mode)
     return stringWidth(text, key, size)
 
-#-------------------------------------------------------------------------------------- Builtin
+#------------------------------------------------------------------------------------------ Builtin
 
 # `Times/Regular` aliased to `Times/Roman` for consistency with other families.
 # `Times-Roman` aliased to `Times` so users passing the reportlab canonical name

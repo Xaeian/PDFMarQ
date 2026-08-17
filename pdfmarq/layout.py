@@ -4,7 +4,7 @@
 from dataclasses import dataclass, replace
 from .constants import Align
 
-#--------------------------------------------------------------------------------------- Cursor
+#------------------------------------------------------------------------------------------- Cursor
 
 @dataclass
 class Cursor:
@@ -66,7 +66,7 @@ class Cursor:
     """Create cursor copy."""
     return replace(self)
 
-#--------------------------------------------------------------------------------- PageGeometry
+#------------------------------------------------------------------------------------- PageGeometry
 
 @dataclass
 class PageGeometry:

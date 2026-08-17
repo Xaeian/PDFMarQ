@@ -5,8 +5,9 @@
 import pytest
 from conftest import assert_valid_pdf
 from pdfmarq.md import md_to_pdf, MarkdownStyle
+from pdfmarq.constants import A4
 
-#---------------------------------------------------------------------------------- Markdown
+#----------------------------------------------------------------------------------------- Markdown
 
 @pytest.mark.parametrize("name, src", [
   ("minimal", "# Title\n\nHello world."),
@@ -71,11 +72,10 @@ def md_footnote_label_renders_heading(tmp_path):
   md_to_pdf(src, str(path), style=style)
   assert_valid_pdf(path)
 
-def md_landscape_from_frontmatter_flips_page(tmp_path):
-  # `render.landscape: true` flips the page when caller doesn't pass landscape=
-  path = tmp_path / "fm_landscape.pdf"
-  src = "---\nrender:\n  landscape: true\n---\n\n# Wide content"
-  pdf = md_to_pdf(src, str(path))
+def md_page_landscape_flips_page(tmp_path):
+  # orientation comes from `page=`, never from the document
+  path = tmp_path / "landscape.pdf"
+  pdf = md_to_pdf("# Wide content", str(path), page=A4.landscape())
   assert pdf.page_width > pdf.page_height
   assert_valid_pdf(path)
 
