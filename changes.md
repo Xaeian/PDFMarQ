@@ -1,5 +1,9 @@
 # Changes `pdfmarq`
 
+## `0.4.1` Deps cleanup
+
+- `Pygments` naming unified across extras
+
 ## `0.4.0` Caller-owned styling
 
 - Breaking: `render:` block dropped, `page=A4` replaces `width` / `height` / `landscape`

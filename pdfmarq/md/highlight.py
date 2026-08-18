@@ -15,7 +15,7 @@ Example:
   >>> # lines is list[list[RichSegment]], one inner list per source line
 """
 
-__extras__ = ("highlight", ["pygments"])
+__extras__ = ("highlight", ["Pygments"])
 
 from ..inline import RichSegment
 
