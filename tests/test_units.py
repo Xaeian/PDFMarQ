@@ -279,13 +279,6 @@ def page_asymmetric_margins():
   assert p.x_for_align(50, Align.LEFT) == 10
   assert p.x_for_align(50, Align.RIGHT) == pytest.approx(130)
 
-def page_margin_lr_compat_property():
-  # `margin_lr` back-compat alias: read returns left, write sets both
-  p = PageGeometry(width=210, height=297, margin_left=20, margin_right=20)
-  assert p.margin_lr == 20
-  p.margin_lr = 25
-  assert p.margin_left == 25 and p.margin_right == 25
-
 #------------------------------------------------------------------------------------------ box_fit
 
 def box_fit_simple_no_wrap(metrics):

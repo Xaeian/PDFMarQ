@@ -83,7 +83,7 @@ class MarkdownRenderer(
     except ImportError:
       from .._warn import warn_missing
       warn_missing("matplotlib", "matplotlib", "math formulas")
-    self.pdf.font(self.style.body_family, self.style.body_size, self.style.body_mode)
+    self.pdf.font(self.style.font_body, self.style.body_size, self.style.body_mode)
 
   def _load_plugins(self, md):
     """Load optional markdown-it plugins, warning once per missing one."""
@@ -119,18 +119,18 @@ class MarkdownRenderer(
   
   def render(self, md_text:str):
     """Parse markdown text and render to PDF."""
-    # The mini-banner and the signature block read frontmatter too, so it is
-    # captured regardless of `banner_render`.
+    # The compact banner and the signature block read frontmatter too, so it is
+    # captured regardless of `banner`.
     data, md_text = self._extract_frontmatter(md_text)
     self._frontmatter_data = data or None
     fm_rendered_title = None
-    if self.style.banner_render and data:
+    if self.style.banner and data:
       self._render_frontmatter_header(data)
       fm_rendered_title = data.get("title")
-    # Page chrome: mini-header fires per-page (no total known yet);
+    # Page chrome: compact-banner fires per-page (no total known yet);
     # footer page number deferred via on_final_page (total count available then).
     self.pdf.on_page(self._render_page_chrome)
-    self.pdf.on_new_page(self._offset_body_for_mini_header)
+    self.pdf.on_new_page(self._offset_body_for_compact_banner)
     if self.style.page_number_label:
       self.pdf.on_final_page(self._render_page_number)
     md_text = self._normalize_list_indent(md_text)
@@ -142,7 +142,7 @@ class MarkdownRenderer(
     # unknown anchor like any other.
     self._known_slugs = self._collect_heading_slugs(tokens)
     self._render_tokens(tokens)
-    if self.style.sign_render:
+    if self.style.sign:
       self._render_signature_block()
 
   @staticmethod

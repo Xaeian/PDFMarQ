@@ -47,8 +47,8 @@ with PDF("report.pdf") as pdf:
 from pdfmarq.md import md_to_pdf, MarkdownStyle
 # Markdown to PDF
 style = MarkdownStyle(
-  body_family="IBMPlexSans",
-  head_family="Sora",
+  font_body="IBMPlexSans",
+  font_head="Sora",
   page_number_label="Page", # "Page 1/5" in footer
 )
 md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")

@@ -459,7 +459,7 @@ def render_rich(
       RuntimeWarning, stacklevel=2,
     )
   # Absolute canvas coords for top-left of text block
-  x_base_mm = page.margin_lr + x_mm
+  x_base_mm = page.margin_left + x_mm
   y_top_mm = page.height - page.margin_top - y_mm
   current_top_mm = y_top_mm  # canvas y (grows up) - top of next line
   total_used_mm = 0

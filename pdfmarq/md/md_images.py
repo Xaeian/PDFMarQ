@@ -57,11 +57,8 @@ def load_image_info(
   """Read image metadata + parse author overrides. Returns `None` if the
   file cannot be opened.
 
-  Author overrides come from two channels:
-    - `attrs['title']`: the markdown image title `![alt](src "DSL")` parsed
-      as space-separated `key=value` pairs (`w h max_w max_h scale align`).
-    - `attrs['width']`/`attrs['height']`: plugin-set attrs (markdown-it-attrs
-      style) honored for back-compat. DSL wins when both present.
+  Author overrides come from the markdown image title `![alt](src "DSL")`,
+  parsed as space-separated `key=value` pairs (`w h max_w max_h scale align`).
   """
   if not src or not os.path.exists(src):
     return None
@@ -73,8 +70,7 @@ def load_image_info(
   if dims is None:
     return None
   nat_w_mm, nat_h_mm, dimensionless = dims
-  # Legacy plugin attrs first - DSL from title overrides if both are set.
-  ew, eh = _parse_attrs_dims(attrs, nat_w_mm, nat_h_mm)
+  ew = eh = None
   dsl_max_w = dsl_max_h = None
   align = None
   if attrs:
@@ -164,7 +160,7 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     `align`          `L` / `C` / `R` block-level horizontal alignment
 
   When the title contains no `=` token at all, returns `is_dsl=False` so
-  the title is silently ignored (legacy "caption" titles keep working).
+  the title is silently ignored (a plain caption).
   Unknown keys, malformed values, and non-positive numerics are warned
   and individually ignored - parsing never raises.
   """
@@ -222,40 +218,6 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     elif key == "max_h": out.max_h_mm = fv
     elif key == "scale": out.scale = fv
   return out
-
-#-------------------------------------------------------------------------------- Attribute parsing
-
-def _parse_attrs_dims(attrs, nat_w_mm:float, nat_h_mm:float):
-  """Extract `width`/`height` from token attrs (dict, list-of-pairs, or
-  None). Returns `(w_mm or None, h_mm or None)`."""
-  if not attrs:
-    return None, None
-  d = dict(attrs) if not isinstance(attrs, dict) else attrs
-  return _parse_dim(d.get("width"), nat_w_mm), _parse_dim(d.get("height"), nat_h_mm)
-
-_UNITS = {
-  "mm": 1.0, "cm": 10.0, "in": 25.4, "inch": 25.4,
-  "pt": 25.4 / 72, "px": 25.4 / 96,
-}
-
-def _parse_dim(val, ref_mm:float) -> float|None:
-  """Parse `'200'`, `'200px'`, `'5cm'`, `'50%'` etc. into mm. Bare numbers
-  are interpreted as pixels _(matches HTML `<img width=200>` semantics)_.
-  Percentages resolve against `ref_mm`. Returns `None` on parse failure."""
-  if val is None:
-    return None
-  s = str(val).strip().lower()
-  if not s:
-    return None
-  if s.endswith("%"):
-    try: return ref_mm * float(s[:-1]) / 100
-    except ValueError: return None
-  for unit, factor in _UNITS.items():
-    if s.endswith(unit):
-      try: return float(s[:-len(unit)].strip()) * factor
-      except ValueError: return None
-  try: return float(s) * _UNITS["px"]
-  except ValueError: return None
 
 #------------------------------------------------------------------------------------- Sizing rules
 

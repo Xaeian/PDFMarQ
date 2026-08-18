@@ -3,7 +3,7 @@
 """YAML frontmatter parsing and document banner rendering.
 
 Detects ``---\\n...\\n---`` at the top of markdown text, parses with PyYAML,
-and renders the page-1 banner plus the compact mini-banner on continuation
+and renders the page-1 banner plus the compact banner on continuation
 pages. Both are gated by their own style flag.
 
 Frontmatter is **content only** - it never influences the style, the page or
@@ -232,7 +232,7 @@ class FrontmatterMixin:
       h_mm += s.banner_id_size / MM_TO_PT * 1.6 + 3
     title = data.get("title")
     if title:
-      title_lines = self._estimate_lines(str(title), s.head_family,
+      title_lines = self._estimate_lines(str(title), s.font_head,
         s.head_mode, s.banner_title_size, width)
       h_mm += s.banner_title_size / MM_TO_PT * title_lines * 1.0 + 2
     author = data.get("author")
@@ -283,7 +283,7 @@ class FrontmatterMixin:
       pdf.enter(h + 3)
     title = data.get("title")
     if title:
-      h = self._fm_centered_text(str(title), s.banner_title_size, s.head_family,
+      h = self._fm_centered_text(str(title), s.banner_title_size, s.font_head,
         s.head_mode, s.head_color, x_offset, width)
       pdf.enter(h + 2)
     author = data.get("author")
@@ -303,11 +303,11 @@ class FrontmatterMixin:
     y = pdf.y
     h = s.banner_meta_size / MM_TO_PT
     if entity:
-      segs = [RichSegment(text=str(entity), family=s.body_family, mode=s.bold_mode,
+      segs = [RichSegment(text=str(entity), family=s.font_body, mode=s.bold_mode,
         size=s.banner_meta_size, color=s.body_color)]
       h = max(h, render_rich(pdf, segs, width, x_offset, y, Align.LEFT, 1.3) or h)
     if address:
-      segs = [RichSegment(text=str(address), family=s.body_family, mode=s.body_mode,
+      segs = [RichSegment(text=str(address), family=s.font_body, mode=s.body_mode,
         size=s.banner_meta_size, color=s.muted_color)]
       h = max(h, render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3) or h)
     return h
@@ -324,7 +324,7 @@ class FrontmatterMixin:
     s = self.style
     c = pdf._canvas
     y = pdf.y
-    x_left_pt = (pdf._page.margin_lr + x_offset) * MM_TO_PT
+    x_left_pt = (pdf._page.margin_left + x_offset) * MM_TO_PT
     badge_baseline_y_pt = (pdf._page.height - pdf._page.margin_top - y - s.banner_id_size
       / MM_TO_PT * 0.7) * MM_TO_PT
     code_baseline_y_pt = badge_baseline_y_pt + 0.5 * MM_TO_PT
@@ -334,13 +334,13 @@ class FrontmatterMixin:
         c, str(status), x_left_pt, badge_baseline_y_pt, anchor="left",
       )
     if doc_id:
-      font = pdf._fonts.register(s.mono_family, s.mono_mode)
+      font = pdf._fonts.register(s.font_mono, s.mono_mode)
       gap = 6 if status else 0
       self._draw_code_inline(c, str(doc_id), font, s.banner_id_size, x_left_pt + badge_w_pt + gap,
         code_baseline_y_pt, anchor="left")
     if version:
-      x_right_pt = (pdf._page.margin_lr + x_offset + width) * MM_TO_PT
-      font = pdf._fonts.register(s.mono_family, s.mono_mode)
+      x_right_pt = (pdf._page.margin_left + x_offset + width) * MM_TO_PT
+      font = pdf._fonts.register(s.font_mono, s.mono_mode)
       self._draw_code_inline(c, str(version), font, s.banner_version_size, x_right_pt,
         code_baseline_y_pt, anchor="right")
     return s.banner_id_size / MM_TO_PT * 1.6
@@ -367,7 +367,7 @@ class FrontmatterMixin:
     # Row 1: created (right-aligned, by itself)
     if created:
       y = pdf.y
-      segs = [RichSegment(text=f"{s.banner_label_created}: {created}", family=s.body_family,
+      segs = [RichSegment(text=f"{s.banner_label_created}: {created}", family=s.font_body,
         mode=s.body_mode, size=s.banner_meta_size, color=s.muted_color)]
       render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3)
       pdf.cursor(x_offset, y + line_h)
@@ -377,11 +377,11 @@ class FrontmatterMixin:
       y = pdf.y
       if author:
         segs = [RichSegment(text=f"{s.banner_label_author}: {author}",
-          family=s.body_family, mode=s.body_mode,
+          family=s.font_body, mode=s.body_mode,
           size=s.banner_meta_size, color=s.body_color)]
         render_rich(pdf, segs, width, x_offset, y, Align.LEFT, 1.3)
       if updated:
-        segs = [RichSegment(text=f"{s.banner_label_updated}: {updated}", family=s.body_family,
+        segs = [RichSegment(text=f"{s.banner_label_updated}: {updated}", family=s.font_body,
           mode=s.body_mode, size=s.banner_meta_size, color=s.muted_color)]
         render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3)
       pdf.cursor(x_offset, y + line_h)
@@ -400,23 +400,23 @@ class FrontmatterMixin:
   #------------------------------------------------------------------------------------ Page chrome
   
   def _render_page_chrome(self, pdf, page_num:int):
-    """Per-page callback. Mini-header on pages 2+ only.
+    """Per-page callback. Compact banner on pages 2+ only.
     Page number drawn via `_render_page_number` as `on_final_page` (deferred)
     so it can include the total page count.
     """
     s = self.style
-    if page_num > 1 and s.mini_banner_render and self._frontmatter_data:
-      self._render_mini_header(pdf)
+    if page_num > 1 and s.banner_compact and self._frontmatter_data:
+      self._render_compact_banner(pdf)
 
-  def _offset_body_for_mini_header(self, pdf, page_num:int):
+  def _offset_body_for_compact_banner(self, pdf, page_num:int):
     """on_new_page hook. Advances the cursor on pages 2+ so body content
-    starts below the mini-header with a comfortable gap.
+    starts below the compact-banner with a comfortable gap.
     """
     s = self.style
-    if page_num > 1 and s.mini_banner_render and self._frontmatter_data:
-      pdf.enter(s.mini_banner_gap)
+    if page_num > 1 and s.banner_compact and self._frontmatter_data:
+      pdf.enter(s.banner_compact_gap)
 
-  def _render_mini_header(self, pdf):
+  def _render_compact_banner(self, pdf):
     """Compact 2-line header on continuation pages.
     Layout (3 zones, no status badge):
       | Logo  | id    | version |
@@ -435,12 +435,12 @@ class FrontmatterMixin:
     version = data.get("version")
     updated = self._format_date(data.get("updated"))
     c = pdf._canvas
-    y_top_mm = s.mini_banner_top
-    line_h_pt = s.mini_banner_size * 1.25
-    line1_y_pt = (pdf._page.height - y_top_mm - s.mini_banner_size / MM_TO_PT * 0.7) * MM_TO_PT
+    y_top_mm = s.banner_compact_top
+    line_h_pt = s.banner_compact_size * 1.25
+    line1_y_pt = (pdf._page.height - y_top_mm - s.banner_compact_size / MM_TO_PT * 0.7) * MM_TO_PT
     line2_y_pt = line1_y_pt - line_h_pt
-    x_left_pt = pdf._page.margin_lr * MM_TO_PT
-    x_right_pt = (pdf._page.width - pdf._page.margin_lr) * MM_TO_PT
+    x_left_pt = pdf._page.margin_left * MM_TO_PT
+    x_right_pt = (pdf._page.width - pdf._page.margin_right) * MM_TO_PT
     sep_y_pt = line2_y_pt - 4
     # ---- LEFT: logo + (id top, title bottom) ----
     cursor_x = x_left_pt
@@ -448,12 +448,12 @@ class FrontmatterMixin:
       # 1mm breathing room (0.5mm top + 0.5mm bottom); bottom never crosses separator.
       logo_top_pt = (pdf._page.height - y_top_mm + 1.0) * MM_TO_PT
       avail_pt = logo_top_pt - sep_y_pt
-      max_size_pt = s.mini_banner_logo_max_h * MM_TO_PT
+      max_size_pt = s.banner_compact_logo_max_h * MM_TO_PT
       logo_h_pt = min(max_size_pt, avail_pt) - 1.0 * MM_TO_PT
       # Tall logos (aspect < 1) take less horizontal space, leaving more room for id/title.
       aspect = self._get_logo_aspect(logo_path)
       logo_w_pt = logo_h_pt * aspect
-      max_w_pt = s.mini_banner_logo_max_w * MM_TO_PT
+      max_w_pt = s.banner_compact_logo_max_w * MM_TO_PT
       if logo_w_pt > max_w_pt and aspect > 0:
         logo_w_pt = max_w_pt
         logo_h_pt = logo_w_pt / aspect
@@ -467,17 +467,17 @@ class FrontmatterMixin:
     text_x = cursor_x
     if doc_id:  # top line - mono on light-grey rounded background
       try:
-        font = pdf._fonts.register(s.mono_family, s.mono_mode)
-        self._draw_code_inline(c, str(doc_id), font, s.mini_banner_size,
+        font = pdf._fonts.register(s.font_mono, s.mono_mode)
+        self._draw_code_inline(c, str(doc_id), font, s.banner_compact_size,
           text_x, line1_y_pt, anchor="left")
       except Exception:
         pass
     if title:  # bottom line, ellipsis-trimmed
       try:
-        font = pdf._fonts.register(s.body_family, s.bold_mode)
+        font = pdf._fonts.register(s.font_body, s.bold_mode)
         avail_pt = (x_right_pt - text_x) * 0.55  # leave room for right zone
-        shown = self._fit_text(c, str(title), font, s.mini_banner_size, avail_pt)
-        c.setFont(font, s.mini_banner_size)
+        shown = self._fit_text(c, str(title), font, s.banner_compact_size, avail_pt)
+        c.setFont(font, s.banner_compact_size)
         c.setFillColor(Color(*s.body_color[:3]))
         c.drawString(text_x, line2_y_pt, shown)
       except Exception:
@@ -485,15 +485,15 @@ class FrontmatterMixin:
     # ---- RIGHT: version (top), date (bottom) ----
     if version:
       try:
-        font = pdf._fonts.register(s.mono_family, s.mono_mode)
-        self._draw_code_inline(c, str(version), font, s.mini_banner_size,
+        font = pdf._fonts.register(s.font_mono, s.mono_mode)
+        self._draw_code_inline(c, str(version), font, s.banner_compact_size,
           x_right_pt, line1_y_pt, anchor="right")
       except Exception:
         pass
     if updated:
       try:
-        font = pdf._fonts.register(s.body_family, s.body_mode)
-        c.setFont(font, s.mini_banner_size)
+        font = pdf._fonts.register(s.font_body, s.body_mode)
+        c.setFont(font, s.banner_compact_size)
         c.setFillColor(Color(*s.muted_color[:3]))
         c.drawRightString(x_right_pt, line2_y_pt, updated)
       except Exception:
@@ -574,13 +574,13 @@ class FrontmatterMixin:
     palette = s.banner_status_colors
     bg, fg = palette.get(key, ((0.93, 0.93, 0.95), (0.40, 0.44, 0.50)))
     pdf = self.pdf
-    font = pdf._fonts.register(s.body_family, s.bold_mode)
+    font = pdf._fonts.register(s.font_body, s.bold_mode)
     label = status.upper()
     pad_x = 4
     pad_y = 2
-    text_w = c.stringWidth(label, font, s.mini_banner_size - 1)
+    text_w = c.stringWidth(label, font, s.banner_compact_size - 1)
     badge_w = text_w + pad_x * 2
-    badge_h = s.mini_banner_size + pad_y * 2 - 1
+    badge_h = s.banner_compact_size + pad_y * 2 - 1
     if anchor == "center": bx = x_pt - badge_w / 2
     else:
       bx = x_pt
@@ -589,9 +589,9 @@ class FrontmatterMixin:
     c.setStrokeColor(Color(*bg))
     c.roundRect(bx, by, badge_w, badge_h, badge_h * 0.3, fill=1, stroke=0)
     c.setFillColor(Color(*fg))
-    c.setFont(font, s.mini_banner_size - 1)
+    c.setFont(font, s.banner_compact_size - 1)
     # Vertical centering: baseline = by + (badge_h - cap_height)/2; cap_height ≈ 0.7 * size.
-    text_size = s.mini_banner_size - 1
+    text_size = s.banner_compact_size - 1
     text_y = by + (badge_h - text_size * 0.7) / 2
     c.drawString(bx + pad_x, text_y, label)
     return badge_w
@@ -615,7 +615,7 @@ class FrontmatterMixin:
     c = pdf._canvas
     c.setFillColor(Color(*s.muted_color[:3]))
     try:
-      font = pdf._fonts.register(s.body_family, s.body_mode)
+      font = pdf._fonts.register(s.font_body, s.body_mode)
       c.setFont(font, s.banner_meta_size)
       c.drawCentredString(x_center, y_pt, text)
     except Exception:
@@ -624,20 +624,26 @@ class FrontmatterMixin:
   #-------------------------------------------------------------------------------------- Signature
   
   def _render_signature_block(self):
-    """Right-aligned dashed signature line + italic label at document end.
-    ~25mm space above the line is reserved for the handwritten signature.
+    """Dashed signing lines with italic labels at document end. One sits at
+    the right margin; several span margin to margin, spread evenly.
     """
     s = self.style
     pdf = self.pdf
-    self._ensure_space(35)
-    pdf.enter(25)  # ~25mm space above line for the signature
-    line_w = s.banner_sign_w
+    labels = s.sign_lines()
+    n = len(labels)
+    self._ensure_space(s.sign_gap + 10)  # gap + line + label
+    pdf.enter(s.sign_gap)
     content_w = pdf.content_width
-    x_left = content_w - line_w
-    pdf.cursor(x_left, pdf.y)
-    pdf.stroke_color(*s.muted_color[:3])
-    pdf.line(line_w, 0, s.banner_rule, dash=(2, 2))
-    pdf.cursor(x_left, pdf.y + 1)
-    segs = [RichSegment(text=s.banner_label_signature, family=s.body_family, mode=s.italic_mode,
-      size=s.banner_sign_size, color=s.muted_color)]
-    render_rich(pdf, segs, line_w, x_left, pdf.y, Align.CENTER, 1.0)
+    line_w = min(s.sign_w, content_w / n - 6)  # keeps at least 6mm between lines
+    x0 = content_w - line_w if n == 1 else 0
+    step = (content_w - line_w) / (n - 1) if n > 1 else 0
+    y = pdf.y
+    for i, label in enumerate(labels):
+      x_left = x0 + i * step
+      pdf.cursor(x_left, y)
+      pdf.stroke_color(*s.muted_color[:3])
+      pdf.line(line_w, 0, s.banner_rule, dash=(2, 2))
+      pdf.cursor(x_left, pdf.y + 1)
+      segs = [RichSegment(text=label, family=s.font_body, mode=s.italic_mode,
+        size=s.sign_size, color=s.muted_color)]
+      render_rich(pdf, segs, line_w, x_left, pdf.y, Align.CENTER, 1.0)

@@ -122,14 +122,14 @@ class TableMixin:
       if img is not None:
         return {"type": "image", "info": img}
       fallback = [RichSegment(
-        text=" ", family=s.body_family,
+        text=" ", family=s.font_body,
         mode=s.bold_mode if bold else s.body_mode,
         size=cell_size, color=s.body_color,
       )]
       if inline_token is None:
         return {"type": "text", "segs": fallback}
       base = RichSegment(
-        text="", family=s.body_family,
+        text="", family=s.font_body,
         mode=s.bold_mode if bold else s.body_mode,
         size=cell_size, color=s.body_color,
       )

@@ -14,7 +14,7 @@ md_to_pdf(md_text, "out.pdf", page=A4.landscape(), base_dir="./assets")
 
 ## Banner (YAML frontmatter)
 
-YAML block at the top becomes a styled banner on page 1 plus a compact mini-banner on continuation pages.
+YAML block at the top becomes a styled banner on page 1 plus a compact banner on continuation pages.
 
 ```yaml
 ---
@@ -50,7 +50,7 @@ logo: ./ranger-badge.svg
 
 PDF metadata _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ is auto-filled from matching YAML keys. Pass `metadata={...}` to `md_to_pdf()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner_render=False` never costs you the heading. Disable with `skip_dup_title=False`.
+If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner=False` never costs you the heading. Disable with `skip_dup_title=False`.
 
 ## Presentation
 
@@ -61,20 +61,25 @@ from pdfmarq.md import md_to_pdf, lang_style
 from pdfmarq.constants import A4, page_size
 
 style = lang_style("pl",  # banner/footer labels
-  body_family="IBMPlexSans", head_family="Sora", mono_family="IBMPlexMono",
+  font_body="IBMPlexSans", font_head="Sora", font_mono="IBMPlexMono",
   body_size=11, line_height=1.4, image_max_h=120,
-  banner_render=True, mini_banner_render=True, sign_render=True,
+  banner=True, banner_compact=True, sign="approval",
   mermaid_theme="default", syntax_theme="default",
 )
 md_to_pdf(md, "out.pdf", style=style,
   page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
 ```
 
+`sign` takes `True` for one line, a `sign_labels` scenario _(`signature`, `approval`,
+`contract`, localized by the language preset)_, or a list of custom labels drawn side
+by side, sharing the content width.
+
+
 `page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
 Everything after `output_path` is keyword-only, so the argument order cannot silently diverge from `docmarq.md.md_to_docx`.
 
-Mermaid diagrams use `body_family` for label text when a matching TTF lives in `font_dir`.
+Mermaid diagrams use `font_body` for label text when a matching TTF lives in `font_dir`.
 
 ## Internal links
 
@@ -124,11 +129,11 @@ Labels in the banner, footer, and callouts are style fields. Defaults are Englis
 
 ```py
 from pdfmarq.md import lang_style, md_to_pdf
-style = lang_style("pl", body_family="IBMPlexSans")
+style = lang_style("pl", font_body="IBMPlexSans")
 md_to_pdf(md_text, "out.pdf", style=style)
 ```
 
-Built-in presets ship in `pdfmarq/md/presets.py` and currently cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated / signature)_, and callout labels _(note / tip / important / warning / caution)_. Extend by adding entries to `LANG_PRESETS`.
+Built-in presets ship in `pdfmarq/md/presets.py` and currently cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`. Each preset configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and callout labels _(note / tip / important / warning / caution)_. Extend by adding entries to `LANG_PRESETS`.
 
 For ad-hoc overrides without a preset, set fields directly:
 
@@ -146,8 +151,8 @@ MarkdownStyle(
 MarkdownStyle(
   banner_logo_max_h=50,       # mm - big logo on page 1 (default 50)
   banner_logo_max_w=60,       # mm - caps wide logos (default 60)
-  mini_banner_logo_max_h=12,  # mm - mini-banner logo (default 12)
-  mini_banner_logo_max_w=24,  # mm - caps wide mini logos (default 24)
+  banner_compact_logo_max_h=12,  # mm - compact banner logo (default 12)
+  banner_compact_logo_max_w=24,  # mm - caps wide logos (default 24)
 )
 ```
 
@@ -259,7 +264,7 @@ pdf = PDF("out.pdf", font_dir="./fonts")
 pdf.font("Helvetica", 36, "Bold").cursor(0, 80).text("Title", 170, align="C")
 pdf.new_page()
 # Markdown body (no banner - we already have a custom cover)
-renderer = MarkdownRenderer(pdf, MarkdownStyle(banner_render=False))
+renderer = MarkdownRenderer(pdf, MarkdownStyle(banner=False))
 renderer.render(open("body.md").read())
 # Custom signature
 pdf.enter(20).cursor(110, pdf.y).line(70, 0, 0.5, dash=(2, 2))

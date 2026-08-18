@@ -161,12 +161,12 @@ def lang_presets_do_not_set_footnote_label():
   for lang, preset in DocPresets.items():
     assert "footnote_label" not in preset, f"docmarq lang={lang!r} sets footnote_label"
 
-def body_family_intentionally_different():
+def font_body_intentionally_different():
   # INTENTIONAL: pdfmarq → Vera (bundled, has Polish glyphs), docmarq → Calibri
   # (Word native). regression guard against well-meaning "consistency" cleanup
-  assert PdfStyle().body_family != DocStyle().body_family
-  assert PdfStyle().body_family == "Vera"
-  assert DocStyle().body_family == "Calibri"
+  assert PdfStyle().font_body != DocStyle().font_body
+  assert PdfStyle().font_body == "Vera"
+  assert DocStyle().font_body == "Calibri"
 
 def md_to_signatures_share_arg_names():
   # md_to_pdf and md_to_docx accept the same cross-lib keyword subset

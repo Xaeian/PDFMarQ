@@ -50,11 +50,11 @@ class FontsMixin:
     sans_name = self._try_register_family(sans_candidates)
     mono_name = self._try_register_family(mono_candidates)
     default_style = MarkdownStyle()
-    if sans_name and self.style.body_family == default_style.body_family:
-      self.style.body_family = sans_name
-      self.style.head_family = sans_name
-    if mono_name and self.style.mono_family == default_style.mono_family:
-      self.style.mono_family = mono_name
+    if sans_name and self.style.font_body == default_style.font_body:
+      self.style.font_body = sans_name
+      self.style.font_head = sans_name
+    if mono_name and self.style.font_mono == default_style.font_mono:
+      self.style.font_mono = mono_name
 
   @staticmethod
   def _vera_paths() -> dict:

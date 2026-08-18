@@ -53,7 +53,7 @@ def _marker_column_mm(pdf, style, numbers:list[int]) -> float:
   `10.` needs 6.17mm against a 6mm indent and used to wrap onto two lines."""
   if not numbers: return style.list_indent
   widest = max(numbers, key=lambda n: len(str(n)))
-  seg = RichSegment(text=f"{widest}. ", family=style.body_family,
+  seg = RichSegment(text=f"{widest}. ", family=style.font_body,
     mode=style.body_mode, size=style.body_size, color=style.body_color)
   return max(style.list_indent, measure_extent(pdf, [seg])[1])
 
@@ -117,7 +117,7 @@ class ListMixin:
       # Solid disc via canvas.circle - cleaner than glyph `•`
       from reportlab.lib.units import mm as _mm
       page = self.pdf._page
-      cx_mm = page.margin_lr + x_prefix + 1.5
+      cx_mm = page.margin_left + x_prefix + 1.5
       cy_mm = page.height - page.margin_top - (y_item + s.body_size * 0.55 / MM_TO_PT)
       canvas = self.pdf._canvas
       canvas.setFillColor(Color(*s.body_color[:3]))
@@ -125,7 +125,7 @@ class ListMixin:
       canvas.setFillColor(Color(0, 0, 0))
     else:
       prefix_seg = RichSegment(
-        text=prefix, family=s.body_family, mode=s.body_mode,
+        text=prefix, family=s.font_body, mode=s.body_mode,
         size=s.body_size, color=s.body_color,
       )
       render_rich(
@@ -153,7 +153,7 @@ class ListMixin:
         inline = item_tokens[j + 1]
         if inline.type == "inline":
           base = RichSegment(
-            text="", family=s.body_family, mode=s.body_mode,
+            text="", family=s.font_body, mode=s.body_mode,
             size=s.body_size, color=s.body_color,
           )
           try:

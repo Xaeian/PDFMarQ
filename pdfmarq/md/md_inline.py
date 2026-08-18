@@ -84,7 +84,7 @@ class InlineMixin:
       mode = resolve_mode()
       if is_html_code:
         # Mirrors `code_inline` styling: mono family, code colors, scaled size
-        family = s.mono_family
+        family = s.font_mono
         mode = s.mono_mode
         color = s.code_inline_color
         bg = s.code_inline_bg
@@ -156,7 +156,7 @@ class InlineMixin:
       elif ct == "code_inline":
         segments.append(RichSegment(
           text=child.content,
-          family=s.mono_family, mode=s.mono_mode, size=_mono_inline_size(s, base.size),
+          family=s.font_mono, mode=s.mono_mode, size=_mono_inline_size(s, base.size),
           color=s.code_inline_color, bg_color=s.code_inline_bg,
           link_url=link_url, link_target=link_target,
         ))
@@ -183,7 +183,7 @@ class InlineMixin:
         if drawing is not None:
           segments.append(RichSegment(
             text="",
-            family=s.body_family, mode=base.mode, size=s.body_size,
+            family=s.font_body, mode=base.mode, size=s.body_size,
             color=s.body_color,
             math_drawing=drawing,
             math_width_pt=float(drawing.width),
@@ -192,7 +192,7 @@ class InlineMixin:
         else:
           segments.append(RichSegment(
             text=child.content,
-            family=s.mono_family, mode=s.italic_mode, size=s.body_size,
+            family=s.font_mono, mode=s.italic_mode, size=s.body_size,
             color=s.body_color,
           ))
       elif ct == "emoji":

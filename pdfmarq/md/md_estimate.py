@@ -31,7 +31,7 @@ class EstimateMixin:
         from ..inline import RichSegment, measure_rich
         inline = tokens[start+1]
         base = RichSegment(
-          text="", family=s.body_family, mode=s.body_mode,
+          text="", family=s.font_body, mode=s.body_mode,
           size=s.body_size, color=s.body_color,
         )
         try:
@@ -93,7 +93,7 @@ class EstimateMixin:
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
     width = self.pdf.content_width - self._indent_mm - s.list_indent
     base = RichSegment(
-      text="", family=s.body_family, mode=s.body_mode,
+      text="", family=s.font_body, mode=s.body_mode,
       size=s.body_size, color=s.body_color,
     )
     total = 0.0

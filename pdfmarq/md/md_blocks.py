@@ -36,7 +36,7 @@ class BlocksMixin:
     min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
     self._ensure_space(heading_block_mm + max(lookahead_mm, min_followup_mm))
     base = RichSegment(
-      text="", family=s.head_family, mode=s.head_mode,
+      text="", family=s.font_head, mode=s.head_mode,
       size=size, color=s.head_color,
     )
     segments = self._inline_to_segments(inline_token, base)
@@ -92,7 +92,7 @@ class BlocksMixin:
         self._render_block_image(src, alt, attrs=img_attrs)
         return
     base = RichSegment(
-      text="", family=s.body_family, mode=s.body_mode,
+      text="", family=s.font_body, mode=s.body_mode,
       size=s.body_size, color=s.body_color,
     )
     segments = self._inline_to_segments(inline_token, base)
@@ -126,7 +126,7 @@ class BlocksMixin:
           content,
           cli=s.mermaid_cli, theme=s.mermaid_theme,
           background=s.mermaid_background, scale=s.mermaid_scale,
-          font_family=s.body_family,
+          font_family=s.font_body,
           font_dir=str(self.pdf._fonts.font_dir),
         )
       except ImportError:
@@ -147,7 +147,7 @@ class BlocksMixin:
         from .highlight import highlight_code
         highlighted = highlight_code(
           content, lang,
-          family=s.mono_family, mode=s.mono_mode, bold_mode=s.bold_mode,
+          family=s.font_mono, mode=s.mono_mode, bold_mode=s.bold_mode,
           size=s.code_block_size, default_color=s.body_color,
           theme=s.syntax_theme,
         )
@@ -164,7 +164,7 @@ class BlocksMixin:
       else:
         line_segs = [RichSegment(
           text=lines[idx] or " ",
-          family=s.mono_family, mode=s.mono_mode,
+          family=s.font_mono, mode=s.mono_mode,
           size=s.code_block_size, color=s.body_color,
         )]
       per_line_segs.append(line_segs)
@@ -250,7 +250,7 @@ class BlocksMixin:
     if info is None:
       base = RichSegment(
         text=f"[Image not found: {src}]",
-        family=s.body_family, mode=s.italic_mode,
+        family=s.font_body, mode=s.italic_mode,
         size=s.body_size, color=s.muted_color,
       )
       y = pdf.y
@@ -357,7 +357,7 @@ class BlocksMixin:
     content_w_pt = content_w_mm * MM_TO_PT
     x_center_offset_pt = (content_w_pt - w_pt) / 2
     page = self.pdf._page
-    x_abs_mm = page.margin_lr + self._indent_mm
+    x_abs_mm = page.margin_left + self._indent_mm
     y_abs_mm = page.height - page.margin_top - self.pdf.y - h_mm
     x_pt = x_abs_mm * MM_TO_PT + x_center_offset_pt
     y_pt = y_abs_mm * MM_TO_PT
@@ -365,7 +365,7 @@ class BlocksMixin:
     if s.math_numbering:
       self._eq_counter += 1
       num_seg = RichSegment(
-        text=f"({self._eq_counter})", family=s.body_family, mode=s.body_mode,
+        text=f"({self._eq_counter})", family=s.font_body, mode=s.body_mode,
         size=s.body_size, color=s.body_color,
       )
       num_y = self.pdf.y + h_mm / 2 - s.body_size * 0.35 / MM_TO_PT

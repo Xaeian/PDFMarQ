@@ -23,7 +23,7 @@ class FootnotesMixin:
     """Emit an h2-styled standalone heading above the footnote section."""
     s = self.style
     seg = RichSegment(
-      text=label, family=s.head_family, mode=s.head_mode,
+      text=label, family=s.font_head, mode=s.head_mode,
       size=s.h2_size, color=s.head_color,
     )
     x = self._indent_mm
@@ -69,11 +69,11 @@ class FootnotesMixin:
           if tokens[j].type == "inline": inline_token = tokens[j]
           j += 1
         base = RichSegment(
-          text="", family=s.body_family, mode=s.body_mode,
+          text="", family=s.font_body, mode=s.body_mode,
           size=biblio_pt, color=s.muted_color,
         )
         prefix = RichSegment(
-          text=f"[{label}] ", family=s.body_family, mode=s.bold_mode,
+          text=f"[{label}] ", family=s.font_body, mode=s.bold_mode,
           size=biblio_pt, color=s.body_color,
         )
         segs: list[RichSegment] = [prefix]
@@ -106,7 +106,7 @@ class FootnotesMixin:
           j += 1
         if inline_token is not None:
           base = RichSegment(
-            text="", family=s.body_family, mode=s.bold_mode,
+            text="", family=s.font_body, mode=s.bold_mode,
             size=s.body_size, color=s.body_color,
           )
           segs = self._inline_to_segments(inline_token, base)

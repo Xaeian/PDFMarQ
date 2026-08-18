@@ -73,7 +73,7 @@ class BlockquoteMixin:
       tk = tokens[j]
       if tk.type == "inline":
         base = RichSegment(
-          text="", family=s.body_family, mode=s.body_mode,
+          text="", family=s.font_body, mode=s.body_mode,
           size=s.body_size, color=s.body_color,
         )
         try:
@@ -111,7 +111,7 @@ class BlockquoteMixin:
       _icon, label_field = CALLOUT_TYPES[callout[0]]
       title_text = getattr(s, label_field)
       title_seg = RichSegment(
-        text=title_text, family=s.body_family, mode=s.bold_mode,
+        text=title_text, family=s.font_body, mode=s.bold_mode,
         size=s.body_size, color=text_color,
       )
       y_title = self.pdf.y

@@ -17,7 +17,7 @@ Optional system tool (not pip-installable):
 
 Example:
   >>> from pdfmarq.md import md_to_pdf, MarkdownStyle
-  >>> style = MarkdownStyle(body_family="IBMPlexSans")
+  >>> style = MarkdownStyle(font_body="IBMPlexSans")
   >>> md_to_pdf(open("doc.md").read(), "doc.pdf", style=style)
 """
 

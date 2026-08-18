@@ -1,5 +1,11 @@
 # Changes `pdfmarq`
 
+## `0.4.2` Naming
+
+- Style fields renamed: `font_body`, `banner`, `banner_compact`, `sign`
+- Sign scenarios from `sign_labels`
+- Dropped `margin_lr` and attr image sizing
+
 ## `0.4.1` Deps cleanup
 
 - `Pygments` naming unified across extras

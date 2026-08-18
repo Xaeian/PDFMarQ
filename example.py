@@ -21,7 +21,7 @@ p = Print()
 
 LANG = "en" # en | pl | de | fr | es | it | cs | sk
 LINK_ROOT = "https://github.com/{owner}/docs/blob/main"
-FONTS = dict(body_family="IBMPlexSans", mono_family="IBMPlexMono", head_family="Sora")
+FONTS = dict(font_body="IBMPlexSans", font_mono="IBMPlexMono", font_head="Sora")
 COMPRESS = "/printer" # /screen | /ebook | /printer | /prepress | None
 
 #----------------------------------------------------------------------------------------- Renderer

@@ -71,24 +71,13 @@ class Cursor:
 @dataclass
 class PageGeometry:
   """Page dimensions and margins (all in mm). CSS-style margins - left and
-  right can differ. `margin_lr` is a back-compat alias for symmetric setups."""
+  right can differ."""
   width: float
   height: float
   margin_top: float = 20
   margin_right: float = 20
   margin_bot: float = 20
   margin_left: float = 20
-
-  @property
-  def margin_lr(self) -> float:
-    """Back-compat alias for the symmetric left/right margin. Reads return
-    `margin_left`; writes set both sides to the same value."""
-    return self.margin_left
-
-  @margin_lr.setter
-  def margin_lr(self, value:float) -> None:
-    self.margin_left = value
-    self.margin_right = value
 
   @property
   def content_width(self) -> float:

@@ -31,6 +31,16 @@ def _default_status_colors() -> dict:
     "archived": ((0.92, 0.87, 0.96), (0.45, 0.25, 0.55)),  # violet
   }
 
+#------------------------------------------------------------------------------ Sign labels default
+
+def _default_sign_labels() -> dict:
+  """Standard signing scenarios: name → one label per line."""
+  return {
+    "signature": ["Signature"],
+    "approval": ["Prepared by", "Approved by"],
+    "contract": ["Client", "Contractor"],
+  }
+
 #------------------------------------------------------------------------------------ MarkdownStyle
 
 @dataclass
@@ -40,13 +50,13 @@ class MarkdownStyle:
   Default fonts use **Vera Sans** (Bitstream Vera) bundled with reportlab.
   Vera covers most of Latin Extended-A but is missing some Polish glyphs
   (ą, ę, ń, ś, ź, ż). For full Polish coverage register a TTF via
-  `pdf.fonts.register()` and set `body_family` to that family.
+  `pdf.fonts.register()` and set `font_body` to that family.
   """
 
   # Font families
-  body_family: str = "Vera"
-  head_family: str = "Vera"
-  mono_family: str = "Courier" # PDF core 14, no TTF needed
+  font_body: str = "Vera"
+  font_head: str = "Vera"
+  font_mono: str = "Courier" # PDF core 14, no TTF needed
 
   # Modes (Vera has dedicated Italic / BoldItalic TTFs)
   body_mode: str = "Regular"
@@ -148,17 +158,14 @@ class MarkdownStyle:
   table_zebra: bool = True
 
   # YAML frontmatter (`---\n...\n---`) is rendered as a header layout when
-  # present. Set `banner_render=False` to parse but skip rendering.
-  banner_render: bool = True
+  # present. Set `banner=False` to parse but skip rendering.
+  banner: bool = True
   # Drop a leading `# title` that duplicates the frontmatter title (only
   # when the banner was rendered, to avoid showing the title twice).
   skip_dup_title: bool = True
   # Compact header on pages 2+ (code | title | page N/M). Disable for
   # single-page-style documents.
-  mini_banner_render: bool = True
-  # Dashed signature line + label at the very end of the document. Independent
-  # of `banner_render` - a document can be signed without carrying a banner.
-  sign_render: bool = False
+  banner_compact: bool = True
   # strftime syntax. ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
   date_format: str = "%Y-%m-%d"
   # Page number prefix; `None` disables footer entirely. Localize freely.
@@ -176,22 +183,25 @@ class MarkdownStyle:
   banner_version_size: float = 9  # pt - version
   banner_meta_size: float = 9  # pt - author/date/entity text
   banner_rule: float = 0.3  # pt - matches markdown h1/h2 underlines
-  banner_sign_size: float = 9  # pt - signature label
-  banner_sign_w: float = 70  # mm - width of signature line
-  # Mini header on continuation pages
-  mini_banner_logo_max_h: float = 12  # mm - cap on mini-header logo height (2 lines tall)
-  mini_banner_logo_max_w: float = 24  # mm - cap on mini-header logo width
-  mini_banner_size: float = 10  # pt - text size in mini-header
-  mini_banner_top: float = 12  # mm - distance from page top
-  mini_banner_gap: float = 8  # mm - gap between mini-header line and content
+  # Compact banner on continuation pages
+  banner_compact_logo_max_h: float = 12  # mm - cap on compact-banner logo height (2 lines tall)
+  banner_compact_logo_max_w: float = 24  # mm - cap on compact-banner logo width
+  banner_compact_size: float = 10  # pt - text size in compact-banner
+  banner_compact_top: float = 12  # mm - distance from page top
+  banner_compact_gap: float = 8  # mm - gap between compact-banner line and content
+  # Signing lines at the very end, independent of `banner`. `True` or a
+  # `sign_labels` scenario draws its labels; a list draws custom ones verbatim.
+  sign: bool|str|list = False
+  sign_labels: dict = field(default_factory=_default_sign_labels)
+  sign_gap: float = 25  # mm - blank space above the line, for the handwriting
+  sign_w: float = 70  # mm - width of one line
+  sign_size: float = 9  # pt - label
   # Status badge colors (background, text). Keys must be lowercase.
   banner_status_colors: dict = field(default_factory=_default_status_colors)
-  # Frontmatter labels - shown as `"{label}: {value}"` (author/created/updated)
-  # or as-is (signature). Override for localization or custom wording.
+  # Frontmatter labels, shown as `"{label}: {value}"`. Override for localization.
   banner_label_author: str = "Author"
   banner_label_created: str = "Created"
   banner_label_updated: str = "Updated"
-  banner_label_signature: str = "Signature"
   # GitHub callout titles (`> [!NOTE]`, `> [!TIP]`, ...). Override for
   # localization or custom wording. Color + icon stay constant per type.
   callout_label_note: str = "Note"
@@ -217,3 +227,10 @@ class MarkdownStyle:
   link_base: str = ""
   # h1 defaults to extra top spacing, not a hard page break.
   h1_page_break: bool = False
+
+  def sign_lines(self) -> list[str]:
+    """Labels to draw: a scenario from `sign_labels`, or a list verbatim."""
+    if not self.sign: return []
+    if isinstance(self.sign, (list, tuple)): return [str(x) for x in self.sign]
+    key = "signature" if self.sign is True else str(self.sign).lower()
+    return list(self.sign_labels.get(key, [str(self.sign)]))
