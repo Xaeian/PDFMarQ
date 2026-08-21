@@ -118,7 +118,7 @@ pdf.stroke_color(0, 0, 0)  # stroke/line color
 # Conversion helpers (symmetric with docmarq)
 from pdfmarq import parse_color, color_hex
 parse_color("#1f2328")     # → (0.121, 0.137, 0.156) floats 0-1
-color_hex((0.03, 0.41, 0.85))  # → "0969D9" (uppercase, no '#')
+color_hex((0.03, 0.41, 0.85))  # → "0869D9" (uppercase, no '#')
 ```
 
 ## Images and SVG
@@ -201,11 +201,15 @@ md_to_pdf(text, "doc.pdf", page=A4.landscape())
 
 Supported markdown: headings, paragraphs, lists, tables, code blocks
 (with syntax highlighting via Pygments), blockquotes, GitHub callouts
-(`> [!NOTE]`), footnotes, math (`$x^2$` via matplotlib mathtext),
-mermaid diagrams (via local `mmdc` or mermaid.ink fallback), images,
-YAML frontmatter with banner rendering.
+(`> [!NOTE]`), footnotes, math (`$x^2$` via MathJax, matplotlib mathtext
+as fallback), mermaid diagrams (via local `mmdc` or the mermaid.ink
+fallback), images, YAML frontmatter with banner rendering.
+
+Blocks taller than a page split across pages, headings and footnotes get
+position-anchored PDF destinations, and repeated heading text gets numbered
+slugs the GitHub way. See [`md/readme.md`](md/readme.md).
 
 ## Compression
 
 Not this library's job. Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Xaeian)
-on the saved file - see [`example.py`](example.py).
+on the saved file.

@@ -28,11 +28,12 @@ class NumberedCanvas(canvas.Canvas):
   iterate through buffered states and let registered final-page callbacks
   draw their content before each real `showPage()`.
 
-  Also defers `bookmarkPage()` calls: during buffered rendering the underlying
-  `_doc.pageCounter` never increments (real `showPage()` never runs), so every
-  direct `bookmarkPage` call would resolve to "Page0" and every named dest
-  would jump to page 1. Deferred bookmarks are registered during save-time
-  replay, when each page's counter is correctly advanced.
+  Also defers named destinations: during buffered rendering the underlying
+  `_doc.pageCounter` never increments (real `showPage()` never runs), so a
+  destination registered now would resolve to "Page0" and jump to page 1.
+  They are replayed at save time, when each page's counter is correctly
+  advanced. Both the page-fit and the position-anchored form go through
+  the same queue.
   """
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -41,7 +42,8 @@ class NumberedCanvas(canvas.Canvas):
     # Each callback receives (pdf, page_num, total_pages).
     self._pdf_ref = None
     self._final_page_callbacks: list[Callable] = []
-    self._deferred_bookmarks: list[tuple[int, str, dict]] = []
+    # (page, canvas method name, key, kwargs) - replayed in `save()`.
+    self._deferred_bookmarks: list[tuple[int, str, str, dict]] = []
     self._replaying = False
   
   def showPage(self):
@@ -50,10 +52,19 @@ class NumberedCanvas(canvas.Canvas):
     self._startPage()
 
   def bookmarkPage(self, key, **kwargs):
-    """Defer during buffered rendering; register normally during replay."""
+    """Whole-page destination, registered at save time."""
+    return self._defer_bookmark("bookmarkPage", key, kwargs)
+
+  def bookmarkHorizontalAbsolute(self, key, top, **kwargs):
+    """Destination at a y position on the page, registered at save time."""
+    return self._defer_bookmark(
+      "bookmarkHorizontalAbsolute", key, {"top": top, **kwargs})
+
+  def _defer_bookmark(self, method:str, key:str, kwargs:dict):
+    """Queue a named destination for the save-time replay of this page."""
     if self._replaying:
-      return super().bookmarkPage(key, **kwargs)
-    self._deferred_bookmarks.append((self._pageNumber, key, kwargs))
+      return getattr(super(), method)(key, **kwargs)
+    self._deferred_bookmarks.append((self._pageNumber, method, key, kwargs))
     return None
   
   def save(self):
@@ -63,18 +74,23 @@ class NumberedCanvas(canvas.Canvas):
     if self._code:
       self.showPage()
     total = len(self._saved_pages)
-    bookmarks_by_page: dict[int, list[tuple[str, dict]]] = {}
-    for page_num, key, kwargs in self._deferred_bookmarks:
-      bookmarks_by_page.setdefault(page_num, []).append((key, kwargs))
+    bookmarks_by_page: dict[int, list[tuple[str, str, dict]]] = {}
+    for page_num, method, key, kwargs in self._deferred_bookmarks:
+      bookmarks_by_page.setdefault(page_num, []).append((method, key, kwargs))
     self._replaying = True
     try:
       for state in self._saved_pages:
         self.__dict__.update(state)
+        # The saved state carries the flag as it was during buffering, so
+        # restoring a page turns it back off. Re-assert it: a destination
+        # that reaches `bookmarkPage` again from inside reportlab has to
+        # register now, not queue itself for a replay that already runs.
+        self._replaying = True
         page_num = self._pageNumber
         for cb in self._final_page_callbacks:
           cb(self._pdf_ref, page_num, total)
-        for key, kwargs in bookmarks_by_page.get(page_num, []):
-          super().bookmarkPage(key, **kwargs)
+        for method, key, kwargs in bookmarks_by_page.get(page_num, []):
+          getattr(super(), method)(key, **kwargs)
         super().showPage()
     finally:
       self._replaying = False
@@ -130,6 +146,7 @@ class PDF:
     self._style = Style().with_defaults()
     self._page_num = 1
     self._total_pages: int|None = None  # set in save() for footer callbacks
+    self._saved = False  # guards the save-once canvas, see save()
     self._page_callbacks: list[Callable] = []  # before showPage (header/footer)
     self._new_page_callbacks: list[Callable] = []  # after showPage + cursor reset
 
@@ -595,9 +612,21 @@ class PDF:
 
   #-------------------------------------------------------------------------------------- Structure
   
+  def anchor(self, key:str) -> "PDF":
+    """Register a named destination at the current cursor position.
+
+    A viewer following a link to `key` scrolls to this point rather than
+    fitting the whole page, which is what makes an anchor useful in a long
+    document.
+    """
+    _, y_mm = self._page.cursor_to_canvas(self._cursor)
+    self._canvas.bookmarkHorizontalAbsolute(key, y_mm * mm)
+    return self
+
   def bookmark(self, title:str, level:int=0) -> "PDF":
-    """Add bookmark at current position."""
-    self._bookmarks.add(title, self._page_num, self._cursor.y, level)
+    """Add an outline entry pointing at the current position."""
+    _, y_mm = self._page.cursor_to_canvas(self._cursor)
+    self._bookmarks.add(title, self._page_num, y_mm, level)
     return self
 
   def link(self, url:str, width:float, height:float) -> "PDF":
@@ -682,7 +711,13 @@ class PDF:
   #----------------------------------------------------------------------------------------- Output
   
   def save(self) -> "PDF":
-    """Render and save PDF."""
+    """Render and save PDF. Idempotent - a second call is a no-op.
+
+    Keeps `pdf.save()` inside a `with` block legal: `__exit__` saves too,
+    and reportlab's canvas can only be saved once.
+    """
+    if self._saved: return self
+    self._saved = True
     self._finalize_page()  # finalize last page
     self._metadata.apply(self._canvas)
     self._bookmarks.apply_outline(self._canvas)  # add outline entries once, at the end

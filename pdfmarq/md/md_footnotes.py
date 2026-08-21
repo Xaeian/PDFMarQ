@@ -64,10 +64,19 @@ class FootnotesMixin:
       if t.type == "footnote_open":
         label = (t.meta or {}).get("label", "?")
         j = i + 1
-        inline_token: Token|None = None
         while j < end and tokens[j].type != "footnote_close":
-          if tokens[j].type == "inline": inline_token = tokens[j]
           j += 1
+        # `footnote_anchor` is the back-reference marker, nothing to draw.
+        body = [tk for tk in tokens[i+1:j] if tk.type != "footnote_anchor"]
+        # The first paragraph shares its line with the `[n]` label; any
+        # further blocks (more paragraphs, lists, code) are rendered
+        # recursively below it.
+        first_inline: Token|None = None
+        rest: list[Token] = body
+        if (len(body) >= 3 and body[0].type == "paragraph_open"
+            and body[1].type == "inline" and body[2].type == "paragraph_close"):
+          first_inline = body[1]
+          rest = body[3:]
         base = RichSegment(
           text="", family=s.font_body, mode=s.body_mode,
           size=biblio_pt, color=s.muted_color,
@@ -77,19 +86,43 @@ class FootnotesMixin:
           size=biblio_pt, color=s.body_color,
         )
         segs: list[RichSegment] = [prefix]
-        if inline_token is not None:
-          segs.extend(self._inline_to_segments(inline_token, base))
+        if first_inline is not None:
+          segs.extend(self._inline_to_segments(first_inline, base))
         x = self._indent_mm
         width = self.pdf.content_width - x
         self._ensure_space(biblio_pt * s.line_height / MM_TO_PT)
         y = self.pdf.y
-        self.pdf._canvas.bookmarkPage(f"fn_{label}")  # [^label] refs navigate here
         self.pdf.cursor(x, y)
+        self.pdf.anchor(f"fn_{label}") # [^label] refs navigate here
         h = render_rich(self.pdf, segs, width, x, y, Align.LEFT, s.line_height)
         self.pdf.cursor(x, y + h + s.list_gap)
+        if rest:
+          self._render_footnote_rest(rest, biblio_pt)
         i = j
       i += 1
     return end + 1
+
+  def _render_footnote_rest(self, tokens:list[Token], size_pt:float):
+    """Render a footnote's continuation blocks, indented under its label.
+
+    Goes through the normal block dispatcher so lists, code blocks and
+    nested markup keep working. Body size and color are dropped to the
+    bibliography scale for the duration so the continuation matches the
+    first line, then restored in a `finally` so an exception mid-footnote
+    cannot leak the smaller size into the rest of the document.
+    """
+    s = self.style
+    old_indent = self._indent_mm
+    old_size, old_color = s.body_size, s.body_color
+    self._indent_mm = old_indent + s.list_indent
+    s.body_size, s.body_color = size_pt, s.muted_color
+    self.pdf.cursor(self._indent_mm, self.pdf.y)
+    try:
+      self._render_tokens(tokens)
+    finally:
+      s.body_size, s.body_color = old_size, old_color
+      self._indent_mm = old_indent
+      self.pdf.cursor(self._indent_mm, self.pdf.y)
 
   def _render_deflist(self, tokens:list[Token], start:int) -> int:
     """Render a definition list (`Term\\n: def`) - term bold, def indented."""

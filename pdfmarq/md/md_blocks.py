@@ -10,9 +10,48 @@ at the block's top-left corner.
 
 from markdown_it.token import Token
 import re
-from ..inline import RichSegment, render_rich, measure_rich
+from ..inline import RichSegment, render_rich, measure_rich, wrap_line_heights
 from ..constants import Align, MM_TO_PT
 from .md_images import load_image_info, size_block, size_inline
+
+#------------------------------------------------------------------------------------- Line fitting
+
+def _fit_math_width(drawing, max_w_pt:float, formula:str) -> None:
+  """Shrink a formula drawing in place until it fits `max_w_pt`.
+
+  Centring a drawing wider than the column yields a negative offset, which
+  puts both ends of the formula outside the page. Scaling keeps all of it
+  on paper, and the warning says it happened - a long formula reads better
+  split across two `$$` blocks than shrunk.
+  """
+  if drawing.width <= max_w_pt or drawing.width <= 0:
+    return
+  scale = max_w_pt / drawing.width
+  drawing.scale(scale, scale)
+  drawing.width *= scale
+  drawing.height *= scale
+  import warnings
+  warnings.warn(
+    f"block formula is {1 / scale:.1f}x wider than the column and was "
+    f"scaled to fit: {formula.strip()[:60]!r}",
+    RuntimeWarning, stacklevel=3,
+  )
+
+def _fit_lines(heights:list[float], start:int, budget:float) -> tuple[int, float]:
+  """How many lines from `start` fit `budget`, and their total height.
+
+  Takes at least one line even when it does not fit, so a line taller
+  than a whole page still advances the caller instead of spinning on a
+  chunk that can never be placed.
+  """
+  count = 0
+  used = 0.0
+  while start + count < len(heights):
+    h = heights[start + count]
+    if count and used + h > budget: break
+    used += h
+    count += 1
+  return count, used
 
 #-------------------------------------------------------------------------------------- BlocksMixin
 
@@ -47,7 +86,9 @@ class BlocksMixin:
     # Must be registered while the canvas is on the correct page.
     slug = self._slugify_inline(inline_token)
     if slug:
-      self.pdf._canvas.bookmarkPage(slug)
+      slug = self.dedupe_slug(slug, self._slug_uses)
+      self.pdf.cursor(x, y)
+      self.pdf.anchor(slug)
     self.pdf.cursor(x, y)
     h = render_rich(self.pdf, segments, width, x, y, Align.LEFT, s.line_height)
     new_y = y + h
@@ -58,6 +99,20 @@ class BlocksMixin:
       self._reset_stroke()
       new_y += 2
     self.pdf.cursor(x, new_y + s.head_gap_bot)
+
+  @staticmethod
+  def dedupe_slug(slug:str, seen:dict) -> str:
+    """`slug`, suffixed when the document already used it.
+
+    Second use becomes `slug-1`, third `slug-2` (GitHub's convention).
+    Without it two headings reading the same share one destination and
+    every link to either lands on the first. `seen` counts uses and is
+    walked in document order by both the pre-scan and the render pass, so
+    the two agree on which heading owns which slug.
+    """
+    used = seen.get(slug, 0)
+    seen[slug] = used + 1
+    return slug if used == 0 else f"{slug}-{used}"
 
   @staticmethod
   def _slugify_inline(inline_token:Token) -> str:
@@ -75,6 +130,39 @@ class BlocksMixin:
     s = re.sub(r"[^\w\-]", "", s, flags=re.UNICODE)
     s = re.sub(r"-+", "-", s).strip("-")
     return s
+
+  #--------------------------------------------------------------------------------- Page splitting
+
+  def _render_rich_paged(
+    self, segments:list, line_h:list[float], x_mm:float, width_mm:float,
+    line_gap:float, align:str=Align.LEFT, preserve_leading_space:bool=False,
+  ):
+    """Draw wrapped text taller than one page, breaking pages between lines.
+
+    `render_rich` lays a block out from a single `y`, so lines past the
+    page bottom fall outside the MediaBox and are invisible in the output.
+    This walks the wrapped lines one page-sized window at a time. Leaves
+    the cursor just below the last line drawn (no trailing block gap).
+    """
+    n = len(line_h)
+    i = 0
+    while i < n:
+      avail = self.pdf.content_height - self.pdf.y
+      if avail < line_h[i] and self.pdf.y > 0.5:
+        self.pdf.new_page()
+        avail = self.pdf.content_height - self.pdf.y
+      count, used = _fit_lines(line_h, i, avail)
+      y = self.pdf.y
+      self.pdf.cursor(x_mm, y)
+      render_rich(
+        self.pdf, segments, width_mm, x_mm, y, align, line_gap,
+        preserve_leading_space=preserve_leading_space,
+        first_line=i, max_lines=count,
+      )
+      self.pdf.cursor(x_mm, y + used)
+      i += count
+      if i < n:
+        self.pdf.new_page()
 
   #-------------------------------------------------------------------------------------- Paragraph
   
@@ -98,19 +186,24 @@ class BlocksMixin:
     segments = self._inline_to_segments(inline_token, base)
     x = self._indent_mm
     width = self.pdf.content_width - x
-    # Break to next page only when the paragraph fits a full page but not the
-    # remaining space. Paragraphs >90% of page height render in place:
-    # render_rich cannot split across pages.
+    spacing = s.list_gap if self._list_depth > 0 else s.para_gap
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
-    para_h = measure_rich(self.pdf, segments, width, line_gap=s.line_height) or body_line_mm
-    page_avail = self.pdf.content_height
-    if para_h <= page_avail * 0.9 and para_h > (page_avail - self.pdf.y):
-      self.pdf.new_page()
-    self._ensure_space(min(para_h, body_line_mm))
+    line_h = wrap_line_heights(self.pdf, segments, width, line_gap=s.line_height)
+    para_h = sum(line_h) or body_line_mm
+    page_h = self.pdf.content_height
+    if para_h > (page_h - self.pdf.y):
+      if para_h <= page_h:
+        # Fits a page, just not what is left of this one - keep it whole.
+        self.pdf.new_page()
+      else:
+        # Taller than a whole page: split it, otherwise every line past the
+        # page bottom is drawn off-page and lost.
+        self._render_rich_paged(segments, line_h, x, width, s.line_height)
+        self.pdf.cursor(x, self.pdf.y + spacing)
+        return
     y = self.pdf.y
     self.pdf.cursor(x, y)
     h = render_rich(self.pdf, segments, width, x, y, Align.LEFT, s.line_height)
-    spacing = s.list_gap if self._list_depth > 0 else s.para_gap
     self.pdf.cursor(x, y + h + spacing)
 
   #------------------------------------------------------------------------------------- Code block
@@ -128,6 +221,7 @@ class BlocksMixin:
           background=s.mermaid_background, scale=s.mermaid_scale,
           font_family=s.font_body,
           font_dir=str(self.pdf._fonts.font_dir),
+          remote=s.mermaid_remote,
         )
       except ImportError:
         from .._warn import warn_missing
@@ -180,27 +274,46 @@ class BlocksMixin:
       )
       line_heights_mm.append(max(h, min_line_h_mm))
     content_h_mm = sum(line_heights_mm)
-    block_h = content_h_mm + 2 * pad + top_offset
-    self._ensure_space(block_h)
-    y = self.pdf.y
+    frame_h_mm = 2 * pad + top_offset # padding + border, per drawn chunk
+    block_h = content_h_mm + frame_h_mm
     radius = s.code_block_radius
-    self.pdf.cursor(x, y)
-    self.pdf.color(*s.code_block_bg[:3])
-    self.pdf.round_rect(w, block_h, radius, fill=True)
-    self.pdf.cursor(x, y)
-    self.pdf.stroke_color(*s.code_block_border[:3])
-    self.pdf.round_rect(w, block_h, radius, thickness=0.4, fill=False)
-    self._reset_stroke()
-    text_y = y + pad + top_offset
-    for idx, line_segs in enumerate(per_line_segs):
-      render_rich(
-        self.pdf, line_segs, text_width_mm,
-        x + pad + left_offset, text_y,
-        Align.LEFT, s.line_height,
-        preserve_leading_space=True,
-      )
-      text_y += line_heights_mm[idx]
-    self.pdf.cursor(x, y + block_h + s.code_block_gap)
+    page_h = self.pdf.content_height
+    # Fits a page but not the rest of this one: move it whole.
+    if block_h > (page_h - self.pdf.y) and block_h <= page_h and self.pdf.y > 0.5:
+      self.pdf.new_page()
+    # A taller block is drawn in chunks, one frame per chunk: lines placed
+    # below the page bottom fall outside the MediaBox and are invisible.
+    n = len(per_line_segs)
+    i = 0
+    while i < n:
+      avail = self.pdf.content_height - self.pdf.y
+      if avail < frame_h_mm + line_heights_mm[i] and self.pdf.y > 0.5:
+        self.pdf.new_page()
+        avail = self.pdf.content_height - self.pdf.y
+      count, used = _fit_lines(line_heights_mm, i, avail - frame_h_mm)
+      chunk_h = used + frame_h_mm
+      y = self.pdf.y
+      self.pdf.cursor(x, y)
+      self.pdf.color(*s.code_block_bg[:3])
+      self.pdf.round_rect(w, chunk_h, radius, fill=True)
+      self.pdf.cursor(x, y)
+      self.pdf.stroke_color(*s.code_block_border[:3])
+      self.pdf.round_rect(w, chunk_h, radius, thickness=0.4, fill=False)
+      self._reset_stroke()
+      text_y = y + pad + top_offset
+      for idx in range(i, i + count):
+        render_rich(
+          self.pdf, per_line_segs[idx], text_width_mm,
+          x + pad + left_offset, text_y,
+          Align.LEFT, s.line_height,
+          preserve_leading_space=True,
+        )
+        text_y += line_heights_mm[idx]
+      self.pdf.cursor(x, y + chunk_h)
+      i += count
+      if i < n:
+        self.pdf.new_page()
+    self.pdf.cursor(x, self.pdf.y + s.code_block_gap)
 
   #----------------------------------------------------------------------------------------- Images
   
@@ -344,17 +457,19 @@ class BlocksMixin:
     drawing = render_math_svg(
       formula.strip(), fontsize=s.body_size * 1.1, color=s.body_color,
       config=getattr(self, "_math_config", None),
+      engine=s.math_engine, font=s.math_font,
     )
     if drawing is None:
       self._render_code_block(formula, "")
       return
+    content_w_mm = self.pdf.content_width - self._indent_mm
+    content_w_pt = content_w_mm * MM_TO_PT
+    _fit_math_width(drawing, content_w_pt, formula)
     w_pt = drawing.width
     h_pt = drawing.height
     h_mm = h_pt / MM_TO_PT
     self.pdf.enter(s.math_block_gap)
     self._ensure_space(h_mm + s.math_block_gap)
-    content_w_mm = self.pdf.content_width - self._indent_mm
-    content_w_pt = content_w_mm * MM_TO_PT
     x_center_offset_pt = (content_w_pt - w_pt) / 2
     page = self.pdf._page
     x_abs_mm = page.margin_left + self._indent_mm

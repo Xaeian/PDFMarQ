@@ -1,5 +1,12 @@
 # Changes `pdfmarq`
 
+## `0.5.0` Vector math
+
+- MathJax engine: formulas stay vector, with `\underbrace`, `cases`, `substack` and stretchable delimiters
+- `math_font` picks the typeface, `math_engine` the backend
+- Lines and columns size themselves to the formula they hold
+- Fix: outline destinations, formulas holding `<`, leading `---`
+
 ## `0.4.2` Naming
 
 - Style fields renamed: `font_body`, `banner`, `banner_compact`, `sign`

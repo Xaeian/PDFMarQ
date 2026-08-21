@@ -29,36 +29,104 @@ _DRAWING_CACHE: dict = {}  # (codepoint, fontsize_pt) -> Drawing
 _SVG_DIR_CACHE: Path|None = None
 _CLONE_ATTEMPTED = False
 
+_REPO_URL = "https://github.com/hfg-gmuend/openmoji.git"
+# Pinned release. The SVGs from this checkout are embedded in generated
+# PDFs, so tracking a moving branch tip would make the output depend on
+# whatever upstream pushed today.
+_REPO_TAG = "17.0.0"
+# OpenMoji ships ~4500 colour SVGs. A checkout holding a handful of files
+# is an interrupted clone, not a usable emoji set.
+_MIN_SVG_COUNT = 1000
+_DOWNLOAD_WARNED = False
+
+def allow_download(enabled:bool=True) -> None:
+  """Enable or disable the one-time OpenMoji clone at runtime.
+
+  Equivalent to the `PDFMARQ_NO_EMOJI_DOWNLOAD` environment variable.
+  With downloads off, emoji fall back to the text glyph of the font.
+  """
+  global _CLONE_ATTEMPTED
+  # Blocking is expressed by marking the clone as already attempted, so
+  # the existing cached-checkout path keeps working either way.
+  _CLONE_ATTEMPTED = not enabled
+
+def _download_blocked() -> bool:
+  import os
+  return os.environ.get("PDFMARQ_NO_EMOJI_DOWNLOAD", "").strip() not in ("", "0")
+
+def _warn_download_once() -> None:
+  """Announce the clone before it starts - it is large and it is a network
+  fetch that the caller never explicitly asked for."""
+  global _DOWNLOAD_WARNED
+  if _DOWNLOAD_WARNED:
+    return
+  _DOWNLOAD_WARNED = True
+  import warnings
+  warnings.warn(
+    f"openmoji: downloading the colour emoji set (~150 MB, git clone of "
+    f"{_REPO_URL} at tag {_REPO_TAG}) into {_CACHE_DIR}. This happens once. "
+    f"Set PDFMARQ_NO_EMOJI_DOWNLOAD=1 to skip it and render emoji as plain "
+    f"text glyphs.",
+    RuntimeWarning, stacklevel=3,
+  )
+
+def _has_enough_svgs(svg_dir:Path) -> bool:
+  """True when the checkout looks complete. Counting stops at the
+  threshold, so this stays cheap on a full ~4500-file directory."""
+  if not svg_dir.is_dir():
+    return False
+  n = 0
+  try:
+    for _ in svg_dir.glob("*.svg"):
+      n += 1
+      if n >= _MIN_SVG_COUNT:
+        return True
+  except OSError:
+    return False
+  return False
+
 def _ensure_openmoji() -> Path|None:
   """Return path to OpenMoji `color/svg/` directory, cloning repo if needed.
 
-  First call may take a minute (git clone ~150 MB). Subsequent calls are
-  instant. Returns None if clone fails (no network, no git, etc.).
+  First call may take a minute (git clone ~150 MB, pinned to tag
+  `_REPO_TAG`) and warns once before starting. Subsequent calls are
+  instant. Returns None when the download is disabled or fails (no
+  network, no git, interrupted clone).
   """
   global _SVG_DIR_CACHE, _CLONE_ATTEMPTED
   if _SVG_DIR_CACHE is not None:
     return _SVG_DIR_CACHE
   svg_dir = _CACHE_DIR / "color" / "svg"
-  if svg_dir.exists() and any(svg_dir.iterdir()):
+  if _has_enough_svgs(svg_dir):
     _SVG_DIR_CACHE = svg_dir
     return svg_dir
-  if _CLONE_ATTEMPTED:
+  if _CLONE_ATTEMPTED or _download_blocked():
     return None
   _CLONE_ATTEMPTED = True
+  _warn_download_once()
   try:
     import subprocess
     _CACHE_DIR.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
       [
         "git", "clone", "--depth=1", "--single-branch",
-        "https://github.com/hfg-gmuend/openmoji.git",
+        "--branch", _REPO_TAG, _REPO_URL,
         str(_CACHE_DIR),
       ],
       check=True, capture_output=True, timeout=300,
     )
-    if svg_dir.exists():
+    # A clone killed halfway leaves a directory that exists but holds a
+    # random subset of the icons, so the count decides, not the path.
+    if _has_enough_svgs(svg_dir):
       _SVG_DIR_CACHE = svg_dir
       return svg_dir
+    import warnings
+    warnings.warn(
+      f"openmoji: clone into {_CACHE_DIR} looks incomplete "
+      f"(<{_MIN_SVG_COUNT} SVGs); emoji fall back to text glyphs. "
+      f"Delete that directory to retry.",
+      RuntimeWarning, stacklevel=3,
+    )
   except Exception:
     pass
   return None
@@ -93,9 +161,10 @@ def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
   """Split text into runs of (fragment, is_emoji).
 
   Groups consecutive non-emoji chars into a single text run. Each emoji
-  char becomes its own run. Variation selectors (U+FE0F) and zero-width
-  joiners (U+200D) are SKIPPED entirely - they're invisible modifiers
-  and including them would produce empty text segments.
+  char becomes its own run. Variation selectors (U+FE0F/U+FE0E), zero-width
+  joiners (U+200D) and skin-tone modifiers (U+1F3FB-U+1F3FF) are SKIPPED
+  entirely - they are modifiers, not standalone glyphs, and emitting them
+  would produce a second drawing next to the base emoji.
   """
   if not text:
     return []
@@ -103,9 +172,11 @@ def split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
   buf_text: list[str] = []
   for ch in text:
     code = ord(ch)
-    # FE0F/FE0E = variation selectors, 200D = ZWJ - invisible modifiers,
-    # render only the base codepoint.
-    if code in (0xFE0F, 0xFE0E, 0x200D):
+    # FE0F/FE0E = variation selectors, 200D = ZWJ, 1F3FB-1F3FF = skin-tone
+    # modifiers. None of them stands alone, and the skin tones sit inside
+    # the Misc-Pictographs range that `is_emoji` accepts, so they are
+    # dropped here and only the base codepoint is rendered.
+    if code in (0xFE0F, 0xFE0E, 0x200D) or 0x1F3FB <= code <= 0x1F3FF:
       continue
     if is_emoji(ch):
       if buf_text:

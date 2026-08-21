@@ -81,19 +81,23 @@ class ListMixin:
     if self._list_depth == 0:
       self.pdf.enter(1)
     self._list_depth += 1
-    items = _item_ranges(tokens, start, end)
-    numbers: list[int] = []
-    column = s.list_indent
-    if ordered:
-      first = _first_number(self._get_attr(tokens[start], "start"))
-      numbers = _author_numbers([tokens[j] for j, _ in items], first)
-      column = _marker_column_mm(self.pdf, s, numbers)
-    for idx, (j, k) in enumerate(items):
+    try:
+      items = _item_ranges(tokens, start, end)
+      numbers: list[int] = []
+      column = s.list_indent
       if ordered:
-        self._render_list_item(f"{numbers[idx]}.", tokens[j+1:k], column=column)
-      else:
-        self._render_list_item("", tokens[j+1:k], bullet=True, column=column)
-    self._list_depth -= 1
+        first = _first_number(self._get_attr(tokens[start], "start"))
+        numbers = _author_numbers([tokens[j] for j, _ in items], first)
+        column = _marker_column_mm(self.pdf, s, numbers)
+      for idx, (j, k) in enumerate(items):
+        if ordered:
+          self._render_list_item(f"{numbers[idx]}.", tokens[j+1:k], column=column)
+        else:
+          self._render_list_item("", tokens[j+1:k], bullet=True, column=column)
+    finally:
+      # Unwind even if a nested block raises, or every later list on the
+      # page renders at the wrong depth and indent.
+      self._list_depth -= 1
     if self._list_depth == 0:
       self.pdf.enter(max(0, s.para_gap - s.list_gap))
     return end + 1
@@ -135,9 +139,11 @@ class ListMixin:
     old_indent = self._indent_mm
     self._indent_mm = old_indent + column
     self.pdf.cursor(self._indent_mm, y_item)
-    self._render_tokens(item_tokens)
-    self._indent_mm = old_indent
-    self.pdf.cursor(self._indent_mm, self.pdf.y)
+    try:
+      self._render_tokens(item_tokens)
+    finally:
+      self._indent_mm = old_indent
+      self.pdf.cursor(self._indent_mm, self.pdf.y)
 
   def _measure_item_first_para(self, item_tokens:list[Token],
       column:float|None=None) -> float:

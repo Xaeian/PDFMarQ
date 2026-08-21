@@ -19,10 +19,12 @@ images in markdown-rendered documents:
   hard floor on column width - that's the source of the "huge icon in cell"
   bug. Dimensionless SVGs in cells render at inline cap (icon size).
 
-Author overrides: `width=` and `height=` from token attrs are honored. Units:
-`px` _(default for bare numbers)_, `pt`, `mm`, `cm`, `in`, `inch`, `%`. The
-percentage resolves against the available width in the rendering context
-_(page or cell)_.
+Author overrides come from the image **title** slot as a `key=value` DSL:
+`![alt](img.png "w=80 max_h=40 align=C")`. Keys: `w`, `h`, `max_w`, `max_h`,
+`scale`, `align` _(L/C/R)_ - see `parse_image_dsl`. Numbers are **millimetres**
+(`scale` is a plain factor); there is no unit suffix support and `width=` /
+`height=` HTML attributes are not read. Unknown keys and non-numeric values
+warn and are ignored.
 """
 
 import os
@@ -274,7 +276,12 @@ def size_inline(
   if nh <= 0:
     return effective_cap_h, effective_cap_h
   if nh > effective_cap_h:
-    return nw * (effective_cap_h / nh), effective_cap_h
+    nw, nh = nw * (effective_cap_h / nh), effective_cap_h
+  # Width is capped too: a very wide, very short image clears the height
+  # cap untouched and would push the line box past the page edge.
+  if cap_w > 0 and nw > cap_w:
+    nh = nh * (cap_w / nw)
+    nw = cap_w
   return nw, nh
 
 def cell_intrinsic_w_mm(
@@ -306,7 +313,9 @@ def cell_intrinsic_w_mm(
   if info.is_svg and info.dimensionless:
     return inline_cap_mm, inline_cap_mm
   col_max = min(info.nat_w_mm * cell_image_scale, cell_image_max_w_mm)
-  col_min = max(inline_cap_mm, col_max * 0.6)
+  # `inline_cap_mm` is a readability floor, clamped to the max: an icon
+  # narrower than the cap would otherwise invert the range.
+  col_min = min(max(inline_cap_mm, col_max * 0.6), col_max)
   return col_min, col_max
 
 def size_cell(

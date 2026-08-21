@@ -11,7 +11,7 @@ class Bookmark:
   """PDF bookmark/outline entry."""
   title: str
   page: int
-  y: float  # position on page (mm from top)
+  y: float # destination height in canvas mm, measured from the page bottom
   level: int = 0
   children: list["Bookmark"] = field(default_factory=list)
 
@@ -66,16 +66,20 @@ class BookmarkManager:
     self._bookmarks: list[Bookmark] = []
 
   def add(self, title:str, page:int, y:float, level:int=0) -> str:
-    """Add bookmark, return anchor key."""
+    """Add bookmark, return anchor key. `y` is canvas mm from the page bottom."""
     key = f"bm_{len(self._bookmarks)}"
     self._bookmarks.append(Bookmark(title, page, y, level))
     return key
 
   def apply_page(self, canvas, page:int):
-    """Register anchors for all bookmarks on this page. Canvas must be on that page."""
+    """Register anchors for all bookmarks on this page. Canvas must be on that page.
+
+    Each destination carries its entry's own height, so following the
+    outline scrolls to the heading rather than fitting the whole page.
+    """
     for i, bm in enumerate(self._bookmarks):
       if bm.page == page:
-        canvas.bookmarkPage(f"bm_{i}")
+        canvas.bookmarkHorizontalAbsolute(f"bm_{i}", bm.y * RL_MM)
 
   def apply_outline(self, canvas):
     """Add outline entries for all bookmarks. Call once, after all pages are rendered."""

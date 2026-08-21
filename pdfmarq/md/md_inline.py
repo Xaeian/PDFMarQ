@@ -170,11 +170,18 @@ class InlineMixin:
         in_link = False
       elif ct == "math_inline":
         # Render formula to a vector Drawing embedded via math_drawing slot.
+        # Size/color come from `base`, not from the body style: the same
+        # markdown appears in table cells (smaller `cell_size`) and in
+        # headings (much larger), and the drawing is rasterized at this
+        # size - it cannot be rescaled afterwards. Mirrors `make()`.
+        math_size = base.size
+        math_color = s.link_color if in_link else base.color
         try:
           from .math import render_math_svg_with_baseline
           drawing, baseline_pt = render_math_svg_with_baseline(
-            child.content, fontsize=s.body_size, color=s.body_color,
+            child.content, fontsize=math_size, color=math_color,
             config=getattr(self, "_math_config", None),
+            engine=s.math_engine, font=s.math_font,
           )
         except ImportError:
           from .._warn import warn_missing
@@ -183,17 +190,21 @@ class InlineMixin:
         if drawing is not None:
           segments.append(RichSegment(
             text="",
-            family=s.font_body, mode=base.mode, size=s.body_size,
-            color=s.body_color,
+            family=base.family, mode=base.mode, size=math_size,
+            color=math_color,
             math_drawing=drawing,
             math_width_pt=float(drawing.width),
             math_baseline_from_bottom_pt=float(baseline_pt),
+            link_url=link_url,
+            link_target=link_target,
           ))
         else:
           segments.append(RichSegment(
             text=child.content,
-            family=s.font_mono, mode=s.italic_mode, size=s.body_size,
-            color=s.body_color,
+            family=s.font_mono, mode=s.italic_mode, size=math_size,
+            color=math_color,
+            link_url=link_url,
+            link_target=link_target,
           ))
       elif ct == "emoji":
         emoji_ch = child.content or ""

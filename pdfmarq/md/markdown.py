@@ -70,6 +70,8 @@ class MarkdownRenderer(
     self._list_depth = 0
     self._eq_counter = 0
     self._known_slugs: set = set()  # populated by render() pre-scan
+    self._slug_uses: dict = {} # slug -> times used, for numbering repeats
+    self._chrome_registered = False  # page callbacks are registered once
     # Math font config is applied per-render-call (MathFontConfig.apply()), not
     # at init, so multiple renderers with different fontsets don't clobber
     # matplotlib's global rcParams mid-render.
@@ -129,10 +131,14 @@ class MarkdownRenderer(
       fm_rendered_title = data.get("title")
     # Page chrome: compact-banner fires per-page (no total known yet);
     # footer page number deferred via on_final_page (total count available then).
-    self.pdf.on_page(self._render_page_chrome)
-    self.pdf.on_new_page(self._offset_body_for_compact_banner)
-    if self.style.page_number_label:
-      self.pdf.on_final_page(self._render_page_number)
+    # Registered once per renderer - a second render() onto the same PDF
+    # would otherwise stack a second set and draw every footer twice.
+    if not self._chrome_registered:
+      self._chrome_registered = True
+      self.pdf.on_page(self._render_page_chrome)
+      self.pdf.on_new_page(self._offset_body_for_compact_banner)
+      if self.style.page_number_label:
+        self.pdf.on_final_page(self._render_page_number)
     md_text = self._normalize_list_indent(md_text)
     md_text = self._emojize_outside_code(md_text)
     tokens = self._md.parse(md_text)
@@ -141,6 +147,7 @@ class MarkdownRenderer(
     # Slugs are collected after the drop, so a link to the removed title is an
     # unknown anchor like any other.
     self._known_slugs = self._collect_heading_slugs(tokens)
+    self._slug_uses = {}
     self._render_tokens(tokens)
     if self.style.sign:
       self._render_signature_block()
@@ -151,13 +158,17 @@ class MarkdownRenderer(
     links - `[x](#slug)` is rendered as a jump only when `slug` is a real
     heading, otherwise the text is kept but not linkified. Prevents
     reportlab crash on save when a link targets a non-existent anchor.
+
+    Repeats are numbered here exactly as the render pass numbers them, so a
+    link to `heading-1` resolves to the second heading of that name.
     """
     from .md_blocks import BlocksMixin
     slugs: set = set()
+    seen: dict = {}
     for i in range(len(tokens) - 1):
       if tokens[i].type == "heading_open" and tokens[i+1].type == "inline":
         slug = BlocksMixin._slugify_inline(tokens[i+1])
-        if slug: slugs.add(slug)
+        if slug: slugs.add(BlocksMixin.dedupe_slug(slug, seen))
     return slugs
 
   def _render_tokens(self, tokens:list[Token]):
@@ -261,9 +272,18 @@ class MarkdownRenderer(
     return len(tokens) - 1
 
   def _ensure_space(self, needed_mm:float):
-    """Trigger new page if remaining space too small."""
-    if needed_mm > (self.pdf.content_height - self.pdf.y):
-      self.pdf.new_page()
+    """Trigger new page if remaining space too small.
+
+    A block taller than a whole page gets no break when the cursor is
+    already at the top: it cannot fit on a fresh page either, so the break
+    would only emit a blank page and push the overflow one page further.
+    Blocks that can be split (paragraphs, code) break pages themselves.
+    """
+    if needed_mm <= (self.pdf.content_height - self.pdf.y):
+      return
+    if needed_mm > self.pdf.content_height and self.pdf.y <= 0.5:
+      return
+    self.pdf.new_page()
 
   def _reset_stroke(self):
     """Reset canvas stroke and fill to black. Prevents color leaks from link

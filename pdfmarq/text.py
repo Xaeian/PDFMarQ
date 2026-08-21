@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from PIL import ImageFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from .fonts import FontManager, is_builtin, builtin_name
+from .constants import MM_TO_PT
 
 #------------------------------------------------------------------------------------- BoxFitResult
 
@@ -17,12 +18,41 @@ class BoxFitResult:
   lines: int
   overflow: bool = False
 
+# Below this the type is decoration, not text. Reaching it means the box is
+# too small for its content, whatever `overflow` says about fitting.
+READABLE_MIN_PT = 5.0
+
+def _warn_unreadable(text:str, size:float, width:float, height:float) -> None:
+  """Report type that shrank past legibility, with the box that forced it."""
+  import warnings
+  warnings.warn(
+    f"text shrank to {size:.1f}pt to fit a {width / MM_TO_PT:.1f}x"
+    f"{height / MM_TO_PT:.1f}mm box and is no longer readable; widen the box "
+    f"or shorten the text: {text.strip()[:40]!r}",
+    RuntimeWarning, stacklevel=3,
+  )
+
 #-------------------------------------------------------------------------------------- TextMetrics
 
 class TextMetrics:
   """Text measurement with font support."""
   def __init__(self, font_manager:FontManager):
     self.fonts = font_manager
+    self._pil_cache: dict = {} # (path, int(size)) → ImageFont
+
+  def _pil_font(self, path:str, size:float):
+    """Cached PIL font for TTF metrics.
+
+    `ImageFont.truetype()` re-reads and re-parses the file on every call,
+    and the autoscale loop in `box_fit` measures the same font dozens of
+    times per cell. Keyed on the integer size PIL itself rasterizes at.
+    """
+    key = (path, int(size))
+    font = self._pil_cache.get(key)
+    if font is None:
+      font = ImageFont.truetype(path, key[1])
+      self._pil_cache[key] = font
+    return font
 
   def _font_key(self, family:str, mode:str) -> str:
     return f"{family}-{mode}"
@@ -43,7 +73,7 @@ class TextMetrics:
     if is_builtin(family, mode): return size * 0.8
     try:
       path = self.fonts.get_path(family, mode)
-      font = ImageFont.truetype(path, int(size))
+      font = self._pil_font(path, size)
       ascent, _ = font.getmetrics()
       return float(ascent)
     except Exception:
@@ -55,7 +85,7 @@ class TextMetrics:
     if is_builtin(family, mode): return size * 1.2 * lines
     try:
       path = self.fonts.get_path(family, mode)
-      font = ImageFont.truetype(path, int(size))
+      font = self._pil_font(path, size)
       ascent, descent = font.getmetrics()
       return float(lines * (ascent + descent))
     except Exception:
@@ -79,7 +109,7 @@ class TextMetrics:
         return size * 0.8, size * 0.21
     try:
       path = self.fonts.get_path(family, mode)
-      font = ImageFont.truetype(path, int(size))
+      font = self._pil_font(path, size)
       a, d = font.getmetrics()
       return float(a), float(d)
     except Exception:
@@ -94,7 +124,6 @@ class TextMetrics:
     mode: str = "Regular",
     size: float = 12,
     autoscale: float|None = None,
-    link_char: str = "·",
     enter_in: str = "\n",
     enter_out: str = "\n",
   ) -> BoxFitResult:
@@ -104,10 +133,11 @@ class TextMetrics:
     (word too wide to wrap, or height exceeded with no autoscale room).
 
     Autoscale steps `size -= autoscale` until text fits or size is exhausted.
-    Iterative to avoid call-stack depth issues at small step sizes.
+    Iterative to avoid call-stack depth issues at small step sizes. Shrinking
+    past `READABLE_MIN_PT` warns and reports `overflow`: the text is placed,
+    but at that size nobody reads it.
     """
     if text is None: text = ""
-    text = text.replace(link_char, "¶")
     current_size = size
     overflow = False
     while True:
@@ -152,6 +182,9 @@ class TextMetrics:
         current_size -= autoscale
         continue
       overflow = word_overflow or height_overflow
+      if current_size < READABLE_MIN_PT and text.strip():
+        _warn_unreadable(text, current_size, width, height)
+        overflow = True
       result_text = enter_out.join(output)
       return BoxFitResult(result_text, current_size, result_height, line_count, overflow=overflow)
 

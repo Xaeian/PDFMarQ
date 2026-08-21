@@ -60,8 +60,13 @@ class FrontmatterMixin:
   """
 
   def _extract_frontmatter(self, md_text:str) -> tuple[dict|None, str]:
-    """Strip YAML frontmatter from `md_text` and return (data, remainder).
-    Returns `(None, md_text)` if no frontmatter or YAML parsing fails.
+    """Strip YAML frontmatter from `md_text` and return `(data, remainder)`.
+
+    Only a YAML mapping counts as frontmatter. A block that parses to a
+    scalar or a list is a document opening with a horizontal rule, so the
+    text is handed back whole - everything down to the next `---` is
+    ordinary content. A block that looks like frontmatter but does not
+    parse is dropped with a warning, since it was meant as metadata.
     """
     m = _FM_RE.match(md_text)
     if not m:
@@ -74,10 +79,15 @@ class FrontmatterMixin:
       from .._warn import warn_missing
       warn_missing("yaml", "PyYAML", "YAML frontmatter")
       return None, md_text[m.end():]
-    except Exception:
+    except Exception as e:
+      import warnings
+      warnings.warn(
+        f"invalid YAML frontmatter, block ignored: {e}",
+        RuntimeWarning, stacklevel=2,
+      )
       return None, md_text[m.end():]
     if not isinstance(data, dict):
-      return None, md_text[m.end():]
+      return None, md_text
     return data, md_text[m.end():]
 
   def _format_date(self, value) -> str:
@@ -512,6 +522,10 @@ class FrontmatterMixin:
     drawing = svg2rlg(path)
     if drawing is None:
       raise ValueError(f"could not load SVG: {path}")
+    if not drawing.width or not drawing.height:
+      # No intrinsic size - scale-to-fit is undefined and the division
+      # below would raise ZeroDivisionError.
+      raise ValueError(f"SVG has no intrinsic size: {path}")
     scale_x = w_pt / drawing.width
     scale_y = h_pt / drawing.height
     scale = min(scale_x, scale_y)

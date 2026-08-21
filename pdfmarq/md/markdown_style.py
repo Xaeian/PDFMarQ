@@ -140,6 +140,11 @@ class MarkdownStyle:
   mermaid_background: str = "transparent"
   mermaid_scale: float = 3
   mermaid_cli: str = "mmdc"
+  # Allow the mermaid.ink HTTP fallback when `mmdc` is not installed.
+  # It uploads the diagram source to a public third-party service and
+  # warns once per process; set False to keep rendering strictly local
+  # (diagrams then fall back to a plain code block).
+  mermaid_remote: bool = True
 
   # Math formulas (matplotlib mathtext → SVG → vector in PDF).
   # `math_fontset` accepts either a matplotlib preset (`"stix"`, `"stixsans"`,
@@ -149,6 +154,19 @@ class MarkdownStyle:
   # that folder. Default is `"stixsans"` - sans-serif with real italic and
   # full unicode math symbols, bundled with matplotlib (no setup).
   math_fontset: str = "stixsans"
+  # Which renderer draws the formulas. `auto` prefers MathJax when Node
+  # and its packages are installed (all of LaTeX math, New Computer
+  # Modern glyphs) and falls back to matplotlib mathtext, which needs no
+  # Node but understands a subset. `mathtext` pins the fallback,
+  # `mathjax` refuses it. `math_fontset` applies to mathtext only -
+  # MathJax brings its own font.
+  math_engine: str = "auto"
+  # Typeface MathJax sets formulas in, from the font packages it ships.
+  # Serif: `newcm` _(New Computer Modern, the modern LaTeX look)_, `stix2`,
+  # `modern`, `termes`, `pagella`. Sans: `dejavu`. Each needs its own npm
+  # package installed - see `md/readme.md`. Ignored by the mathtext engine,
+  # which reads `math_fontset` instead.
+  math_font: str = "newcm"
   math_block_gap: float = 3  # mm above/below block equations
   math_numbering: bool = True  # auto (1), (2), (3) for block math
 

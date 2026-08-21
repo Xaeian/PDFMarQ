@@ -52,7 +52,7 @@ class EstimateMixin:
       # Giant lists split anyway, so they must not force a heading break.
       if list_h <= page_avail * 0.9:
         return list_h
-      return body_line_mm * s.line_height * 3
+      return body_line_mm * 3
     if ttype == "table_open":
       end = self._find_close(tokens, start, "table_open", "table_close")
       n_rows = sum(1 for j in range(start, end) if tokens[j].type == "tr_open")

@@ -32,8 +32,9 @@ def mm_to_pt(*values:float) -> list[float]|float:
 _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72)
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
-  """Next-smaller standard typographic size below `body_pt`. Mirrors
-  Used by tables and bibliography to derive
+  """Next-smaller standard typographic size below `body_pt`.
+
+  Walks `_SIZE_LADDER`. Used by tables and bibliography to derive
   a "one step smaller" reading size that hits expected Word ladder values
   (11→10, 12→11, 14→12, 16→14, 18→16) instead of arbitrary `body - 1`
   deltas that produce non-standard sizes like 13. Clamps at `min_pt`."""
@@ -106,10 +107,3 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
     if n == 4: return (margin[0], margin[1], margin[2], margin[3])
   raise ValueError(f"Invalid margin: {margin}")
 
-#--------------------------------------------------------------------------------------------- Text
-
-def sanitize_text(text:str, link_char:str="·", enter_in:str="\n", enter_out:str="\n") -> str:
-  """Normalize text before rendering: replace link sentinel with pilcrow, remap line endings."""
-  text = text.replace(link_char, "¶")
-  text = text.replace(enter_in, enter_out)
-  return text

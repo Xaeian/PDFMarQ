@@ -11,7 +11,7 @@ class Cursor:
   """Position tracker with alignment and auto-advance."""
   x: float = 0
   y: float = 0
-  x_base: float = 0  # x position after enter()
+  x_base: float = 0 # x position after enter()
   align: str = Align.LEFT
   last_height: float = 0
   last_width: float = 0

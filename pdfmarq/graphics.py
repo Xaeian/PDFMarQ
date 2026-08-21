@@ -1,7 +1,6 @@
 # pdfmarq/graphics.py
 
 """Graphics primitives - shapes, images, SVG."""
-from reportlab.lib.colors import Color
 from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF
@@ -133,20 +132,3 @@ def draw_svg(
   renderPDF.draw(drawing, canvas, 0, 0)
   canvas.restoreState()
 
-#---------------------------------------------------------------------------------------- Gradients
-
-def draw_linear_gradient(
-  canvas,
-  x: float, y: float,
-  width: float, height: float,
-  color1: tuple,
-  color2: tuple,
-  vertical: bool = True,
-):
-  """Draw rectangle with linear gradient fill."""
-  if vertical:
-    canvas.linearGradient(x, y, x, y + height,
-    (Color(*color1), Color(*color2)), extend=False)
-  else:
-    canvas.linearGradient(x, y, x + width, y,
-      (Color(*color1), Color(*color2)), extend=False)

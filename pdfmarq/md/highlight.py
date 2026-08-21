@@ -60,9 +60,12 @@ import re as _re
 #   marker_sep_content - 3 groups: bold marker + neutral sep + content
 #   full_line          - full line in one color, no inline tokenization
 #   quote              - 2 groups: marker+ws + content (content is quoted)
+# Checked before `_MD_BLOCKS`: a fence delimiter flips in and out of a
+# nested code block rather than styling one line among markdown.
+_FENCE_RE = _re.compile(r"^(?:```+|~~~+)")
+
 _MD_BLOCKS = [
   (_re.compile(r"^(#{1,6})(\s+)(.*)$"), "heading", "marker_sep_content"),
-  (_re.compile(r"^(```+|~~~+)(.*)$"), "fence", "full_line"),
   (_re.compile(r"^([-*+])(\s+)(.*)$"), "list_marker", "marker_sep_content"),
   (_re.compile(r"^(\d+\.)(\s+)(.*)$"), "list_marker", "marker_sep_content"),
   (_re.compile(r"^(>+\s*)(.*)$"), "quote", "quote"),
@@ -79,6 +82,7 @@ def _highlight_md(
       size=size, color=color,
     )
   lines_out: list[list[RichSegment]] = []
+  in_fence = False
   for src in code.split("\n"):
     line_segs: list[RichSegment] = []
     m_indent = _re.match(r"^(\s*)", src)
@@ -86,6 +90,16 @@ def _highlight_md(
     rest = src[len(indent):]
     if indent:
       line_segs.append(seg(indent, default_color))
+    if _FENCE_RE.match(rest):
+      in_fence = not in_fence
+      line_segs.append(seg(rest, _MD_COLORS["fence"]))
+      lines_out.append(line_segs)
+      continue
+    if in_fence:
+      # Inside a fence the language is not markdown; leave it plain.
+      line_segs.append(seg(rest or " ", default_color))
+      lines_out.append(line_segs)
+      continue
     content = rest
     is_quote = False
     # Match first block-level pattern (if any)

@@ -112,9 +112,13 @@ class TableStyle:
   cell_pad_h: float = 0.5
   # Layout
   header_gap: float = 0.2
+  font_size: float|None = None
+  # Inert. `PDF.table()` draws a table in one piece, so there is no
+  # continuation page for a header to repeat on, and cell text always sits
+  # centred in a full-width table. The markdown renderer splits tables and
+  # repeats their headers on its own, without reading these.
   header_repeat: bool = True
   vertical_align: str = "center"
-  font_size: float|None = None
   table_align: str|None = None
   fill_content_width: bool = True
 

@@ -17,13 +17,13 @@ from .fonts import is_builtin, builtin_name
 
 # Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light
 # look. Centralised here so future visual tweaks don't require code-hunting.
-_ASCENT_RATIO = 0.80  # line-box ascent: positions baseline below top edge
-_BG_DESCENT_RATIO = 0.32  # how far below baseline the inline-code bg starts
-_BG_HEIGHT_RATIO = 1.35  # inline-code bg height in glyph units
-_BG_CORNER_RATIO = 0.20  # rounded-corner radius / bg height
-_STRIKE_Y_RATIO = 0.28  # strikethrough Y above baseline
-_LINK_RECT_DESCENT = 0.25  # link clickable rect: depth below baseline
-_LINK_RECT_ASCENT = 0.85  # link clickable rect: height above baseline
+_ASCENT_RATIO = 0.80        # line-box ascent: positions baseline below top edge
+_BG_DESCENT_RATIO = 0.32    # how far below baseline the inline-code bg starts
+_BG_HEIGHT_RATIO = 1.35     # inline-code bg height in glyph units
+_BG_CORNER_RATIO = 0.20     # rounded-corner radius / bg height
+_STRIKE_Y_RATIO = 0.28      # strikethrough Y above baseline
+_LINK_RECT_DESCENT = 0.25   # link clickable rect: depth below baseline
+_LINK_RECT_ASCENT = 0.85    # link clickable rect: height above baseline
 _UNDERLINE_OFFSET_PT = 1.0  # underline distance below baseline (pt, size-independent)
 
 # Inline-code shaded background padding (pt - not font-size relative).
@@ -385,6 +385,62 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
     total += bg_extra_mm
   return max_word, total
 
+def _line_box(line:list, line_gap:float) -> tuple[float, float]:
+  """`(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
+
+  Text sets the box from its size. A drawing - a formula, an emoji - carries
+  its own extent, and a big operator with limits stands several times taller
+  than the size it was rendered at.
+
+  A drawing that fits inside the text box leaves the box alone, so the
+  leading absorbs it and nothing around it shifts. One that does not fit
+  pushes the box out, since it would otherwise reach into the neighbouring
+  line or, inside a table cell, across the row border.
+  """
+  max_size = max(w.seg.size for w in line)
+  ascent = max_size * _ASCENT_RATIO
+  descent = max_size * line_gap - ascent
+  above = below = 0.0
+  for w in line:
+    drawing = w.seg.math_drawing
+    if drawing is None:
+      continue
+    seg_below = w.seg.math_baseline_from_bottom_pt
+    below = max(below, seg_below)
+    above = max(above, float(getattr(drawing, "height", 0) or 0) - seg_below)
+  if above + below <= ascent + descent:
+    return ascent, descent
+  return max(ascent, above), max(descent, below)
+
+def wrap_line_heights(
+  pdf,
+  segments: list[RichSegment],
+  width_mm: float,
+  line_gap: float = 1.45,
+  preserve_leading_space: bool = False,
+) -> list[float]:
+  """Per-line heights (mm) of the layout `render_rich` produces.
+
+  Lets a caller split a block across pages: pick how many lines fit the
+  space left on the page, then draw that slice via `render_rich` with
+  `first_line` / `max_lines`. Uses the same tokenize + wrap pass as the
+  drawing code, so the cut lands exactly where the line is drawn.
+  """
+  if not segments: return []
+  words = _tokenize(segments, pdf._metrics)
+  wrapped = _wrap(
+    words, width_mm * MM_TO_PT, pdf._metrics,
+    preserve_leading_space=preserve_leading_space,
+  )
+  heights: list[float] = []
+  for line in wrapped.lines:
+    if not line:
+      heights.append(11 * line_gap / MM_TO_PT) # empty line from a hard break
+      continue
+    ascent, descent = _line_box(line, line_gap)
+    heights.append((ascent + descent) / MM_TO_PT)
+  return heights
+
 def measure_rich(
   pdf,
   segments: list[RichSegment],
@@ -400,19 +456,10 @@ def measure_rich(
   cells) before drawing, so backgrounds and borders can be sized correctly.
   """
   if not segments: return 0
-  metrics = pdf._metrics
-  width_pt = width_mm * MM_TO_PT
-  words = _tokenize(segments, metrics)
-  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space)
-  lines = wrapped.lines
-  total_used_mm = 0
-  for line in lines:
-    if not line:
-      total_used_mm += 11 * line_gap / MM_TO_PT
-      continue
-    max_size = max(w.seg.size for w in line)
-    total_used_mm += max_size * line_gap / MM_TO_PT
-  return total_used_mm
+  return sum(wrap_line_heights(
+    pdf, segments, width_mm, line_gap,
+    preserve_leading_space=preserve_leading_space,
+  ))
 
 #------------------------------------------------------------------------------------------- Render
 
@@ -425,6 +472,8 @@ def render_rich(
   align: str = Align.LEFT,
   line_gap: float = 1.45,
   preserve_leading_space: bool = False,
+  first_line: int = 0,
+  max_lines: int|None = None,
 ) -> float:
   """Render mixed-style text with word wrap. Does not modify cursor.
 
@@ -437,9 +486,14 @@ def render_rich(
     align: `L` / `C` / `R`.
     line_gap: Line height multiplier (e.g. 1.45 = 145% of font size).
     preserve_leading_space: Keep leading whitespace on each line (for code).
+    first_line: Index of the first wrapped line to draw. Lines before it
+      are laid out but skipped, so the visible text starts at `y_mm`.
+    max_lines: Draw at most this many lines (`None` = to the end). With
+      `first_line` this renders one page-sized window of a long block;
+      use `wrap_line_heights` to decide where to cut.
 
   Returns:
-    Total vertical space used, in mm.
+    Total vertical space used by the lines actually drawn, in mm.
   """
   if not segments: return 0
   metrics = pdf._metrics
@@ -449,7 +503,11 @@ def render_rich(
   words = _tokenize(segments, metrics)
   wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space)
   lines = wrapped.lines
-  if wrapped.overflow:
+  if first_line or max_lines is not None:
+    end = None if max_lines is None else first_line + max_lines
+    lines = lines[first_line:end]
+  # One warning per block: every window shares the same wrap result.
+  if wrapped.overflow and not first_line:
     # Wrap width too narrow for even a single glyph after force-break.
     # Pathological - surface it so callers know the column is unusable.
     import warnings
@@ -472,10 +530,10 @@ def render_rich(
       total_used_mm += gap_mm
       continue
     max_size = max(w.seg.size for w in line)
-    line_height_pt = max_size * line_gap
-    line_height_mm = line_height_pt / MM_TO_PT
-    # Line-box ascent - positions baseline at cap+accent distance below top
-    ascent_pt = max_size * _ASCENT_RATIO
+    # Ascent positions the baseline below the top edge; both numbers come
+    # from `_line_box` so the drawn line matches the measured one exactly.
+    ascent_pt, descent_pt = _line_box(line, line_gap)
+    line_height_mm = (ascent_pt + descent_pt) / MM_TO_PT
     # Baseline canvas y in pt (canvas coords, y grows up)
     baseline_canvas_y_pt = (current_top_mm * MM_TO_PT) - ascent_pt
     # Alignment offset
