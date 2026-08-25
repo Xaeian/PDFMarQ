@@ -4,6 +4,8 @@
 
 from pathlib import Path
 import pytest
+# every check here compares the two libraries, so without the twin there is nothing to run
+pytest.importorskip("docmarq.md", reason="docmarq not installed")
 from pdfmarq.md import md_to_pdf, MarkdownStyle as PdfStyle
 from pdfmarq.constants import A4 as PdfA4
 from docmarq.md import md_to_docx, MarkdownStyle as DocStyle
@@ -151,6 +153,54 @@ def callout_colors_parity():
 def mark_bg_default_parity():
   # both libs default `mark_bg` to the same named highlight ('yellow')
   assert PdfStyle().mark_bg == DocStyle().mark_bg == "yellow"
+
+def block_image_box_parity():
+  # both libs resolve a block image to the same box
+  from pdfmarq.md.md_images import ImageInfo, size_block
+  from docmarq.md.image_utils import ImageDSL, apply_dsl_dims
+  for px_w, px_h, dpi in [(96, 48, 96), (1200, 800, 96), (1200, 800, 300),
+      (3000, 2000, 600), (800, 2400, 96), (600, 400, 300)]:
+    info = ImageInfo(src="x.png", is_svg=False, dpi=dpi,
+      nat_w_mm=px_w * 25.4 / dpi, nat_h_mm=px_h * 25.4 / dpi)
+    pdf_box = size_block(info, 170, 120)
+    doc_box = apply_dsl_dims(px_w, px_h, 170, 120, ImageDSL(), dpi, 150)
+    assert pdf_box == pytest.approx(doc_box, abs=0.05), \
+      f"{px_w}x{px_h}@{dpi}: pdf={pdf_box} doc={doc_box}"
+
+@pytest.mark.parametrize("count, rows",
+  [(2, [2]), (7, [7]), (8, [4, 4]), (15, [5, 5, 5])])
+def image_grid_parity(tmp_path, monkeypatch, count, rows):
+  # an image-only paragraph lays out into the same grid, at the same widths
+  from PIL import Image
+  from docx import Document
+  from pdfmarq import PDF
+  for i in range(count):
+    Image.new("RGB", (1200, 800), (100, 150, 200)).save(tmp_path / f"i{i}.png")
+  md = "\n".join(f"![](i{i}.png)" for i in range(count))
+  pdf_w = []
+  orig = PDF.image
+  def spy(self, src, w=None, h=None, *a, **k):
+    pdf_w.append(w)
+    return orig(self, src, w, h, *a, **k)
+  monkeypatch.setattr(PDF, "image", spy)
+  md_to_pdf(md, str(tmp_path / "grid.pdf"), base_dir=str(tmp_path))
+  md_to_docx(md, str(tmp_path / "grid.docx"), base_dir=str(tmp_path))
+  ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}ext"
+  paras = [p._element.findall(f".//{ns}")
+    for p in Document(str(tmp_path / "grid.docx")).paragraphs
+    if p._element.findall(f".//{ns}")]
+  assert [len(p) for p in paras] == rows
+  docx_w = [int(e.get("cx")) / 36000 for row in paras for e in row]
+  assert pdf_w == pytest.approx(docx_w, abs=0.05), f"pdf={pdf_w} docx={docx_w}"
+
+def image_min_dpi_parity():
+  assert PdfStyle().image_min_dpi == DocStyle().image_min_dpi
+
+def image_row_threshold_parity():
+  # both libs drop back from a row to inline at the same slot width
+  from pdfmarq.md.md_blocks import _ROW_MIN_SLOT_MM as pdf_min
+  from docmarq.md.renderer import _ROW_MIN_SLOT_MM as doc_min
+  assert pdf_min == doc_min
 
 def lang_presets_do_not_set_footnote_label():
   # footnote label is OFF by default in all language presets in both libs

@@ -77,10 +77,10 @@ class TableBuilder:
 
   def build(
     self,
-    available_width: float,  # mm
-    font_family: str = "Helvetica",
-    font_mode: str = "Regular",
-    font_size: float = 11,
+    available_width:float, # mm
+    font_family:str = "Helvetica",
+    font_mode:str = "Regular",
+    font_size:float = 11,
   ) -> TableData:
     """Prepare table data for rendering. Pure - does not mutate builder state.
 

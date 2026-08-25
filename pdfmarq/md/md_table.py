@@ -95,9 +95,9 @@ class TableMixin:
 
   def _draw_md_table(
     self,
-    header: list[Token|None],
-    body: list[list[Token|None]],
-    aligns: list[str],
+    header:list[Token|None],
+    body:list[list[Token|None]],
+    aligns:list[str],
   ):
     """Draw a markdown table, splitting across pages when needed.
     Header is repeated at the top of each continuation page.
@@ -250,11 +250,11 @@ class TableMixin:
 
   def _compute_col_widths(
     self,
-    header_data: list[dict],
-    body_data: list[list[dict]],
-    ncols: int,
-    total_w: float,
-    h_pad: float,
+    header_data:list[dict],
+    body_data:list[list[dict]],
+    ncols:int,
+    total_w:float,
+    h_pad:float,
   ) -> tuple[list[float], list[float]]:
     """HTML-style auto layout. Returns `(col_widths, text_width_mm)`.
 
@@ -342,15 +342,15 @@ class TableMixin:
 
   def _balance_image_cols(
     self,
-    col_widths: list[float],
-    text_width_mm: list[float],
-    all_rows: list[list[dict]],
-    is_image_col: list[bool],
-    has_text: list[bool],
-    ncols: int,
-    total_w: float,
-    h_pad: float,
-    col_min: list[float],
+    col_widths:list[float],
+    text_width_mm:list[float],
+    all_rows:list[list[dict]],
+    is_image_col:list[bool],
+    has_text:list[bool],
+    ncols:int,
+    total_w:float,
+    h_pad:float,
+    col_min:list[float],
   ) -> tuple[list[float], list[float]]:
     """Reflow widths so a pure-image col's height matches its widest text-col
     partner. Mixed cols (both image and text rows) are skipped - they need
@@ -431,21 +431,21 @@ class TableMixin:
 
   def _draw_table_chunk(
     self,
-    header_data: list[dict],
-    header_h: float,
-    header_cell_h: list[float],
-    body_data: list[list[dict]],
-    body_heights: list[float],
-    body_cell_heights: list[list[float]],
-    aligns: list[str],
-    col_widths: list[float],
-    text_width_mm: list[float],
-    x_start: float,
-    total_w: float,
-    h_pad: float,
-    v_pad: float,
-    text_top_offset: float,
-    row_offset: int = 0,
+    header_data:list[dict],
+    header_h:float,
+    header_cell_h:list[float],
+    body_data:list[list[dict]],
+    body_heights:list[float],
+    body_cell_heights:list[list[float]],
+    aligns:list[str],
+    col_widths:list[float],
+    text_width_mm:list[float],
+    x_start:float,
+    total_w:float,
+    h_pad:float,
+    v_pad:float,
+    text_top_offset:float,
+    row_offset:int = 0,
   ):
     """Render one chunk of a table: header + a subset of body rows.
     `row_offset` is the global row index of the first body row in this chunk,

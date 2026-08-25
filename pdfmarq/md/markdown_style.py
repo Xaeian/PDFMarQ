@@ -117,7 +117,8 @@ class MarkdownStyle:
   # Image sizing rules - see `md_images.py` for the full algorithm
   image_max_h: float = 120  # mm - cap image height (block + table cells)
   image_dpi: int = 96  # fallback DPI for rasters without metadata
-  inline_image_max_h: float = 5.5  # mm - cap inline mid-paragraph icons (~2ex @ 11pt)
+  image_min_dpi: int = 150  # block raster fills page width down to this; 0 = always
+  inline_image_max_h: float = 5.5  # mm - cap inline icons, at `body_size`
   cell_image_max_w: float = 60  # mm - absolute cap on col_max
   cell_image_scale: float = 0.5  # render image cells at this fraction of natural
   cell_image_balance_bias: float = 0.7  # target image_h = text_h × bias (<1 = smaller image)

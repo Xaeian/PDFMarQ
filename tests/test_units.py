@@ -4,6 +4,7 @@
 
 import pytest
 from pdfmarq import PDF
+from conftest import needs_twin
 from pdfmarq.utils import to_mm, mm_to_pt, parse_color, color_alpha, color_hex, parse_margin
 from pdfmarq.fonts import FontManager, is_builtin, builtin_name
 from pdfmarq.inline import RichSegment
@@ -12,7 +13,6 @@ from pdfmarq.text import TextMetrics
 from pdfmarq.constants import Align, Defaults
 from pdfmarq.styles import Style, Styles, TableStyle
 from pdfmarq.structure import Metadata
-from docmarq import DOCX
 
 @pytest.fixture
 def metrics():
@@ -101,6 +101,7 @@ def rich_segment_superscript_subscript_fields():
 
 #----------------------------------------------------------------------------------------- Defaults
 
+@needs_twin
 def defaults_match_docmarq():
   # cross-lib parity: same numeric defaults so PDF and DOCX land comparable
   from docmarq.constants import Defaults as DD
@@ -132,6 +133,7 @@ def metadata_comments_category_fields():
 
 #-------------------------------------------------------------------------------- TableStyle parity
 
+@needs_twin
 def table_style_shared_fields_match_docmarq():
   # cross-lib: the fields users tweak most must have matching names in both libs
   from docmarq.styles import TableStyle as DT
@@ -162,14 +164,17 @@ def output_path_property_pdf():
     p = os.path.join(d, "x.pdf")
     assert PDF(p).output_path == p
 
+@needs_twin
 def output_path_property_docx():
   import tempfile, os
+  from docmarq import DOCX
   with tempfile.TemporaryDirectory() as d:
     p = os.path.join(d, "x.docx")
     assert DOCX(p).output_path == p
 
 #------------------------------------------------------------------------------------- Version bump
 
+@needs_twin
 def versions_aligned():
   # both libs co-evolve, version bumps tracked together
   from pdfmarq import __version__ as pv
@@ -260,7 +265,8 @@ def cursor_copy_is_independent():
 #------------------------------------------------------------------------------------- PageGeometry
 
 def page_content_dims_subtract_margins():
-  p = PageGeometry(width=210, height=297, margin_left=20, margin_right=20, margin_top=15, margin_bot=15)
+  p = PageGeometry(width=210, height=297,
+    margin_left=20, margin_right=20, margin_top=15, margin_bot=15)
   assert p.content_width == 170 and p.content_height == 267
 
 @pytest.mark.parametrize("align, expected", [

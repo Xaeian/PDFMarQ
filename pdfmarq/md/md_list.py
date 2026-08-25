@@ -102,8 +102,10 @@ class ListMixin:
       self.pdf.enter(max(0, s.para_gap - s.list_gap))
     return end + 1
 
-  def _render_list_item(self, prefix:str, item_tokens:list[Token],
-      bullet:bool=False, column:float|None=None):
+  def _render_list_item(
+    self, prefix:str, item_tokens:list[Token],
+    bullet:bool=False, column:float|None=None,
+  ):
     s = self.style
     if column is None:
       column = s.list_indent
@@ -145,8 +147,10 @@ class ListMixin:
       self._indent_mm = old_indent
       self.pdf.cursor(self._indent_mm, self.pdf.y)
 
-  def _measure_item_first_para(self, item_tokens:list[Token],
-      column:float|None=None) -> float:
+  def _measure_item_first_para(
+    self, item_tokens:list[Token],
+    column:float|None=None,
+  ) -> float:
     """Height (mm) of the first paragraph - keep-together reservation for
     `_render_list_item`. Falls back to two body lines for non-paragraph
     leading content (nested list, code block) which have their own break logic."""

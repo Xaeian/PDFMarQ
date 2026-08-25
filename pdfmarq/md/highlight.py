@@ -72,11 +72,11 @@ _MD_BLOCKS = [
 ]
 
 def _highlight_md(
-  code: str, family: str, mode: str, bold_mode: str, size: float,
-  default_color: tuple,
+  code:str, family:str, mode:str, bold_mode:str, size:float,
+  default_color:tuple,
 ) -> list[list[RichSegment]]:
   """Regex-based markdown highlighter - correct, simple, no pygments dependency."""
-  def seg(text: str, color: tuple, bold: bool = False) -> RichSegment:
+  def seg(text:str, color:tuple, bold:bool = False) -> RichSegment:
     return RichSegment(
       text=text, family=family, mode=bold_mode if bold else mode,
       size=size, color=color,
@@ -153,12 +153,12 @@ _MD_INLINE_GROUPS = [
 ]
 
 def _tokenize_md_inline(
-  text: str, out: list[RichSegment], family: str, mode: str, bold_mode: str,
-  size: float, default_color: tuple, quote: bool = False,
+  text:str, out:list[RichSegment], family:str, mode:str, bold_mode:str,
+  size:float, default_color:tuple, quote:bool = False,
 ):
   """Parse inline markdown into colored segments."""
   base_color = _MD_COLORS["quote"] if quote else default_color
-  def seg(t: str, c: tuple, bold: bool = False) -> RichSegment:
+  def seg(t:str, c:tuple, bold:bool = False) -> RichSegment:
     return RichSegment(
       text=t, family=family, mode=bold_mode if bold else mode,
       size=size, color=c,
@@ -179,14 +179,14 @@ def _tokenize_md_inline(
 #---------------------------------------------------------------------------------------- Highlight
 
 def highlight_code(
-  code: str,
-  lang: str,
-  family: str = "Courier",
-  mode: str = "Regular",
-  bold_mode: str = "Bold",
-  size: float = 10,
-  default_color: tuple = (0.13, 0.13, 0.13),
-  theme: str = "default",
+  code:str,
+  lang:str,
+  family:str = "Courier",
+  mode:str = "Regular",
+  bold_mode:str = "Bold",
+  size:float = 10,
+  default_color:tuple = (0.13, 0.13, 0.13),
+  theme:str = "default",
 ) -> list[list[RichSegment]] | None:
   """Tokenize and style `code` using pygments. Return list of styled lines.
 

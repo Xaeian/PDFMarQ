@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmarq"
-version = "0.5.0"
+version = "0.5.1"
 description = "PDF generation library with fluent API and optional markdown support"
 readme = "readme.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["license"]
 requires-python = ">=3.10"
 authors = [{name = "Xaeian"}]
 keywords = ["pdf", "reportlab", "document", "generation", "markdown"]

@@ -414,10 +414,10 @@ def _line_box(line:list, line_gap:float) -> tuple[float, float]:
 
 def wrap_line_heights(
   pdf,
-  segments: list[RichSegment],
-  width_mm: float,
-  line_gap: float = 1.45,
-  preserve_leading_space: bool = False,
+  segments:list[RichSegment],
+  width_mm:float,
+  line_gap:float = 1.45,
+  preserve_leading_space:bool = False,
 ) -> list[float]:
   """Per-line heights (mm) of the layout `render_rich` produces.
 
@@ -443,10 +443,10 @@ def wrap_line_heights(
 
 def measure_rich(
   pdf,
-  segments: list[RichSegment],
-  width_mm: float,
-  line_gap: float = 1.45,
-  preserve_leading_space: bool = False,
+  segments:list[RichSegment],
+  width_mm:float,
+  line_gap:float = 1.45,
+  preserve_leading_space:bool = False,
 ) -> float:
   """Calculate how much vertical space `render_rich` would use, without
   actually drawing anything. Uses the same tokenization + wrap logic as
@@ -465,15 +465,15 @@ def measure_rich(
 
 def render_rich(
   pdf,
-  segments: list[RichSegment],
-  width_mm: float,
-  x_mm: float,
-  y_mm: float,
-  align: str = Align.LEFT,
-  line_gap: float = 1.45,
-  preserve_leading_space: bool = False,
-  first_line: int = 0,
-  max_lines: int|None = None,
+  segments:list[RichSegment],
+  width_mm:float,
+  x_mm:float,
+  y_mm:float,
+  align:str = Align.LEFT,
+  line_gap:float = 1.45,
+  preserve_leading_space:bool = False,
+  first_line:int = 0,
+  max_lines:int|None = None,
 ) -> float:
   """Render mixed-style text with word wrap. Does not modify cursor.
 

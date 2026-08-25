@@ -117,15 +117,15 @@ class TextMetrics:
 
   def box_fit(
     self,
-    text: str,
-    width: float,  # pt
-    height: float = 0,  # pt, 0 = no height constraint
-    family: str = "Helvetica",
-    mode: str = "Regular",
-    size: float = 12,
-    autoscale: float|None = None,
-    enter_in: str = "\n",
-    enter_out: str = "\n",
+    text:str,
+    width:float, # pt
+    height:float = 0,
+    # pt, 0 = no height constraint
+    family:str = "Helvetica", mode:str = "Regular",
+    size:float = 12,
+    autoscale:float|None = None,
+    enter_in:str = "\n",
+    enter_out:str = "\n",
   ) -> BoxFitResult:
     """Wrap text into a box, optionally shrinking font to fit.
 
@@ -190,13 +190,13 @@ class TextMetrics:
 
   def box_fit_array(
     self,
-    texts: list[list[str]]|list[str],
-    widths: list[float],  # pt per column
-    heights: list[float]|float|None = None,
-    family: str = "Helvetica",
-    mode: str = "Regular",
-    size: float = 12,
-    autoscale: float|None = None,
+    texts:list[list[str]]|list[str],
+    widths:list[float], # pt per column
+    heights:list[float]|float|None = None,
+    family:str = "Helvetica",
+    mode:str = "Regular",
+    size:float = 12,
+    autoscale:float|None = None,
   ) -> dict:
     """Fit array of texts into columns. Returns dict with text, font_size, height, lines arrays."""
     if not texts:

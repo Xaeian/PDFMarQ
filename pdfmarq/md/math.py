@@ -69,8 +69,8 @@ class MathFontConfig:
           mpl.rcParams[key] = val
 
 def configure_math_fonts(
-  fontset: str = "stixsans",
-  font_dir: str|None = None,
+  fontset:str = "stixsans",
+  font_dir:str|None = None,
 ) -> MathFontConfig:
   """Build a `MathFontConfig` for the given fontset.
 
@@ -131,8 +131,10 @@ def _warn_fallback(fontset:str, reason:str) -> None:
     RuntimeWarning, stacklevel=3,
   )
 
-def _face_spec(base:"Path", family:str, mode:str, style:str,
-    fallback:str) -> str:
+def _face_spec(
+  base:"Path", family:str, mode:str, style:str,
+  fallback:str,
+) -> str:
   """Registered face as matplotlib's `family:style` selector.
 
   Every face of a family reports the same `family_name`, so the style has
@@ -249,12 +251,12 @@ _CROP_PAD_IN = 0.005
 #------------------------------------------------------------------------------------------- Render
 
 def render_math_svg(
-  formula: str,
-  fontsize: float = 11,
-  color: tuple = (0, 0, 0),
-  config: MathFontConfig|None = None,
-  engine: str = "auto",
-  font: str|None = None,
+  formula:str,
+  fontsize:float = 11,
+  color:tuple = (0, 0, 0),
+  config:MathFontConfig|None = None,
+  engine:str = "auto",
+  font:str|None = None,
 ):
   """Render a math formula as a reportlab `Drawing` (vector).
 
@@ -284,11 +286,11 @@ def render_math_svg(
 #--------------------------------------------------------------------------------- Measure baseline
 
 def render_with_mathjax(
-  formula: str,
-  fontsize: float = 11,
-  color: tuple = (0, 0, 0),
-  display: bool = False,
-  font: str|None = None,
+  formula:str,
+  fontsize:float = 11,
+  color:tuple = (0, 0, 0),
+  display:bool = False,
+  font:str|None = None,
 ):
   """`(drawing, baseline_from_bottom_pt)` from MathJax, or `(None, 0)`.
 
@@ -310,13 +312,13 @@ def render_with_mathjax(
   return mathjax.to_drawing(svg, fontsize * mathjax.OPTICAL_SCALE, color)
 
 def render_math_svg_with_baseline(
-  formula: str,
-  fontsize: float = 11,
-  color: tuple = (0, 0, 0),
-  config: MathFontConfig|None = None,
-  engine: str = "auto",
-  display: bool = False,
-  font: str|None = None,
+  formula:str,
+  fontsize:float = 11,
+  color:tuple = (0, 0, 0),
+  config:MathFontConfig|None = None,
+  engine:str = "auto",
+  display:bool = False,
+  font:str|None = None,
 ):
   """Render math and return `(drawing, baseline_from_bottom_pt)`.
 

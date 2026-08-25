@@ -201,8 +201,10 @@ def _render(jobs:list[tuple[str, bool]], font:str) -> dict[tuple[str, bool], str
       pass # a cache that cannot be written just costs the next render
   return out
 
-def render_batch(jobs:list[tuple[str, bool]],
-    font:str|None=None) -> dict[tuple[str, bool], str]:
+def render_batch(
+  jobs:list[tuple[str, bool]],
+  font:str|None=None,
+) -> dict[tuple[str, bool], str]:
   """Render `(tex, display)` pairs to SVG, returning what succeeded.
 
   A formula holding a character the chosen font lacks is rendered again in

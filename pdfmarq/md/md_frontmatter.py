@@ -200,8 +200,10 @@ class FrontmatterMixin:
     self._aspect_cache[path] = aspect
     return aspect
 
-  def _measure_optimal_logo_height(self, data:dict, content_w:float,
-    gutter:float, y_start:float, aspect:float) -> float:
+  def _measure_optimal_logo_height(
+    self, data:dict, content_w:float,
+    gutter:float, y_start:float, aspect:float,
+  ) -> float:
     """Find the logo height that makes the logo and text column the same height.
     Each iteration measures text height given the current logo width, then sets
     logo_h = min(cap, text_h). Tall logos (aspect < 1) consume less horizontal
@@ -224,8 +226,10 @@ class FrontmatterMixin:
       logo_h = new_h
     return logo_h
 
-  def _dry_measure_text_column(self, data:dict, x_offset:float, width:float,
-    y_start:float) -> float:
+  def _dry_measure_text_column(
+    self, data:dict, x_offset:float, width:float,
+    y_start:float,
+  ) -> float:
     """Estimate text-column height analytically (no drawing).
     Mirrors `_fm_render_text_column` structure using font metrics and word-wrap.
     """
@@ -254,8 +258,10 @@ class FrontmatterMixin:
       h_mm += s.banner_meta_size / MM_TO_PT * 1.3 * max(1, meta_lines)
     return h_mm
 
-  def _estimate_lines(self, text:str, family:str, mode:str,
-    size_pt:float, width_mm:float) -> int:
+  def _estimate_lines(
+    self, text:str, family:str, mode:str,
+    size_pt:float, width_mm:float,
+  ) -> int:
     """Estimate how many lines `text` will wrap to in `width_mm` at the given
     font/size. Uses canvas.stringWidth for accurate measurement.
     """
@@ -303,8 +309,10 @@ class FrontmatterMixin:
       pdf.enter(1)
       self._fm_meta_row(author, created, updated, x_offset, width)
 
-  def _fm_entity_address_row(self, entity:str|None, address:str|None,
-      x_offset:float, width:float) -> float:
+  def _fm_entity_address_row(
+    self, entity:str|None, address:str|None,
+    x_offset:float, width:float,
+  ) -> float:
     """Single-row layout: entity (left, bold) + address (right, muted).
     Returns max actual height in mm.
     """
@@ -322,8 +330,10 @@ class FrontmatterMixin:
       h = max(h, render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3) or h)
     return h
 
-  def _fm_id_version_row(self, doc_id:str|None, version:str|None, status:str|None,
-      x_offset:float, width:float) -> float:
+  def _fm_id_version_row(
+    self, doc_id:str|None, version:str|None, status:str|None,
+    x_offset:float, width:float,
+  ) -> float:
     """Render: [STATUS BADGE]  id  ...  version
     `id` and `version` use the inline-code style (mono on light bg with border),
     matching how `<code>` is rendered in markdown body. They sit 1.2mm higher
@@ -355,16 +365,20 @@ class FrontmatterMixin:
         code_baseline_y_pt, anchor="right")
     return s.banner_id_size / MM_TO_PT * 1.6
 
-  def _fm_centered_text(self, text:str, size_pt:float, family:str, mode:str, color:tuple,
-    x_offset:float, width:float) -> float:
+  def _fm_centered_text(
+    self, text:str, size_pt:float, family:str, mode:str, color:tuple,
+    x_offset:float, width:float,
+  ) -> float:
     """Centered text. Returns actual rendered height in mm."""
     pdf = self.pdf
     segs = [RichSegment(text=text, family=family, mode=mode, size=size_pt, color=color)]
     h = render_rich(pdf, segs, width, x_offset, pdf.y, Align.CENTER, 1.0)
     return h or (size_pt / MM_TO_PT)
 
-  def _fm_meta_row(self, author:str|None, created:str, updated:str,
-      x_offset:float, width:float) -> float:
+  def _fm_meta_row(
+    self, author:str|None, created:str, updated:str,
+    x_offset:float, width:float,
+  ) -> float:
     """Two-row meta block:
       Row 1: created (right-aligned)
       Row 2: author (left) | updated (right)
@@ -532,8 +546,10 @@ class FrontmatterMixin:
     drawing.scale(scale, scale)
     renderPDF.draw(drawing, c, x_pt, y_pt)
 
-  def _draw_code_inline(self, c, text:str, font:str, size:float,
-    x_pt:float, baseline_y_pt:float, anchor:str="left"):
+  def _draw_code_inline(
+    self, c, text:str, font:str, size:float,
+    x_pt:float, baseline_y_pt:float, anchor:str="left",
+  ):
     """Draw text in inline-code style: rounded light-grey background,
     code_inline_color foreground, mono font. Anchor is `"left"` or `"right"`.
     """
@@ -577,8 +593,10 @@ class FrontmatterMixin:
         hi = mid - 1
     return text[:lo].rstrip() + ellipsis
 
-  def _draw_status_badge(self, c, status:str, x_pt:float, y_pt:float,
-    anchor:str="center") -> float:
+  def _draw_status_badge(
+    self, c, status:str, x_pt:float, y_pt:float,
+    anchor:str="center",
+  ) -> float:
     """Draw a small colored badge with the status text.
     `status` is lowercased to look up `style.banner_status_colors`.
     Returns badge width in pt.

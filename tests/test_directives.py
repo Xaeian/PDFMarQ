@@ -4,17 +4,20 @@
 
 import warnings
 import pytest
-from conftest import assert_valid_pdf, assert_valid_docx
+from conftest import assert_valid_pdf, assert_valid_docx, needs_twin
 from pdfmarq.md import md_to_pdf
 from pdfmarq.md.md_html import (
   is_pagebreak_directive, is_group_open_directive, is_group_close_directive,
 )
-from docmarq.md import md_to_docx
-from docmarq.md.tokens import (
-  is_pagebreak_directive as docx_is_pb,
-  is_group_open_directive as docx_is_go,
-  is_group_close_directive as docx_is_gc,
-)
+try:
+  from docmarq.md import md_to_docx
+  from docmarq.md.tokens import (
+    is_pagebreak_directive as docx_is_pb,
+    is_group_open_directive as docx_is_go,
+    is_group_close_directive as docx_is_gc,
+  )
+except ImportError:  # the twin ships separately; `needs_twin` skips what needs it
+  md_to_docx = docx_is_pb = docx_is_go = docx_is_gc = None
 
 #------------------------------------------------------------------------------ Directive detectors
 
@@ -27,6 +30,7 @@ from docmarq.md.tokens import (
   ("<!-- pagebreaks -->\n", False),
   ("<!-- page break -->\n", False),
 ])
+@needs_twin
 def pagebreak_detector_matches_both_libs(content, expected):
   assert is_pagebreak_directive(content) is expected
   assert docx_is_pb(content) is expected
@@ -38,6 +42,7 @@ def pagebreak_detector_matches_both_libs(content, expected):
   ("<!-- /group -->\n", False),
   ("<!-- group xxx -->\n", False),
 ])
+@needs_twin
 def group_open_detector_matches_both_libs(content, expected):
   assert is_group_open_directive(content) is expected
   assert docx_is_go(content) is expected
@@ -48,6 +53,7 @@ def group_open_detector_matches_both_libs(content, expected):
   ("<!--  / group  -->\n", True),
   ("<!-- group -->\n", False),
 ])
+@needs_twin
 def group_close_detector_matches_both_libs(content, expected):
   assert is_group_close_directive(content) is expected
   assert docx_is_gc(content) is expected
@@ -61,6 +67,7 @@ def pagebreak_pdf_forces_new_page(tmp_path):
   assert pdf.page_num == 2
   assert_valid_pdf(path)
 
+@needs_twin
 def pagebreak_docx_produces_valid_doc(tmp_path):
   src = "First.\n\n<!-- pagebreak -->\n\nSecond."
   path = tmp_path / "pb.docx"
@@ -103,6 +110,7 @@ def group_oversized_renders_without_break(tmp_path):
   assert pdf.page_num >= 2
   assert_valid_pdf(path)
 
+@needs_twin
 def group_docx_sets_keep_with_next(tmp_path):
   # docmarq encodes group as `<w:keepNext/>` on each paragraph except last
   src = "<!-- group -->\n\nA.\n\nB.\n\n<!-- /group -->\n\nC."
@@ -126,6 +134,7 @@ def stray_close_emits_warning_pdf(tmp_path):
   assert msgs, "expected stray-close warning"
   assert_valid_pdf(path)
 
+@needs_twin
 def stray_close_emits_warning_docx(tmp_path):
   src = "A.\n\n<!-- /group -->\n\nB."
   path = tmp_path / "stray.docx"

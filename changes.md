@@ -1,5 +1,13 @@
 # Changes `pdfmarq`
 
+## `0.5.1` Image sizing
+
+- Block images fill the text width down to `image_min_dpi`
+- Images alone in a paragraph become a row of figures, wrapping into a grid
+- Mermaid diagrams size like any other figure
+- `inline_image_max_h` applies, scaled off the surrounding font
+- Fix: `max_h` ignored for block SVG
+
 ## `0.5.0` Vector math
 
 - MathJax engine: formulas stay vector, with `\underbrace`, `cases`, `substack` and stretchable delimiters

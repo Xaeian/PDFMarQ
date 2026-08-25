@@ -12,7 +12,42 @@ from markdown_it.token import Token
 import re
 from ..inline import RichSegment, render_rich, measure_rich, wrap_line_heights
 from ..constants import Align, MM_TO_PT
-from .md_images import load_image_info, size_block, size_inline
+from .md_images import (ImageDSL, ImageInfo, apply_dsl, load_image_info,
+  size_block, size_inline)
+
+#---------------------------------------------------------------------------------- Image paragraph
+
+_ROW_MIN_SLOT_MM = 20  # figures narrower than this wrap to another row
+
+def _image_row(inline_token:Token) -> list[Token]|None:
+  """Image children of a paragraph holding nothing but local images.
+  Anything else gives `None`, a remote reference included: it has no file to size."""
+  imgs = []
+  for c in inline_token.children or []:
+    if c.type == "image":
+      src = _image_ref(c)[0]
+      if not src or src.startswith(("http://", "https://", "data:")): return None
+      imgs.append(c)
+    elif c.type in ("softbreak", "hardbreak"): continue
+    elif c.type == "text" and not c.content.strip(): continue
+    else: return None
+  return imgs or None
+
+def _image_ref(img:Token) -> tuple[str, str, dict]:
+  """`(src, alt, attrs)` of an image token, whatever shape markdown-it left `attrs` in."""
+  attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
+  return attrs.get("src", ""), img.content or "", attrs
+
+def _row_columns(avail_mm:float, gap_mm:float) -> int:
+  """How many figures fit across before each falls below `_ROW_MIN_SLOT_MM`."""
+  return max(1, int((avail_mm + gap_mm) // (_ROW_MIN_SLOT_MM + gap_mm)))
+
+def _split_rows(n:int, cols:int) -> list[int]:
+  """Row sizes for `n` figures: balanced, none wider than `cols`.
+  Eight figures over seven columns is `4+4`, not `7+1`."""
+  rows = -(-n // cols)
+  base, extra = divmod(n, rows)
+  return [base + (i < extra) for i in range(rows)]
 
 #------------------------------------------------------------------------------------- Line fitting
 
@@ -168,17 +203,10 @@ class BlocksMixin:
   
   def _render_paragraph(self, inline_token:Token):
     s = self.style
-    # Paragraph with just a single image → render as block image
-    children = inline_token.children or []
-    non_trivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
-    if len(non_trivial) == 1 and non_trivial[0].type == "image":
-      img = non_trivial[0]
-      img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
-      src = img_attrs.get("src", "")
-      alt = img.content or ""
-      if src and not src.startswith(("http://", "https://")):
-        self._render_block_image(src, alt, attrs=img_attrs)
-        return
+    imgs = _image_row(inline_token)
+    if imgs:
+      self._render_images(imgs)
+      return
     base = RichSegment(
       text="", family=s.font_body, mode=s.body_mode,
       size=s.body_size, color=s.body_color,
@@ -327,8 +355,8 @@ class BlocksMixin:
     info = load_image_info(src, attrs=attrs, default_dpi=self.style.image_dpi)
     if info is None:
       return None
-    # Inline cap derives from font size with a 2.0× factor (LaTeX 2ex idiom).
-    inline_cap_mm = fontsize_pt * 2.0 / MM_TO_PT
+    # `inline_image_max_h` is set for body text; smaller print scales with it.
+    inline_cap_mm = self.style.inline_image_max_h * fontsize_pt / self.style.body_size
     w_mm, h_mm = size_inline(info, inline_cap_mm)
     w_pt, h_pt = w_mm * MM_TO_PT, h_mm * MM_TO_PT
     try:
@@ -352,12 +380,10 @@ class BlocksMixin:
       return None
 
   def _render_block_image(self, src:str, alt:str, attrs:dict|None=None):
-    """Render a paragraph-level image, sized via `size_block` rules.
-    Centered horizontally in the available content area."""
+    """Render a paragraph-level image, sized via `size_block` rules."""
     s = self.style
     pdf = self.pdf
     x_start = self._indent_mm
-    avail_w_mm = pdf.content_width - x_start
     src = self._resolve_image_path(src)
     info = load_image_info(src, attrs=attrs, alt=alt, default_dpi=s.image_dpi)
     if info is None:
@@ -367,66 +393,86 @@ class BlocksMixin:
         size=s.body_size, color=s.muted_color,
       )
       y = pdf.y
-      render_rich(pdf, [base], avail_w_mm, x_start, y, Align.LEFT, s.line_height)
+      render_rich(pdf, [base], pdf.content_width - x_start, x_start, y,
+        Align.LEFT, s.line_height)
       pdf.cursor(x_start, y + s.body_size * s.line_height / MM_TO_PT + s.para_gap)
       return
-    img_w_mm, img_h_mm = size_block(
-      info, avail_w_mm, s.image_max_h,
-      svg_fill_width=s.svg_block_fill_width,
-    )
-    self._ensure_space(img_h_mm + s.para_gap)
-    y = pdf.y
-    # DSL align overrides default center.
-    if info.align == "L":
-      x = x_start
-    elif info.align == "R":
-      x = x_start + (avail_w_mm - img_w_mm)
-    else:
-      x = x_start + (avail_w_mm - img_w_mm) / 2
-    pdf.cursor(x, y)
-    if info.is_svg:
-      pdf.svg(info.src, img_w_mm, img_h_mm)
-    else:
-      pdf.image(info.src, img_w_mm, img_h_mm)
-    pdf.cursor(x_start, y + img_h_mm + s.para_gap)
+    self._draw_figure(info)
 
-  def _render_mermaid_image(self, png_path:str, w_pt:float, h_pt:float, dsl=None):
-    """Embed a mermaid PNG. `dsl` mirrors `![](src "DSL")` image semantics."""
-    from .md_images import _clamp_no_upscale
+  def _draw_figure(self, info:ImageInfo):
+    """Size one block figure to the content width and draw it.
+    Centred unless the DSL says `align=L/R`."""
     s = self.style
     pdf = self.pdf
     x_start = self._indent_mm
     avail_w_mm = pdf.content_width - x_start
-    nat_w_mm = w_pt / MM_TO_PT
-    nat_h_mm = h_pt / MM_TO_PT
-    # DSL precedence: scale > explicit w/h > max_* caps.
-    ew_mm, eh_mm = nat_w_mm, nat_h_mm
-    max_w_cap = avail_w_mm
-    max_h_cap = s.image_max_h
-    align = "C"
-    if dsl is not None and getattr(dsl, "is_dsl", False):
-      if dsl.scale is not None:
-        ew_mm = nat_w_mm * dsl.scale
-        eh_mm = nat_h_mm * dsl.scale
-      else:
-        if dsl.exact_w_mm is not None:
-          ew_mm = dsl.exact_w_mm
-          eh_mm = nat_h_mm * (dsl.exact_w_mm / nat_w_mm) if nat_w_mm > 0 else eh_mm
-        if dsl.exact_h_mm is not None:
-          eh_mm = dsl.exact_h_mm
-          ew_mm = nat_w_mm * (dsl.exact_h_mm / nat_h_mm) if nat_h_mm > 0 else ew_mm
-      if dsl.max_w_mm is not None: max_w_cap = min(max_w_cap, dsl.max_w_mm)
-      if dsl.max_h_mm is not None: max_h_cap = min(max_h_cap, dsl.max_h_mm)
-      if dsl.align: align = dsl.align
-    img_w_mm, img_h_mm = _clamp_no_upscale(ew_mm, eh_mm, max_w_cap, max_h_cap)
-    self._ensure_space(img_h_mm + s.para_gap)
+    w, h = size_block(info, avail_w_mm, s.image_max_h,
+      svg_fill_width=s.svg_block_fill_width, min_dpi=s.image_min_dpi)
+    self._ensure_space(h + s.para_gap)
     y = pdf.y
-    if align == "L": x = x_start
-    elif align == "R": x = x_start + (avail_w_mm - img_w_mm)
-    else: x = x_start + (avail_w_mm - img_w_mm) / 2
+    if info.align == "L": x = x_start
+    elif info.align == "R": x = x_start + (avail_w_mm - w)
+    else: x = x_start + (avail_w_mm - w) / 2
     pdf.cursor(x, y)
-    pdf.image(png_path, img_w_mm, img_h_mm)
-    pdf.cursor(x_start, y + img_h_mm + s.para_gap)
+    if info.is_svg: pdf.svg(info.src, w, h)
+    else: pdf.image(info.src, w, h)
+    pdf.cursor(x_start, y + h + s.para_gap)
+
+  def _render_images(self, imgs:list[Token]):
+    """Draw an image-only paragraph: one figure, or a balanced grid of rows.
+    Never hands it back: a row that cannot be prepared becomes stacked figures."""
+    s = self.style
+    refs = [_image_ref(img) for img in imgs]
+    if len(refs) == 1:
+      self._render_block_image(refs[0][0], refs[0][1], attrs=refs[0][2])
+      return
+    avail_w_mm = self.pdf.content_width - self._indent_mm
+    sizes = _split_rows(len(refs), _row_columns(avail_w_mm, s.para_gap))
+    slot = (avail_w_mm - s.para_gap * (sizes[0] - 1)) / sizes[0]
+    start = 0
+    for count in sizes:
+      row = refs[start:start + count]
+      start += count
+      if not self._render_image_row(row, slot):
+        for src, alt, attrs in row:
+          self._render_block_image(src, alt, attrs=attrs)
+
+  def _render_image_row(self, refs:list[tuple], slot:float) -> bool:
+    """Lay one row of figures side by side, each in a `slot`-wide cell.
+    All-or-nothing: a file that will not load cancels the row."""
+    s = self.style
+    pdf = self.pdf
+    x_start = self._indent_mm
+    avail_w_mm = pdf.content_width - x_start
+    boxes = []
+    for src, alt, attrs in refs:
+      info = load_image_info(self._resolve_image_path(src), attrs=attrs, alt=alt,
+        default_dpi=s.image_dpi)
+      if info is None:
+        return False
+      w, h = size_block(info, slot, s.image_max_h,
+        svg_fill_width=s.svg_block_fill_width, min_dpi=s.image_min_dpi)
+      boxes.append((info, w, h))
+    row_h = max(h for _, _, h in boxes)
+    row_w = sum(w for _, w, _ in boxes) + s.para_gap * (len(boxes) - 1)
+    self._ensure_space(row_h + s.para_gap)
+    y = pdf.y
+    x = x_start + (avail_w_mm - row_w) / 2
+    for info, w, h in boxes:
+      pdf.cursor(x, y + (row_h - h) / 2)
+      if info.is_svg: pdf.svg(info.src, w, h)
+      else: pdf.image(info.src, w, h)
+      x += w + s.para_gap
+    pdf.cursor(x_start, y + row_h + s.para_gap)
+    return True
+
+  def _render_mermaid_image(self, png_path:str, w_pt:float, h_pt:float, dsl=None):
+    """Embed a mermaid PNG as a block figure, with `![](src "DSL")` semantics.
+    Marked `generated` because the diagram is vector at heart,
+    so its raster carries no resolution the width has to respect."""
+    info = ImageInfo(src=png_path, is_svg=False, generated=True,
+      nat_w_mm=w_pt / MM_TO_PT, nat_h_mm=h_pt / MM_TO_PT)
+    self._draw_figure(apply_dsl(info, dsl or ImageDSL()))
 
   #--------------------------------------------------------------------------------------------- HR
   

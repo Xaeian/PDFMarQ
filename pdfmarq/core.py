@@ -109,13 +109,13 @@ class PDF:
   """
   def __init__(
     self,
-    path: str,
-    width: float = Defaults.PAGE_WIDTH,
-    height: float = Defaults.PAGE_HEIGHT,
-    margin: float|tuple = Defaults.MARGIN,
-    unit: str = Defaults.UNIT,
-    font_dir: str = "./fonts",
-    debug: bool = False,
+    path:str,
+    width:float = Defaults.PAGE_WIDTH,
+    height:float = Defaults.PAGE_HEIGHT,
+    margin:float|tuple = Defaults.MARGIN,
+    unit:str = Defaults.UNIT,
+    font_dir:str = "./fonts",
+    debug:bool = False,
   ):
     self._path = path
     self.debug = debug
@@ -341,11 +341,11 @@ class PDF:
   
   def text(
     self,
-    content: str,
-    width: float = 0,
-    height: float = 0,
-    align: str|None = None,
-    padding: float = 0,
+    content:str,
+    width:float = 0,
+    height:float = 0,
+    align:str|None = None,
+    padding:float = 0,
   ) -> "PDF":
     """Draw text at cursor position."""
     if content is None:
@@ -514,12 +514,12 @@ class PDF:
   
   def table(
     self,
-    body: list[list[str]],
-    header: list[str]|None = None,
-    sizes: list[float]|None = None,
-    aligns: list[str]|None = None,
-    width: float|None = None,
-    style: TableStyle|None = None,
+    body:list[list[str]],
+    header:list[str]|None = None,
+    sizes:list[float]|None = None,
+    aligns:list[str]|None = None,
+    width:float|None = None,
+    style:TableStyle|None = None,
   ) -> "PDF":
     """Draw table at cursor."""
     style = style or TableStyle()
@@ -635,9 +635,11 @@ class PDF:
       to_mm(width, self.unit), to_mm(height, self.unit), self._page_num)
     return self
 
-  def metadata(self, title:str|None=None, author:str|None=None,
-      subject:str|None=None, keywords:str|None=None,
-      comments:str|None=None, category:str|None=None) -> "PDF":
+  def metadata(
+    self, title:str|None=None, author:str|None=None,
+    subject:str|None=None, keywords:str|None=None,
+    comments:str|None=None, category:str|None=None,
+  ) -> "PDF":
     """Set document metadata. `comments`/`category` accepted for parity
     with `DOCX.metadata()` but not emitted to the PDF /Info dict."""
     if title: self._metadata.title = title

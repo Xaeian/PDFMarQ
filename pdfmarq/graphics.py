@@ -9,10 +9,10 @@ from reportlab.graphics import renderPDF
 
 def draw_line(
   canvas,
-  x1: float, y1: float,
-  x2: float, y2: float,
-  width: float = 1,
-  dash: tuple|None = None,
+  x1:float, y1:float,
+  x2:float, y2:float,
+  width:float = 1,
+  dash:tuple|None = None,
 ):
   """Draw line on canvas (coordinates in pt)."""
   canvas.setLineWidth(width)
@@ -26,11 +26,11 @@ def draw_line(
 
 def draw_rect(
   canvas,
-  x: float, y: float,
-  width: float, height: float,
-  stroke_width: float = 0,
-  dash: tuple|None = None,
-  fill: bool = True,
+  x:float, y:float,
+  width:float, height:float,
+  stroke_width:float = 0,
+  dash:tuple|None = None,
+  fill:bool = True,
 ):
   """Draw rectangle on canvas (coordinates in pt)."""
   canvas.setLineWidth(stroke_width)
@@ -42,11 +42,11 @@ def draw_rect(
 
 def draw_round_rect(
   canvas,
-  x: float, y: float,
-  width: float, height: float,
-  radius: float,
-  stroke_width: float = 0,
-  fill: bool = True,
+  x:float, y:float,
+  width:float, height:float,
+  radius:float,
+  stroke_width:float = 0,
+  fill:bool = True,
 ):
   """Draw rectangle with rounded corners (coordinates in pt)."""
   canvas.setLineWidth(stroke_width)
@@ -59,10 +59,10 @@ def draw_round_rect(
 
 def draw_circle(
   canvas,
-  x: float, y: float,
-  radius: float,
-  stroke_width: float = 0,
-  fill: bool = True,
+  x:float, y:float,
+  radius:float,
+  stroke_width:float = 0,
+  fill:bool = True,
 ):
   """Draw circle on canvas (x, y = center, coordinates in pt)."""
   canvas.setLineWidth(stroke_width)
@@ -71,10 +71,10 @@ def draw_circle(
 
 def draw_path(
   canvas,
-  points: list[tuple[float, float]],
-  close: bool = False,
-  stroke_width: float = 1,
-  fill: bool = False,
+  points:list[tuple[float, float]],
+  close:bool = False,
+  stroke_width:float = 1,
+  fill:bool = False,
 ):
   """Draw path through points (coordinates in pt)."""
   if len(points) < 2:
@@ -93,18 +93,18 @@ def draw_path(
 
 def draw_image(
   canvas,
-  path: str|ImageReader,
-  x: float, y: float,
-  width: float, height: float,
+  path:str|ImageReader,
+  x:float, y:float,
+  width:float, height:float,
 ):
   """Draw image on canvas (coordinates in pt)."""
   canvas.drawImage(path, x, y, width=width, height=height, mask="auto")
 
 def draw_svg(
   canvas,
-  path: str,
-  x: float, y: float,
-  width: float, height: float,
+  path:str,
+  x:float, y:float,
+  width:float, height:float,
 ):
   """Draw SVG on canvas (coordinates in pt). Uses canvas-level transform
   (`saveState`/`translate`/`scale`/`restoreState`) so target size is

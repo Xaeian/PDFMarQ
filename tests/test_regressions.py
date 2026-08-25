@@ -395,7 +395,7 @@ class TestSvgFlatten(unittest.TestCase):
     self.assertIsNotNone(out)
     self.assertEqual(0, out.count("transform="))
     self.assertEqual(1, out.count("<svg"), "nested viewport still present")
-    # x: 100 + 0..100 * (50/100) -> 100..150; y: 10 + 0..40 * (20/40) -> 10..30
+    # x: 100 + 0..100 * (50/100) → 100..150; y: 10 + 0..40 * (20/40) → 10..30
     self.assertIn("100 10", out)
     self.assertIn("150 30", out)
 
@@ -436,7 +436,7 @@ class TestSvgFlatten(unittest.TestCase):
       '<text font-size="10">x</text></g></svg>')
     self.assertIsNone(self.flat(svg))
 
-#--------------------------------------------------------------------------------- MathJax fonts
+#------------------------------------------------------------------------------------ MathJax fonts
 
 @NEEDS_MATHJAX
 class TestMathJaxFonts(unittest.TestCase):

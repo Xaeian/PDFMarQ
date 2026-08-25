@@ -53,8 +53,10 @@ class MarkdownRenderer(
 ):
   """Render a markdown-it token stream onto a `PDF` instance."""
 
-  def __init__(self, pdf:PDF, style:MarkdownStyle|None=None,
-      base_dir:str|None=None):
+  def __init__(
+    self, pdf:PDF, style:MarkdownStyle|None=None,
+    base_dir:str|None=None,
+  ):
     import os
     self.pdf = pdf
     self.style = style or MarkdownStyle()
@@ -70,7 +72,7 @@ class MarkdownRenderer(
     self._list_depth = 0
     self._eq_counter = 0
     self._known_slugs: set = set()  # populated by render() pre-scan
-    self._slug_uses: dict = {} # slug -> times used, for numbering repeats
+    self._slug_uses: dict = {} # slug → times used, for numbering repeats
     self._chrome_registered = False  # page callbacks are registered once
     # Math font config is applied per-render-call (MathFontConfig.apply()), not
     # at init, so multiple renderers with different fontsets don't clobber
@@ -391,16 +393,16 @@ def _skip_matching_h1(tokens:list[Token], title:str) -> list[Token]:
 #---------------------------------------------------------------------------------------- md_to_pdf
 
 def md_to_pdf(
-  md_text: str,
-  output_path: str,
+  md_text:str,
+  output_path:str,
   *,
-  style: MarkdownStyle|None = None,
-  page: PageSize = A4,
-  margin: float|tuple = 20,
-  gutter: float = 0,
-  base_dir: str|None = None,
-  font_dir: str|None = None,
-  metadata: dict|None = None,
+  style:MarkdownStyle|None = None,
+  page:PageSize = A4,
+  margin:float|tuple = 20,
+  gutter:float = 0,
+  base_dir:str|None = None,
+  font_dir:str|None = None,
+  metadata:dict|None = None,
 ) -> PDF:
   """Convert markdown text to PDF file.
 

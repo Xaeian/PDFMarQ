@@ -48,8 +48,10 @@ def _ensure_cache():
   _CACHE_DIR.mkdir(parents=True, exist_ok=True)
   return _CACHE_DIR
 
-def _cache_key(code:str, theme:str, background:str, scale:float,
-    font_family:str="", font_dir:str="", cli:str="") -> str:
+def _cache_key(
+  code:str, theme:str, background:str, scale:float,
+  font_family:str="", font_dir:str="", cli:str="",
+) -> str:
   """SHA-1 over every input that affects rendering. Different theme, bg,
   scale, font (family *and* directory - same family name can resolve to a
   different TTF) or cli must produce a different cache file.
@@ -153,9 +155,11 @@ def _puppeteer_config() -> str|None:
 
 #----------------------------------------------------------------------------- Backend: mermaid-cli
 
-def _try_mmdc(code:str, out_path:Path, *, cli:str, theme:str,
-    background:str, scale:float,
-    font_family:str|None=None, font_dir:str|None=None) -> bool:
+def _try_mmdc(
+  code:str, out_path:Path, *, cli:str, theme:str,
+  background:str, scale:float,
+  font_family:str|None=None, font_dir:str|None=None,
+) -> bool:
   """Render via local mermaid-cli. Returns `True` on success.
   When `font_family`+`font_dir` are set and a matching TTF is found, a
   temp CSS file with `@font-face` is injected via `--cssFile`."""
@@ -207,8 +211,10 @@ def _warn_remote_once() -> None:
     RuntimeWarning, stacklevel=3,
   )
 
-def _try_mermaid_ink(code:str, out_path:Path, *, theme:str,
-    background:str) -> bool:
+def _try_mermaid_ink(
+  code:str, out_path:Path, *, theme:str,
+  background:str,
+) -> bool:
   """Render via mermaid.ink HTTP service. Returns `True` on success.
   Internal `scale` is capped at 3 by the API regardless of mmdc setting."""
   _warn_remote_once()
@@ -239,10 +245,11 @@ def _try_mermaid_ink(code:str, out_path:Path, *, theme:str,
 
 #--------------------------------------------------------------------------------------- Public API
 
-def render_mermaid(code:str, *, cli:str="mmdc", theme:str="default",
-    background:str="transparent", scale:float=3,
-    font_family:str|None=None, font_dir:str|None=None,
-    remote:bool=True,
+def render_mermaid(
+  code:str, *, cli:str="mmdc", theme:str="default",
+  background:str="transparent", scale:float=3,
+  font_family:str|None=None, font_dir:str|None=None,
+  remote:bool=True,
 ) -> tuple[str, float, float]|None:
   """Render a mermaid diagram to a PNG file.
 
