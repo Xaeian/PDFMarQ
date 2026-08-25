@@ -85,22 +85,6 @@ def load_image_info(
       else dict(attrs).get("title"))
   return apply_dsl(info, parse_image_dsl(title))
 
-def apply_dsl(info:ImageInfo, dsl:ImageDSL) -> ImageInfo:
-  """Fold a parsed title DSL into `info` and return it.
-  `scale` wins absolutely, `w`/`h` override the flow, `max_*` stay soft caps."""
-  if not dsl.is_dsl:
-    return info
-  if dsl.scale is not None:
-    info.explicit_w_mm = info.nat_w_mm * dsl.scale
-    info.explicit_h_mm = info.nat_h_mm * dsl.scale
-  else:
-    if dsl.exact_w_mm is not None: info.explicit_w_mm = dsl.exact_w_mm
-    if dsl.exact_h_mm is not None: info.explicit_h_mm = dsl.exact_h_mm
-  info.dsl_max_w_mm = dsl.max_w_mm
-  info.dsl_max_h_mm = dsl.max_h_mm
-  info.align = dsl.align
-  return info
-
 def _load_svg_dims(src:str) -> tuple[float, float, bool, None]|None:
   """Returns `(w_mm, h_mm, dimensionless, None)`. `dimensionless=True` when the
   SVG declares neither intrinsic dims nor viewBox - render context decides
@@ -222,6 +206,22 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
     elif key == "max_h": out.max_h_mm = fv
     elif key == "scale": out.scale = fv
   return out
+
+def apply_dsl(info:ImageInfo, dsl:ImageDSL) -> ImageInfo:
+  """Fold a parsed title DSL into `info` and return it.
+  `scale` wins absolutely, `w`/`h` override the flow, `max_*` stay soft caps."""
+  if not dsl.is_dsl:
+    return info
+  if dsl.scale is not None:
+    info.explicit_w_mm = info.nat_w_mm * dsl.scale
+    info.explicit_h_mm = info.nat_h_mm * dsl.scale
+  else:
+    if dsl.exact_w_mm is not None: info.explicit_w_mm = dsl.exact_w_mm
+    if dsl.exact_h_mm is not None: info.explicit_h_mm = dsl.exact_h_mm
+  info.dsl_max_w_mm = dsl.max_w_mm
+  info.dsl_max_h_mm = dsl.max_h_mm
+  info.align = dsl.align
+  return info
 
 #------------------------------------------------------------------------------------- Sizing rules
 
