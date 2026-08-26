@@ -136,6 +136,7 @@ def inline_code_keeps_its_backslashes():
 def tagged_block_renders_with_its_own_label(tmp_path):
   # `\tag{...}` must never reach the engine: MathJax drew it as a giant glyph
   # across the page, mathtext fell back to a code block
+  pytest.importorskip("fitz", reason="PyMuPDF not installed")
   from conftest import pdf_text
   src = "$$\nE = I R\n" + r"\tag{X1.1}" + "\n$$"
   path = tmp_path / "tag.pdf"
