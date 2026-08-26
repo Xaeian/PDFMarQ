@@ -490,18 +490,20 @@ class BlocksMixin:
   #------------------------------------------------------------------------------------- Math block
   
   def _render_math_block(self, formula:str):
-    """Render a block-level math formula centered with auto-numbering."""
+    """Render a block-level math formula, centered. Numbered on the right:
+    a `\tag{...}` names the label, otherwise the auto counter does."""
     s = self.style
     try:
-      from .math import render_math_svg
+      from .math import pop_tag, render_math_svg
       from reportlab.graphics import renderPDF
     except ImportError:
       from .._warn import warn_missing
       warn_missing("matplotlib", "matplotlib", "block math formulas")
       self._render_code_block(formula, "")
       return
+    formula, tag = pop_tag(formula)
     drawing = render_math_svg(
-      formula.strip(), fontsize=s.body_size * 1.1, color=s.body_color,
+      formula.strip(), fontsize=s.body_size, color=s.body_color,
       config=getattr(self, "_math_config", None),
       engine=s.math_engine, font=s.math_font,
     )
@@ -514,7 +516,12 @@ class BlocksMixin:
     w_pt = drawing.width
     h_pt = drawing.height
     h_mm = h_pt / MM_TO_PT
-    self.pdf.enter(s.math_block_gap)
+    # The paragraph above ends with its line leading; the drawing carries
+    # none. A quarter of it is pulled back, so the formula keeps slightly
+    # more air above than below without doubling the gap.
+    lead_mm = (s.line_height - 1) * s.body_size / MM_TO_PT / 4
+    if self.pdf.y > lead_mm:
+      self.pdf.cursor(self._indent_mm, self.pdf.y - lead_mm)
     self._ensure_space(h_mm + s.math_block_gap)
     x_center_offset_pt = (content_w_pt - w_pt) / 2
     page = self.pdf._page
@@ -523,10 +530,11 @@ class BlocksMixin:
     x_pt = x_abs_mm * MM_TO_PT + x_center_offset_pt
     y_pt = y_abs_mm * MM_TO_PT
     renderPDF.draw(drawing, self.pdf._canvas, x_pt, y_pt)
-    if s.math_numbering:
-      self._eq_counter += 1
+    if tag or s.math_numbering:
+      if tag is None:
+        self._eq_counter += 1
       num_seg = RichSegment(
-        text=f"({self._eq_counter})", family=s.font_body, mode=s.body_mode,
+        text=tag or f"({self._eq_counter})", family=s.font_body, mode=s.body_mode,
         size=s.body_size, color=s.body_color,
       )
       num_y = self.pdf.y + h_mm / 2 - s.body_size * 0.35 / MM_TO_PT

@@ -1,5 +1,11 @@
 # Changes `pdfmarq`
 
+## `0.5.2` Math input
+
+- LaTeX math delimiters `\[...\]` and `\(...\)` accepted
+- `\tag{...}` becomes the equation label instead of reaching the engine
+- Block equations sit at body size with even spacing, matching inline math
+
 ## `0.5.1` Image sizing
 
 - Block images fill the text width down to `image_min_dpi`

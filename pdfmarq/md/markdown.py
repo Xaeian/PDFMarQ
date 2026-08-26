@@ -143,6 +143,8 @@ class MarkdownRenderer(
         self.pdf.on_final_page(self._render_page_number)
     md_text = self._normalize_list_indent(md_text)
     md_text = self._emojize_outside_code(md_text)
+    from .md_preprocess import normalize_math_delimiters
+    md_text = normalize_math_delimiters(md_text)
     tokens = self._md.parse(md_text)
     if self.style.skip_dup_title and fm_rendered_title:
       tokens = _skip_matching_h1(tokens, str(fm_rendered_title))

@@ -1,22 +1,34 @@
 # PDFMarQ
 
-PDF generation with a fluent API. Core is lean _(reportlab + Pillow + svglib)_. Optional `[md]` extra adds full markdown-to-PDF rendering with banner headers, math, mermaid, syntax highlighting and more.
+PDF generation with a fluent API. Core is lean _(reportlab + Pillow + svglib)_.
+Optional `[md]` extra adds full markdown-to-PDF rendering with banner headers, math, mermaid, syntax highlighting and more.
 
 ## Philosophy
 
-PDFMarQ wraps reportlab's stateful canvas into a fluent, cursor-based API. You describe document flow, not coordinates. Markdown rendering lives in a separate subpackage so the core stays installable without heavyweight dependencies.
+PDFMarQ wraps reportlab's stateful canvas into a fluent, cursor-based API.
+You describe document flow, not coordinates.
+Markdown rendering lives in a separate subpackage so the core stays installable without heavyweight dependencies.
 
-- **Fluent over imperative**: `pdf.font("Helvetica", 12).text("Hi").enter().text("World")` vs `canvas.setFont() → canvas.drawString() → manual Y tracking`
+- **Fluent over imperative**: `pdf.font("Helvetica", 12).text("Hi").enter().text("World")`
+  vs `canvas.setFont() → canvas.drawString() → manual Y tracking`
 - **Cursor flows naturally**: top-left origin, `y` grows down, `enter()` is a newline
 - **One way per feature**: `pdf.table()`, `pdf.image()`, `pdf.svg()`, `pdf.link()`, no overloaded call signatures
 - **Markdown is optional**: core → 3 deps, `[md]` adds the stack
 - **Banner as contract**: YAML frontmatter block becomes a styled banner with logo, status badge, version, dates, signature slot
-- **Lean output**: no headless Chrome, no web stack, no React SSR. Pure Python + native PDF primitives. Files stay small, rendering stays fast, fonts are embedded properly, and the output opens clean in every PDF reader
+- **Lean output**: no headless Chrome, no web stack, no React SSR.
+  Pure Python + native PDF primitives.
+  Files stay small, rendering stays fast, fonts are embedded properly, and the output opens clean in every PDF reader
 
 Trade-offs:
-- Cursor mutation is a state machine. Great for linear documents, awkward for complex grid layouts. For those, drop into raw reportlab via `pdf._canvas`.
-- Markdown rendering estimates heights analytically to decide page breaks. Good enough for 95% of content. Edge cases with math + wide tables may push onto the next page more aggressively than necessary.
-- Installing Python + a stack of deps is a barrier for non-technical users. If you're building a tool end-users will actually touch, put PDFMarQ behind a backend service _(FastAPI endpoint, CLI wrapper, desktop app)_ rather than asking them to `pip install` anything.
+- Cursor mutation is a state machine.
+  Great for linear documents, awkward for complex grid layouts.
+  For those, drop into raw reportlab via `pdf._canvas`.
+- Markdown rendering estimates heights analytically to decide page breaks.
+  Good enough for 95% of content.
+  Edge cases with math + wide tables may push onto the next page more aggressively than necessary.
+- Installing Python + a stack of deps is a barrier for non-technical users.
+  If you're building a tool end-users will actually touch, put PDFMarQ behind a backend service
+  _(FastAPI endpoint, CLI wrapper, desktop app)_ rather than asking them to `pip install` anything.
 
 ## Install
 
@@ -54,13 +66,15 @@ style = MarkdownStyle(
 md_to_pdf(open("doc.md").read(), "doc.pdf", style=style, font_dir="./fonts")
 ```
 
-See [`example.py`](example.py) for an end-to-end CLI script: language preset, custom TTF fonts from `./fonts/`, `link_root` for cross-document references, `base_dir` for relative images, and optional Ghostscript post-compression.
+See [`example.py`](https://github.com/Xaeian/PDFMarQ/blob/main/example.py) for an end-to-end CLI script.
+It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for cross-document references,
+`base_dir` for relative images, and optional Ghostscript post-compression.
 
 ## Markdown features
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block)_
-- Page geometry, fonts, banner toggles and locale come from the caller's `style=`, never from the document _(see [`md-guide`](md-guide.md))_
+- Page geometry, fonts, banner toggles and locale come from the caller's `style=`, never from the document _(see [`md-guide`](https://github.com/Xaeian/PDFMarQ/blob/main/md-guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
@@ -68,7 +82,9 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 - Auto-slugged headings with clickable `[text](#anchor)` internal links _(unicode-aware, broken targets degrade to plain text)_
 - Local-path links configurable via `link_root` + `link_base` _(or per-doc YAML `base:`)_
 - Syntax highlighting _(Pygments)_
-- Math formulas inline `$x^2$` and block `$$...$$` _(matplotlib)_
+- Math formulas inline `$x^2$` and block `$$...$$`, drawn as vectors _(MathJax, matplotlib fallback)_
+- Images sized from their own resolution, capped by `image_max_h`, centred
+- Images alone in a paragraph become a row of figures, wrapping into a grid beyond the text width
 - Mermaid diagrams via `mermaid-cli` _(local)_ or `mermaid.ink` _(network fallback)_, capped at a configurable max height
 - Footnotes, emoji shortcodes `:rocket:`, nested lists, blockquotes, GitHub callouts _(`> [!NOTE]`, `> [!WARNING]`, …)_
 - Zebra-striped tables _(subtle, readability without noise)_
@@ -77,11 +93,14 @@ See [`example.py`](example.py) for an end-to-end CLI script: language preset, cu
 
 ## Modules
 
-| Module       | Description                                        | Docs                                         |
-| ------------ | -------------------------------------------------- | -------------------------------------------- |
-| `pdfmarq`    | Core PDF API _(fluent cursor-based drawing)_       | [pdfmarq/readme.md](pdfmarq/readme.md)       |
-| `pdfmarq.md` | Markdown-to-PDF renderer _(optional `[md]` extra)_ | [pdfmarq/md/readme.md](pdfmarq/md/readme.md) |
+| Module       | Description                                        | Docs                                                                                     |
+| ------------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `pdfmarq`    | Core PDF API _(fluent cursor-based drawing)_       | [pdfmarq/readme.md](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/readme.md)       |
+| `pdfmarq.md` | Markdown-to-PDF renderer _(optional `[md]` extra)_ | [pdfmarq/md/readme.md](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/md/readme.md) |
 
 ## See also
 
-Need `.docx` instead of PDF? Check [**DocMarQ**](https://github.com/Xaeian/DocMarQ), the sibling library with the same API shape and `.docx` output. Syntax highlighting is PDF-only, and math there covers a wider slice of LaTeX _(DocMarQ emits native Word equations for the common subset)_. Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.
+Need `.docx` instead of PDF?
+Check [**DocMarQ**](https://github.com/Xaeian/docmarq), the sibling library with the same API shape and `.docx` output.
+Syntax highlighting is PDF-only, and math there covers a wider slice of LaTeX _(DocMarQ emits native Word equations for the common subset)_.
+Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.

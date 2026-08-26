@@ -250,6 +250,24 @@ _CROP_PAD_IN = 0.005
 
 #------------------------------------------------------------------------------------------- Render
 
+#----------------------------------------------------------------------------------- Tag extraction
+_TAG_SPLIT_RE = _re.compile(r"\\tag(\*?)\{([^{}]*)\}")
+
+def pop_tag(formula:str) -> tuple[str, str|None]:
+  r"""Split a `\tag{...}` out of a display formula.
+
+  Returns `(formula_without_tag, label)` - `label` is `(X1.1)` for `\tag`,
+  bare for `\tag*`, `None` when there is no tag. Neither engine typesets
+  `\tag`; the renderer prints the label where the equation number goes.
+  """
+  m = _TAG_SPLIT_RE.search(formula)
+  if m is None:
+    return formula, None
+  label = m.group(2).strip()
+  if not m.group(1):
+    label = f"({label})"
+  return (formula[:m.start()] + formula[m.end():]).strip(), label
+
 def render_math_svg(
   formula:str,
   fontsize:float = 11,

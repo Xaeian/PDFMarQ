@@ -1,10 +1,11 @@
 # pdfmarq/md/md_preprocess.py
 
-"""Source text preprocessors run before markdown-it parsing.
+r"""Source text preprocessors run before markdown-it parsing.
 
 - `_iter_content_lines`   fence-aware line iterator used by other preprocessors
 - `_normalize_list_indent` 2-space list indent → 4-space (markdown-it requires 4)
 - `_emojize_outside_code`  `:shortcode:` → Unicode emoji, respecting code blocks
+- `normalize_math_delimiters` LaTeX `\[...\]` / `\(...\)` → `$$` / `$...$`
 """
 import re
 
@@ -81,3 +82,41 @@ class PreprocessMixin:
         parts[i] = _emoji.emojize(parts[i], language="alias")
       out.append("`".join(parts))
     return "\n".join(out)
+
+#---------------------------------------------------------------------------------- Math delimiters
+
+_MATH_INLINE_RE = re.compile(r"\\\((.+?)\\\)")
+_MATH_BLOCK_LINE_RE = re.compile(r"^(\s*)\\\[\s*(.+?)\s*\\\]\s*$")
+
+def normalize_math_delimiters(md_text:str) -> str:
+  r"""LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
+
+  The bracket forms are what LaTeX sources and AI assistants emit; only the
+  dollar forms reach the parser. Fenced code passes through untouched and
+  inline code spans keep their backslashes.
+  """
+  out: list[str] = []
+  in_fence = False
+  for line in md_text.split("\n"):
+    stripped = line.strip()
+    if in_fence:
+      out.append(line)
+      if stripped.startswith(("```", "~~~")): in_fence = False
+      continue
+    if stripped.startswith(("```", "~~~")):
+      in_fence = True
+      out.append(line)
+      continue
+    indent = line[:len(line) - len(line.lstrip())]
+    if stripped in ("\\[", "\\]"):
+      out.append(indent + "$$")
+      continue
+    m = _MATH_BLOCK_LINE_RE.match(line)
+    if m:
+      out.extend([m.group(1) + "$$", m.group(1) + m.group(2), m.group(1) + "$$"])
+      continue
+    parts = line.split("`")
+    for i in range(0, len(parts), 2):
+      parts[i] = _MATH_INLINE_RE.sub(lambda x: "$" + x.group(1).strip() + "$", parts[i])
+    out.append("`".join(parts))
+  return "\n".join(out)

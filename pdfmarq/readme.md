@@ -1,7 +1,7 @@
 # `pdfmarq`
 
 Fluent PDF generation. Built on reportlab with a cursor-based flow model.
-Sibling library: [`docmarq`](../docmarq/readme.md) - same API shape for DOCX.
+Sibling library: [`docmarq`](https://github.com/Xaeian/DocMarQ) - same API shape for DOCX.
 
 ## `PDF` context
 
@@ -211,5 +211,5 @@ slugs the GitHub way. See [`md/readme.md`](md/readme.md).
 
 ## Compression
 
-Not this library's job. Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Xaeian)
+Not this library's job. Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Python)
 on the saved file.

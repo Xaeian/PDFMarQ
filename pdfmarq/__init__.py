@@ -17,7 +17,7 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"

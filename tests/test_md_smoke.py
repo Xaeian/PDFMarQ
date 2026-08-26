@@ -99,3 +99,49 @@ def md_two_renderers_keep_independent_fontsets(tmp_path):
   md_to_pdf(src, str(tmp_path / "stix2.pdf"), style=MarkdownStyle(math_fontset="stix"))
   for name in ("stix.pdf", "cm.pdf", "stix2.pdf"):
     assert_valid_pdf(tmp_path / name)
+
+#--------------------------------------------------------------------------- Math tags & delimiters
+
+def pop_tag_extracts_the_label():
+  from pdfmarq.md.math import pop_tag
+  assert pop_tag(r"E = I R \tag{X1.1}") == ("E = I R", "(X1.1)")
+  assert pop_tag("x^2") == ("x^2", None)
+
+def pop_tag_star_keeps_the_label_bare():
+  from pdfmarq.md.math import pop_tag
+  assert pop_tag(r"a + b \tag*{7a}") == ("a + b", "7a")
+
+def bracket_block_becomes_dollar_block():
+  from pdfmarq.md.md_preprocess import normalize_math_delimiters as norm
+  assert norm("\\[\nE = I R\n\\]") == "$$\nE = I R\n$$"
+
+def bracket_block_on_one_line_expands():
+  from pdfmarq.md.md_preprocess import normalize_math_delimiters as norm
+  assert norm(r"\[ E = I R \]") == "$$\nE = I R\n$$"
+
+def bracket_inline_becomes_dollars():
+  from pdfmarq.md.md_preprocess import normalize_math_delimiters as norm
+  assert norm(r"wzor \( x^2 \) w zdaniu") == "wzor $x^2$ w zdaniu"
+
+def fenced_code_keeps_its_backslashes():
+  from pdfmarq.md.md_preprocess import normalize_math_delimiters as norm
+  src = "```\n" + r"\[ nie ruszac \]" + "\n```"
+  assert norm(src) == src
+
+def inline_code_keeps_its_backslashes():
+  from pdfmarq.md.md_preprocess import normalize_math_delimiters as norm
+  src = r"tekst `\( kod \)` dalej"
+  assert norm(src) == src
+
+def tagged_block_renders_with_its_own_label(tmp_path):
+  # `\tag{...}` must never reach the engine: MathJax drew it as a giant glyph
+  # across the page, mathtext fell back to a code block
+  from conftest import pdf_text
+  src = "$$\nE = I R\n" + r"\tag{X1.1}" + "\n$$"
+  path = tmp_path / "tag.pdf"
+  md_to_pdf(src, str(path))
+  assert_valid_pdf(path)
+  text = pdf_text(str(path))
+  assert "(X1.1)" in text, f"tag label missing from page: {text!r}"
+  assert "(1)" not in text, "auto number printed alongside an explicit tag"
+

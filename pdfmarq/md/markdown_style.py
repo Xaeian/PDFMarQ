@@ -168,7 +168,7 @@ class MarkdownStyle:
   # package installed - see `md/readme.md`. Ignored by the mathtext engine,
   # which reads `math_fontset` instead.
   math_font: str = "newcm"
-  math_block_gap: float = 3  # mm above/below block equations
+  math_block_gap: float = 3.5  # mm below a block equation; above, the previous block's gap counts
   math_numbering: bool = True  # auto (1), (2), (3) for block math
 
   # Layout flags
