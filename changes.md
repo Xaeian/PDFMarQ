@@ -1,23 +1,27 @@
 # Changes `pdfmarq`
 
+## `0.5.3` SVG fonts
+
+- SVG text uses document fonts, `register_fonts` adds more
+
 ## `0.5.2` Math input
 
 - LaTeX math delimiters `\[...\]` and `\(...\)` accepted
-- `\tag{...}` becomes the equation label instead of reaching the engine
+- `\tag{...}` labels the equation instead of reaching the engine
 - Block equations sit at body size with even spacing, matching inline math
 
 ## `0.5.1` Image sizing
 
-- Block images fill the text width down to `image_min_dpi`
+- Block images fill text width down to `image_min_dpi`
 - Images alone in a paragraph become a row of figures, wrapping into a grid
 - Mermaid diagrams size like any other figure
-- `inline_image_max_h` applies, scaled off the surrounding font
+- `inline_image_max_h` applies, scaled off surrounding font
 - Fix: `max_h` ignored for block SVG
 
 ## `0.5.0` Vector math
 
 - MathJax engine: formulas stay vector, with `\underbrace`, `cases`, `substack` and stretchable delimiters
-- `math_font` picks the typeface, `math_engine` the backend
+- `math_font` picks typeface, `math_engine` backend
 - Lines and columns size themselves to the formula they hold
 - Fix: outline destinations, formulas holding `<`, leading `---`
 
@@ -39,7 +43,7 @@
 
 ## `0.3.3` List numbering
 
-- Ordered lists follow the author's numbering
+- Ordered lists follow author's numbering
 - Fix: two-digit markers `10.` split across lines
 - Fix: `^sup^` / `~sub~` baseline
 - Fix: nested lists indented 4+ spaces flattened

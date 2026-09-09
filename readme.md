@@ -7,7 +7,7 @@ Optional `[md]` extra adds full markdown-to-PDF rendering with banner headers, m
 
 PDFMarQ wraps reportlab's stateful canvas into a fluent, cursor-based API.
 You describe document flow, not coordinates.
-Markdown rendering lives in a separate subpackage so the core stays installable without heavyweight dependencies.
+Markdown rendering lives in a separate subpackage so core stays installable without heavyweight dependencies.
 
 - **Fluent over imperative**: `pdf.font("Helvetica", 12).text("Hi").enter().text("World")`
   vs `canvas.setFont() → canvas.drawString() → manual Y tracking`
@@ -17,7 +17,7 @@ Markdown rendering lives in a separate subpackage so the core stays installable 
 - **Banner as contract**: YAML frontmatter block becomes a styled banner with logo, status badge, version, dates, signature slot
 - **Lean output**: no headless Chrome, no web stack, no React SSR.
   Pure Python + native PDF primitives.
-  Files stay small, rendering stays fast, fonts are embedded properly, and the output opens clean in every PDF reader
+  Files stay small, rendering stays fast, fonts are embedded properly, and output opens clean in every PDF reader
 
 Trade-offs:
 - Cursor mutation is a state machine.
@@ -74,7 +74,7 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, sign block)_
-- Page geometry, fonts, banner toggles and locale come from the caller's `style=`, never from the document _(see [`md-guide`](https://github.com/Xaeian/PDFMarQ/blob/main/md-guide.md))_
+- Page geometry, fonts, banner toggles and locale come from caller's `style=`, never from the document _(see [`md-guide`](https://github.com/Xaeian/PDFMarQ/blob/main/md-guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_
 - Built-in language presets _(en|pl|de|fr|es|it|cs|sk)_ via `lang_style()`: covers banner, callouts, date format, page numbers
@@ -84,7 +84,7 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 - Syntax highlighting _(Pygments)_
 - Math formulas inline `$x^2$` and block `$$...$$`, drawn as vectors _(MathJax, matplotlib fallback)_
 - Images sized from their own resolution, capped by `image_max_h`, centred
-- Images alone in a paragraph become a row of figures, wrapping into a grid beyond the text width
+- Images alone in a paragraph become a row of figures, wrapping into a grid beyond text width
 - Mermaid diagrams via `mermaid-cli` _(local)_ or `mermaid.ink` _(network fallback)_, capped at a configurable max height
 - Footnotes, emoji shortcodes `:rocket:`, nested lists, blockquotes, GitHub callouts _(`> [!NOTE]`, `> [!WARNING]`, …)_
 - Zebra-striped tables _(subtle, readability without noise)_
@@ -93,14 +93,14 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 
 ## Modules
 
-| Module       | Description                                        | Docs                                                                                     |
-| ------------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `pdfmarq`    | Core PDF API _(fluent cursor-based drawing)_       | [pdfmarq/readme.md](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/readme.md)       |
+| Module | Description | Docs |
+| --- | --- | --- |
+| `pdfmarq` | Core PDF API _(fluent cursor-based drawing)_ | [pdfmarq/readme.md](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/readme.md) |
 | `pdfmarq.md` | Markdown-to-PDF renderer _(optional `[md]` extra)_ | [pdfmarq/md/readme.md](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/md/readme.md) |
 
 ## See also
 
 Need `.docx` instead of PDF?
-Check [**DocMarQ**](https://github.com/Xaeian/docmarq), the sibling library with the same API shape and `.docx` output.
+Check [**DocMarQ**](https://github.com/Xaeian/docmarq), sibling library with the same API shape and `.docx` output.
 Syntax highlighting is PDF-only, and math there covers a wider slice of LaTeX _(DocMarQ emits native Word equations for the common subset)_.
 Everything else _(banner, callouts, mermaid, lang presets)_ works the same in both.

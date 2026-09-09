@@ -1,10 +1,15 @@
 # pdfmarq/fonts.py
 
-"""Font management - registration, path resolution, metrics."""
+"""Font management - registration, path resolution, metrics.
+
+Every family loaded here is also handed to `svgfonts`, so SVG text can be set in
+the same type as the page around it.
+"""
 from pathlib import Path
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from . import svgfonts
 
 # Mode fallback when a variant TTF is missing (drops styling, keeps content).
 _MODE_FALLBACK = {
@@ -50,6 +55,16 @@ class FontManager:
     through `_MODE_FALLBACK`, and a base-14 built-in satisfies any step of that
     chain. Raises when nothing in the chain exists.
 
+    The first call for a family also hands it to `svgfonts`, so SVG text lands on
+    the same faces as the page around it.
+    """
+    key = self._register_mode(family, mode)
+    self._publish_svg(family)
+    return key
+
+  def _register_mode(self, family:str, mode:str) -> str:
+    """Register one face and return its reportlab name, walking the fallback chain.
+
     The built-in check runs per step, not once at the end: `Courier` has no
     `Black`, so `Black` reaches its `Bold` fallback, which the built-in serves.
     """
@@ -71,6 +86,23 @@ class FontManager:
       f"Font not found: {family}-{mode} in {self.font_dir} (no fallback worked)"
     )
 
+  def _publish_svg(self, family:str) -> None:
+    """Hand `family` to `svgfonts`, resolving each mode the way the page does.
+
+    An SVG names the family through `font-family`, matched case-insensitively but
+    not otherwise normalised: `JetBrainsMono` is not `JetBrains Mono`.
+    """
+    svgfonts.publish(family, str(self.font_dir), lambda mode: self._svg_face(family, mode))
+
+  def _svg_face(self, family:str, mode:str) -> svgfonts.Face|None:
+    """One face for `svgfonts.publish`. The name is the registered one, so the face
+    is mapped rather than loaded a second time."""
+    try:
+      key = self._register_mode(family, mode)
+    except FileNotFoundError:
+      return None
+    return key, self._paths.get(key)
+
   def get_path(self, family:str, mode:str="Regular") -> str:
     """Return absolute filesystem path of the TTF for `(family, mode)`.
     Hits the registration cache first; falls back to fresh disk lookup.
@@ -88,6 +120,20 @@ class FontManager:
     """Return text advance width in points (reportlab `stringWidth`)."""
     key = self.register(family, mode)
     return stringWidth(text, key, size)
+
+def register_fonts(font_dir:str, *families:str) -> None:
+  """Make `families` resolvable for text drawn inside an SVG.
+
+  The markdown renderer publishes the families its style names. Reach for this when
+  there is no style to read: an SVG drawn through the fluent API, or one labelled in
+  a family the document never sets. A family with no TTF is skipped.
+  """
+  manager = FontManager(font_dir)
+  for family in families:
+    try:
+      manager.register(family)
+    except FileNotFoundError:
+      continue
 
 #------------------------------------------------------------------------------------------ Builtin
 

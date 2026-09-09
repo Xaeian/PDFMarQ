@@ -88,6 +88,22 @@ class MarkdownRenderer(
       from .._warn import warn_missing
       warn_missing("matplotlib", "matplotlib", "math formulas")
     self.pdf.font(self.style.font_body, self.style.body_size, self.style.body_mode)
+    self._publish_style_fonts()
+
+  def _publish_style_fonts(self):
+    """Load the style's families up front, so SVG text can reach all three.
+
+    Drawing alone registers them lazily, which leaves a diagram labelled in the mono
+    family on Helvetica whenever the page holds no code. Runs after
+    `_ensure_default_font`, so a family it substituted is the one published.
+
+    A missing TTF is skipped, not raised on - that error belongs at the draw.
+    """
+    for family in (self.style.font_body, self.style.font_head, self.style.font_mono):
+      try:
+        self.pdf._fonts.register(family)
+      except FileNotFoundError:
+        continue
 
   def _load_plugins(self, md):
     """Load optional markdown-it plugins, warning once per missing one."""

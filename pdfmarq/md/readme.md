@@ -14,7 +14,7 @@ md_to_pdf(md_text, "out.pdf", page=A4.landscape(), base_dir="./assets")
 
 ## Banner (YAML frontmatter)
 
-YAML block at the top becomes a styled banner on page 1 plus a compact banner on continuation pages.
+YAML block at top becomes a styled banner on page 1 plus a compact banner on continuation pages.
 
 ```yaml
 ---
@@ -50,11 +50,11 @@ logo: ./ranger-badge.svg
 
 PDF metadata _(`/Title`, `/Author`, `/Subject`, `/Keywords`)_ is auto-filled from matching YAML keys. Pass `metadata={...}` to `md_to_pdf()` to override per-key.
 
-If the first body block is `# X` and `X` matches `title` exactly, the h1 is dropped to avoid showing the title twice. Only applies when the banner actually printed that title, so `banner=False` never costs you the heading. Disable with `skip_dup_title=False`.
+If first body block is `# X` and `X` matches `title` exactly, h1 is dropped to avoid showing the title twice. Only applies when banner actually printed that title, so `banner=False` never costs you the heading. Disable with `skip_dup_title=False`.
 
 ## Presentation
 
-Frontmatter carries content only. Everything visual comes from the caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
+Frontmatter carries content only. Everything visual comes from caller, and `style=` is used **verbatim** - there is no layering and no diff-against-defaults heuristic, so you can set any value, including one equal to a `MarkdownStyle()` default.
 
 ```python
 from pdfmarq.md import md_to_pdf, lang_style
@@ -71,13 +71,13 @@ md_to_pdf(md, "out.pdf", style=style,
 ```
 
 `sign` takes `True` for one line, a `sign_labels` scenario _(`signature`, `approval`,
-`contract`, localized by the language preset)_, or a list of custom labels drawn side
-by side, sharing the content width.
+`contract`, localized by language preset)_, or a list of custom labels drawn side
+by side, sharing content width.
 
 
 `page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
-Everything after `output_path` is keyword-only, so the argument order cannot silently diverge from `docmarq.md.md_to_docx`.
+Everything after `output_path` is keyword-only, so argument order cannot silently diverge from `docmarq.md.md_to_docx`.
 
 Mermaid diagrams use `font_body` for label text when a matching TTF lives in `font_dir`.
 
@@ -95,7 +95,7 @@ Two engines draw `$x^2$` and `$$...$$`, both to vector paths:
 npm install -g mathjax @mathjax/mathjax-newcm-font
 ```
 
-`math_font` picks the typeface, from the font packages MathJax ships. Each was
+`math_font` picks typeface, from font packages MathJax ships. Each was
 measured against 230 TeX symbols a technical document reaches for - Greek,
 operators, relations, arrows, set and logic notation, blackboard, script and
 fraktur alphabets, stretchable delimiters, accents, `cases`, `substack`,
@@ -103,7 +103,7 @@ matrices, and Polish and German diacritics inside `\text{}`:
 
 | `math_font` | Face | Coverage |
 | ----------- | ---- | -------- |
-| `newcm` _(default)_ | New Computer Modern | complete, the modern LaTeX look |
+| `newcm` _(default)_ | New Computer Modern | complete, modern LaTeX look |
 | `stix2` | STIX Two | complete, Times-like |
 | `modern` | MathJax Modern | complete, Computer Modern lineage |
 | `termes` | TeX Gyre Termes | Times-like, no `\square` |
@@ -125,7 +125,7 @@ Each font is a separate npm package - `newcm` needs
 on. Asking for one that is not installed warns and falls back to `newcm`.
 
 `math_fontset` belongs to mathtext and MathJax ignores it. MathJax output is
-scaled so the formula x-height matches body text, and rendered SVG is cached in
+scaled so formula x-height matches body text, and rendered SVG is cached in
 `~/.cache/marq/mathjax/`.
 
 `PDFMARQ_NODE_MODULES` names the global `node_modules` directory when asking
@@ -134,7 +134,7 @@ scaled so the formula x-height matches body text, and rendered SVG is cached in
 On the mathtext path, spellings it rejects are rewritten to ones it accepts
 (`\le` to `\leq`, `\underbrace` to `\underline`), and `math_fontset` takes a
 matplotlib preset _(`stix`, `stixsans`, `cm`, `dejavusans`, `dejavuserif`)_ or a
-font family from `font_dir`, so formulas can carry the document typeface. A
+font family from `font_dir`, so formulas can carry document typeface. A
 family that cannot be loaded warns and falls back to `stixsans`.
 
 A block formula wider than the column is scaled to fit and says so; splitting it
@@ -155,7 +155,7 @@ Each heading auto-registers a GitHub-style slug _(lowercase, spaces → hyphens,
 
 ## Local links
 
-Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get the link style _(blue + underline)_ but no clickable action by default - a PDF can't follow a filesystem link. Set `link_root` to make them real URLs:
+Paths without a schema _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get link style _(blue + underline)_ but no clickable action by default - a PDF can't follow a filesystem link. Set `link_root` to make them real URLs:
 
 ```py
 MarkdownStyle(
@@ -170,7 +170,7 @@ Resolution:
 
 ## Style
 
-Beyond the fields shown above:
+Beyond fields shown above:
 
 ```py
 MarkdownStyle(
@@ -184,7 +184,7 @@ MarkdownStyle(
 
 ### Banner labels (i18n)
 
-Labels in the banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
+Labels in banner, footer, and callouts are style fields. Defaults are English. Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
 ```py
 from pdfmarq.md import lang_style, md_to_pdf
@@ -311,7 +311,7 @@ Markdown tables require a header row per spec, but a single-row "card" layout is
 ---
 ```
 
-CommonMark parses this as a setext h2 with the image as heading text. This is a common footgun that would render the image at heading-inline size _(thumbnail)_. `pdfmarq` detects the image-only setext case and renders it as a block image followed by an `<hr>`, matching the user's actual intent.
+CommonMark parses this as a setext h2 with image as heading text. This is a common footgun that would render the image at heading-inline size _(thumbnail)_. `pdfmarq` detects image-only setext case and renders it as a block image followed by an `<hr>`, matching user's actual intent.
 
 ## Mixing with core API
 
@@ -339,7 +339,7 @@ Installed by `pip install pdfmarq[md]`:
 
 System tools via npm, **not on PyPI**:
 - `mermaid-cli` for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli`.
-  Without it the diagram source goes to the `mermaid.ink` HTTP service, which
+  Without it diagram source goes to the `mermaid.ink` HTTP service, which
   warns once per process; `mermaid_remote=False` keeps it offline and renders a
   code block instead.
 - `mathjax` + its font for math: `npm install -g mathjax @mathjax/mathjax-newcm-font`.
