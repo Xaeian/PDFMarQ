@@ -12,7 +12,7 @@ Table columns never squeeze short codes.
 import re, warnings
 import pytest
 from reportlab.graphics.shapes import Drawing
-from conftest import render_md, pdf_words, pdf_glyphs_past
+from conftest import render_md, pdf_words, pdf_glyphs_past, needs_fitz
 from pdfmarq import PDF
 from pdfmarq.constants import MM_TO_PT
 from pdfmarq.fonts import FontManager
@@ -117,12 +117,14 @@ def inline_code_padding_counts_toward_line(pdf):
   for line in _wrap(_tokenize(segs, pdf._metrics), width, pdf._metrics).lines:
     assert _line_width_pt(line) <= width + FIT_EPS_PT
 
+@needs_fitz
 def paragraph_with_inline_code_stays_in_margin(tmp_path):
   path = str(tmp_path / "code.pdf")
   pdf = render_md(path, " ".join(f"slowo `kod{i}`" for i in range(60)))
   right = (pdf._page.width - pdf._page.margin_right) * MM_TO_PT
   assert pdf_glyphs_past(path, right) == []
 
+@needs_fitz
 def right_aligned_code_column_stays_in_table(tmp_path):
   path = str(tmp_path / "right.pdf")
   cells = " ".join(f"`0x{i:04X}`" for i in range(8))
@@ -145,12 +147,14 @@ def repeated_drawing_is_its_own_run(pdf):
 
 #------------------------------------------------------------------------------------------- Tables
 
+@needs_fitz
 @pytest.mark.parametrize("cell", ["PP-1", "**PP**-1", "`PP`-1", "[PP](https://x.pl)-1"])
 def short_code_cell_stays_whole(tmp_path, joined, cell):
   path = tmp_path / "cell.pdf"
   render_md(str(path), f"| Kod | Opis |\n|---|---|\n| {cell} | {LONG} |\n| {cell} | {LONG} |\n")
   assert joined(path, "PP", "-1")
 
+@needs_fitz
 def long_url_does_not_squeeze_other_columns(tmp_path, joined):
   # column minimums overflow the page: only the URL columns may give way
   path = tmp_path / "urls.pdf"

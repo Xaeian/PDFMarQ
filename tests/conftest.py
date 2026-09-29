@@ -3,7 +3,7 @@
 """Collect only functions defined in the test module, since `python_functions = ["*"]`.
 Carries the shared PDF validator too."""
 
-import inspect
+import importlib.util, inspect
 from pathlib import Path
 import pytest
 
@@ -28,6 +28,12 @@ def _twin_installed() -> bool:
   return True
 
 needs_twin = pytest.mark.skipif(not _twin_installed(), reason="docmarq not installed")
+
+#--------------------------------------------------------------------------------------- PDF reader
+
+# Reading a PDF back takes PyMuPDF, which the wheel under test does not pull in.
+needs_fitz = pytest.mark.skipif(importlib.util.find_spec("fitz") is None,
+  reason="PyMuPDF not installed")
 
 #--------------------------------------------------------------------------------------- Assertions
 
