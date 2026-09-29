@@ -1,14 +1,15 @@
 # pdfmarq/md/md_table.py
 
-"""Markdown table rendering with HTML-style auto-layout column widths.
+"""
+Markdown table rendering with HTML-style auto-layout column widths.
 
-Column widths use `measure_extent` (widest unbreakable word + total unwrapped
-width): natural widths when content fits; proportional distribution between
-`col_min` and `col_max` when it doesn't.
+Column widths come from `measure_extent`: the widest word and the unwrapped width.
+Content that fits gets natural widths.
+Content that doesn't gets each column between `col_min` and `col_max`.
+Minimums wider than the page cap the widest columns, so short cells stay whole.
 
-Tables that exceed one page split with the header repeated on each continuation
-page. At least 2 body rows must accompany the header; fewer triggers a page
-break first.
+A table longer than a page splits, repeating the header on each continuation page.
+The header needs at least 2 body rows beside it, or it moves to a new page first.
 """
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
@@ -17,6 +18,47 @@ from ..utils import smaller_size
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
 )
+
+#------------------------------------------------------------------------------------------ Helpers
+
+def _fit_columns(
+  col_min:list[float], col_max:list[float],
+  total:float, grow:list[int],
+) -> list[float]:
+  """
+  HTML-style auto layout: widths that sum to `total`, each column between its min and max.
+
+  Room to spare goes in equal shares to the `grow` columns, or to all when none may grow.
+  A squeeze shrinks each column toward its min, in proportion to its max - min gap.
+  Minimums wider than `total` go to `_cap_widths`.
+  """
+  if not col_max: return []
+  if sum(col_max) <= total:
+    grow = grow or list(range(len(col_max)))
+    share = (total - sum(col_max)) / len(grow)
+    return [w + share if i in grow else w for i, w in enumerate(col_max)]
+  if sum(col_min) >= total: return _cap_widths(col_min, total)
+  gaps = [hi - lo for lo, hi in zip(col_min, col_max)]
+  scale = (total - sum(col_min)) / sum(gaps)
+  return [lo + gap * scale for lo, gap in zip(col_min, gaps)]
+
+def _cap_widths(widths:list[float], total:float) -> list[float]:
+  """
+  Cut the widest of `widths` down to one shared cap, so they sum to `total`.
+
+  For column minimums that overflow the page.
+  Scaling them all would break a short code like `PP-1` as hard as the URL behind the squeeze.
+  A cap keeps every narrower column whole: only words too long to fit anyway get broken.
+  """
+  remaining = total
+  left = len(widths)
+  for w in sorted(widths):
+    cap = remaining / left
+    if w >= cap:
+      return [min(x, cap) for x in widths]
+    remaining -= w
+    left -= 1
+  return list(widths)
 
 #--------------------------------------------------------------------------------------- TableMixin
 class TableMixin:
@@ -303,35 +345,10 @@ class TableMixin:
     col_min = [m + 2 * h_pad for m in col_min]
     col_max = [m + 2 * h_pad for m in col_max]
     is_image_col = has_image
-    sum_max = sum(col_max)
-    sum_min = sum(col_min)
-    if sum_max <= total_w:
-      # Distribute leftover to text cols only; growing image cols inflates images.
-      col_widths = list(col_max)
-      leftover = total_w - sum_max
-      growable = [i for i in range(ncols) if not is_image_col[i]]
-      if leftover > 0 and growable:
-        per = leftover / len(growable)
-        for i in growable:
-          col_widths[i] += per
-      elif leftover > 0:
-        per = leftover / ncols
-        col_widths = [w + per for w in col_widths]
-    elif sum_min >= total_w:
-      scale = total_w / sum_min
-      col_widths = [m * scale for m in col_min]
-    else:
-      # Shrink each col proportionally between min and max.
-      # Image cols shrink alongside text cols; col_min floors them at icon scale.
-      slack = total_w - sum_min
-      diffs = [col_max[i] - col_min[i] for i in range(ncols)]
-      sum_diff = sum(diffs)
-      if sum_diff <= 0:
-        col_widths = [total_w / ncols] * ncols
-      else:
-        col_widths = [
-          col_min[i] + slack * (diffs[i] / sum_diff) for i in range(ncols)
-        ]
+    # Spare room goes to text cols only: growing an image col inflates its images.
+    # A squeeze shrinks image cols too, and `col_min` floors them at icon scale.
+    text_cols = [i for i in range(ncols) if not is_image_col[i]]
+    col_widths = _fit_columns(col_min, col_max, total_w, text_cols)
     text_width_mm = [max(1.0, cw - 2 * h_pad) for cw in col_widths]
     # Redistribute width between image and text cols to equalise row heights.
     col_widths, text_width_mm = self._balance_image_cols(

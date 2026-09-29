@@ -25,9 +25,9 @@ the fonts. Those come from the caller. Supported keys, all optional:
 import os, re, warnings
 from datetime import date, datetime
 from reportlab.lib.colors import Color
-from reportlab.graphics import renderPDF
 from svglib.svglib import svg2rlg
 from ..inline import RichSegment, render_rich
+from ..graphics import draw_svg
 from ..constants import MM_TO_PT, Align
 
 #---------------------------------------------------------------------------------------- Constants
@@ -483,7 +483,7 @@ class FrontmatterMixin:
         logo_h_pt = logo_w_pt / aspect
       img_y_pt = logo_top_pt - logo_h_pt
       if logo_path.lower().endswith(".svg"):
-        self._draw_svg_at_pt(c, logo_path, cursor_x, img_y_pt, logo_w_pt, logo_h_pt)
+        draw_svg(c, logo_path, cursor_x, img_y_pt, logo_w_pt, logo_h_pt)
       else:
         c.drawImage(logo_path, cursor_x, img_y_pt, width=logo_w_pt, height=logo_h_pt,
           mask="auto", preserveAspectRatio=True)
@@ -527,24 +527,6 @@ class FrontmatterMixin:
     c.setLineWidth(0.3)
     c.setDash()  # reset any dash from prior canvas state
     c.line(x_left_pt, sep_y_pt, x_right_pt, sep_y_pt)
-
-  @staticmethod
-  def _draw_svg_at_pt(c, path:str, x_pt:float, y_pt:float, w_pt:float, h_pt:float):
-    """Render SVG file onto canvas at canvas-pt coordinates (bottom-left origin).
-    Uses the same approach as `pdf.svg()` - no centering, just scale-to-fit.
-    """
-    drawing = svg2rlg(path)
-    if drawing is None:
-      raise ValueError(f"could not load SVG: {path}")
-    if not drawing.width or not drawing.height:
-      # No intrinsic size - scale-to-fit is undefined and the division
-      # below would raise ZeroDivisionError.
-      raise ValueError(f"SVG has no intrinsic size: {path}")
-    scale_x = w_pt / drawing.width
-    scale_y = h_pt / drawing.height
-    scale = min(scale_x, scale_y)
-    drawing.scale(scale, scale)
-    renderPDF.draw(drawing, c, x_pt, y_pt)
 
   def _draw_code_inline(
     self, c, text:str, font:str, size:float,

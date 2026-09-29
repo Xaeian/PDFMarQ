@@ -1,5 +1,12 @@
 # Changes `pdfmarq`
 
+## `0.5.4` Wrapping and arrows
+
+- Fix: SVG arrowheads missing
+- Fix: text overflowing its box or split mid-word
+- Fix: short table columns squeezed
+- Fix: repeated emoji drawn once
+
 ## `0.5.3` SVG fonts
 
 - SVG text uses document fonts, `register_fonts` adds more

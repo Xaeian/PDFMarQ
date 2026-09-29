@@ -1,11 +1,46 @@
 # pdfmarq/text.py
 
 """Text measurement and box fitting."""
+from typing import Callable
 from dataclasses import dataclass
 from PIL import ImageFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from .fonts import FontManager, is_builtin, builtin_name
 from .constants import MM_TO_PT
+
+#------------------------------------------------------------------------------------ Word breaking
+
+# A box width comes back from an mm→pt round trip a hair off.
+# Without this slack, a token sized exactly to its box would be force-broken.
+FIT_EPS_PT = 0.01
+
+# Preferred break points inside a token wider than the line: URLs, file paths.
+# The break falls after one, so the delimiter stays with the chunk it closes.
+BREAK_CHARS = "/?&=._-:,;"
+
+def split_word(word:str, width_pt:float, measure:Callable[[str], float]) -> list[str]:
+  """
+  Cut `word` into chunks that each fit `width_pt`, as `measure` sizes them in pt.
+
+  A chunk ends after the last `BREAK_CHARS` delimiter it reaches, else at the last glyph that fits.
+  The delimiter a chunk opens with never ends it, or `/` would stand on a line of its own.
+  A glyph wider than the box still becomes a chunk: what that means is the caller's call.
+  An empty `word` is one empty chunk, so a caller always has a last one.
+  """
+  if not word: return [word]
+  chunks: list[str] = []
+  limit = width_pt + FIT_EPS_PT
+  start, n = 0, len(word)
+  while start < n:
+    end = start + 1
+    while end < n and measure(word[start:end + 1]) <= limit:
+      end += 1
+    if end < n:
+      cut = max(word.rfind(char, start + 1, end) for char in BREAK_CHARS)
+      if cut >= 0: end = cut + 1
+    chunks.append(word[start:end])
+    start = end
+  return chunks
 
 #------------------------------------------------------------------------------------- BoxFitResult
 
@@ -127,58 +162,60 @@ class TextMetrics:
     enter_in:str = "\n",
     enter_out:str = "\n",
   ) -> BoxFitResult:
-    """Wrap text into a box, optionally shrinking font to fit.
+    """
+    Wrap text into a box, optionally shrinking font to fit.
 
-    Always returns `BoxFitResult`; check `.overflow` when no fit is possible
-    (word too wide to wrap, or height exceeded with no autoscale room).
+    Always returns `BoxFitResult`.
+    Check `.overflow` when no fit is possible: a word too wide, or the height exceeded.
 
     Autoscale steps `size -= autoscale` until text fits or size is exhausted.
-    Iterative to avoid call-stack depth issues at small step sizes. Shrinking
-    past `READABLE_MIN_PT` warns and reports `overflow`: the text is placed,
-    but at that size nobody reads it.
+    It loops rather than recurses: a fine step can take thousands of rounds.
+    Shrinking past `READABLE_MIN_PT` warns and reports `overflow`:
+    the text is placed, but at that size nobody reads it.
+
+    A word wider than the box shrinks the font only while it stays readable.
+    Past that, `split_word` cuts it, and `overflow` still reports it.
     """
     if text is None: text = ""
     current_size = size
     overflow = False
+    limit = width + FIT_EPS_PT
+    def measure(s:str) -> float:
+      return self.text_width(s, family, mode, current_size)
     while True:
-      input_lines = text.split(enter_in)
-      space_width = self.text_width(" ", family, mode, current_size)
+      space_width = measure(" ")
+      can_shrink = bool(autoscale) and current_size > autoscale
+      # a long URL is cut at a readable size, not shrunk to a smudge that fits
+      shrink_word = can_shrink and current_size - autoscale >= READABLE_MIN_PT
       output: list[str] = []
-      line_count = 0
       word_overflow = False
-      for phrase in input_lines:
+      for phrase in text.split(enter_in):
         phrase = phrase.strip()
-        phrase_width = self.text_width(phrase, family, mode, current_size)
-        if phrase_width > width:
-          words = phrase.split(" ")
-          word_widths = [self.text_width(w, family, mode, current_size) for w in words]
-          if any(w > width for w in word_widths):
-            word_overflow = True
-            output.append(phrase)
-            line_count += 1
-            continue
-          current_line = ""
-          current_width = 0
-          for i, word in enumerate(words):
-            word_w = word_widths[i]
-            if current_width + word_w > width and current_line:
-              output.append(current_line.strip())
-              line_count += 1
-              current_line = word + " "
-              current_width = word_w + space_width
-            else:
-              current_line += word + " "
-              current_width += word_w + space_width
-          if current_line.strip():
-            output.append(current_line.strip())
-            line_count += 1
-        else:
+        if not phrase or measure(phrase) <= limit:
           output.append(phrase)
-          line_count += 1
+          continue
+        line, line_w = "", 0.0
+        for word in phrase.split(" "):
+          word_w = measure(word)
+          if word_w > limit:
+            word_overflow = True
+            if shrink_word: break # a smaller size is tried before any word is cut
+            *chunks, word = split_word(word, width, measure)
+            if line.strip(): output.append(line.strip())
+            output.extend(chunks)
+            line, line_w = "", 0.0
+            word_w = measure(word)
+          if line and line_w + word_w > limit:
+            output.append(line.strip())
+            line, line_w = "", 0.0
+          line += word + " "
+          line_w += word_w + space_width
+        if word_overflow and shrink_word: break
+        if line.strip(): output.append(line.strip())
+      line_count = len(output)
       result_height = self.lines_height(line_count, family, mode, current_size)
       height_overflow = height > 0 and result_height > height
-      can_shrink = bool(autoscale) and current_size > autoscale
-      if (word_overflow or height_overflow) and can_shrink:
+      if (word_overflow and shrink_word) or (height_overflow and can_shrink):
         current_size -= autoscale
         continue
       overflow = word_overflow or height_overflow

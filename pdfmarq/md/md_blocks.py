@@ -362,8 +362,8 @@ class BlocksMixin:
     try:
       from reportlab.graphics.shapes import Drawing, Image
       if info.is_svg:
-        from svglib.svglib import svg2rlg
-        src_drawing = svg2rlg(src)
+        from ..graphics import load_svg
+        src_drawing = load_svg(src)
         if src_drawing is None or src_drawing.width <= 0 or src_drawing.height <= 0:
           return None
         sx = h_pt / src_drawing.height

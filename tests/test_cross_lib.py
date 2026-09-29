@@ -254,3 +254,12 @@ def shared_helpers_are_identical():
   pdf_meta = inspect.getsource(pdf_mod._metadata_from_frontmatter)
   doc_meta = inspect.getsource(doc_mod._metadata_from_frontmatter)
   assert pdf_meta.replace("PDF.metadata", "X") == doc_meta.replace("DOCX.metadata", "X")
+
+def column_solver_is_identical():
+  # the same markdown table lays its columns out alike in both packages
+  import inspect
+  import pdfmarq.md.md_table as pdf_mod
+  import docmarq.tables as doc_mod
+  for name in ("_fit_columns", "_cap_widths"):
+    pdf_src = inspect.getsource(getattr(pdf_mod, name))
+    assert pdf_src == inspect.getsource(getattr(doc_mod, name)), f"{name} drifted"

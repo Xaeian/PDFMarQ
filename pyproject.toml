@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmarq"
-version = "0.5.3"
+version = "0.5.4"
 description = "PDF generation library with fluent API and optional markdown support"
 readme = "readme.md"
 license = "MIT"

@@ -10,7 +10,7 @@ only. Text-extraction checks need PyMuPDF (`fitz`) and skip without it.
   >>> python -m pytest tests/test_regressions.py
 """
 
-import os, re, tempfile, unittest, warnings
+import os, re, math, tempfile, unittest, warnings
 
 from pdfmarq import PDF, TextMetrics, FontManager, TableBuilder, TableStyle, smaller_size
 from pdfmarq.md import MarkdownRenderer, MarkdownStyle
@@ -435,6 +435,142 @@ class TestSvgFlatten(unittest.TestCase):
     svg = (self.HEAD + '<g transform="scale(1,-1)">'
       '<text font-size="10">x</text></g></svg>')
     self.assertIsNone(self.flat(svg))
+
+#-------------------------------------------------------------------------------------- SVG markers
+
+class TestSvgMarkers(TempPDFCase):
+  """
+  svglib drops `<marker>`: unexpanded, every arrow reaches the PDF as a bare line.
+  Markers become plain groups before svglib sees the tree.
+  """
+  HEAD = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">'
+    '<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5"'
+    ' orient="{orient}" markerUnits="{units}">'
+    '<path d="M0 0 L10 5 L0 10 Z" fill="{fill}"/></marker></defs>'
+  )
+
+  def expand(
+    self, body:str,
+    orient:str = "auto", units:str = "userSpaceOnUse", fill:str = "#ff0000",
+  ):
+    """Expanded root and the marker groups added to it, in document order."""
+    from xml.etree import ElementTree
+    from pdfmarq.svgmarkers import expand
+    root = ElementTree.fromstring(
+      self.HEAD.format(orient=orient, units=units, fill=fill) + body + "</svg>")
+    count = expand(root)
+    groups = [g for g in root.iter()
+      if g.tag.endswith("}g") and "matrix" in g.get("transform", "")]
+    self.assertEqual(count, len(groups))
+    return root, groups
+
+  @staticmethod
+  def matrix(group) -> list[float]:
+    nums = re.findall(r"[-+]?[\d.]+(?:e[-+]?\d+)?", group.get("transform"))
+    return [float(n) for n in nums[-6:]]
+
+  def angle(self, group) -> float:
+    a, b = self.matrix(group)[:2]
+    return round(math.degrees(math.atan2(b, a))) % 360
+
+  def test_arrowhead_reaches_drawing(self):
+    """End to end through svglib: the arrowhead's fill is in the drawing."""
+    from reportlab.graphics.shapes import Group
+    from pdfmarq.graphics import load_svg
+    def fills(node) -> list:
+      if isinstance(node, Group):
+        return [c for child in node.contents for c in fills(child)]
+      color = getattr(node, "fillColor", None)
+      return [color.hexval()] if color is not None else []
+    src = self.path("arrow.svg")
+    with open(src, "w", encoding="utf-8") as f:
+      f.write(self.HEAD.format(orient="auto", units="userSpaceOnUse", fill="#ff0000")
+        + '<line x1="10" y1="50" x2="190" y2="50" stroke="#000000" marker-end="url(#a)"/></svg>')
+    self.assertIn("0xff0000", fills(load_svg(src)))
+
+  def test_tip_sits_on_line_end(self):
+    """`refX`/`refY` lands on the last vertex, turned along the line."""
+    _, groups = self.expand('<line x1="50" y1="10" x2="50" y2="90" marker-end="url(#a)"/>')
+    self.assertEqual(1, len(groups))
+    self.assertEqual(90, self.angle(groups[0]))
+    a, b, c, d, e, f = self.matrix(groups[0])
+    self.assertAlmostEqual(50, a * 9 + c * 5 + e) # ref point (9, 5) → (50, 90)
+    self.assertAlmostEqual(90, b * 9 + d * 5 + f)
+
+  def test_bent_path_ends_along_last_leg(self):
+    _, groups = self.expand('<path d="M0 0 L50 0 L50 50" marker-start="url(#a)" '
+      'marker-end="url(#a)"/>')
+    self.assertEqual([0, 90], [self.angle(g) for g in groups])
+
+  def test_start_reverse_points_back(self):
+    _, groups = self.expand('<path d="M10 50 h180" marker-start="url(#a)" '
+      'marker-end="url(#a)"/>', orient="auto-start-reverse")
+    self.assertEqual([180, 0], [self.angle(g) for g in groups])
+
+  def test_arc_ends_along_tangent(self):
+    """A half circle over the top leaves upward and arrives downward."""
+    _, groups = self.expand('<path d="M0 50 A50 50 0 0 1 100 50" marker-start="url(#a)" '
+      'marker-end="url(#a)"/>')
+    self.assertEqual([270, 90], [self.angle(g) for g in groups])
+
+  def test_marker_scales_with_stroke(self):
+    _, groups = self.expand('<line x1="0" y1="0" x2="100" y2="0" stroke-width="3" '
+      'marker-end="url(#a)"/>', units="strokeWidth")
+    self.assertAlmostEqual(3, self.matrix(groups[0])[0])
+
+  def test_group_paint_does_not_reach_marker(self):
+    """Marker content inherits from the marker, not from the line using it."""
+    _, groups = self.expand('<g stroke-dasharray="4 2" stroke="#0000ff">'
+      '<line x1="0" y1="0" x2="100" y2="0" marker-end="url(#a)"/></g>')
+    self.assertEqual("none", groups[0].get("stroke-dasharray"))
+    self.assertEqual("none", groups[0].get("stroke"))
+
+  def test_context_stroke_takes_line_colour(self):
+    _, groups = self.expand('<line x1="0" y1="0" x2="100" y2="0" stroke="#00aa00" '
+      'style="marker-end: url(#a)"/>', fill="context-stroke")
+    self.assertEqual("#00aa00", groups[0][0].get("fill"))
+
+  def test_hidden_shapes_and_plain_svg_untouched(self):
+    _, groups = self.expand('<defs><line x1="0" y1="0" x2="1" y2="0" marker-end="url(#a)"/>'
+      '</defs><line x1="0" y1="0" x2="100" y2="0"/>')
+    self.assertEqual([], groups)
+
+  def test_undisplayed_shape_leaves_no_arrowhead(self):
+    """svglib skips `display: none`, and the marker groups sit beside the shape, not in it."""
+    _, groups = self.expand(
+      '<polyline points="0 0 50 0 50 50" style="display:none" marker-mid="url(#a)"/>'
+      '<g display="none"><line x1="0" y1="0" x2="100" y2="0" marker-end="url(#a)"/></g>')
+    self.assertEqual([], groups)
+
+  def test_groups_follow_their_shapes(self):
+    """Each shape's arrowheads land right after it, siblings included."""
+    root, _ = self.expand('<line id="p" x1="0" y1="0" x2="10" y2="0" marker-end="url(#a)"/>'
+      '<line id="q" x1="0" y1="9" x2="10" y2="9" marker-start="url(#a)" marker-end="url(#a)"/>')
+    order = [el.get("id") or "g" for el in root if el.tag.endswith(("}line", "}g"))]
+    self.assertEqual(["p", "g", "q", "g", "g"], order)
+
+  def test_path_object_keeps_relative_images(self):
+    """svglib resolves a relative `<image>` only against a `str`, never a `Path`."""
+    from pathlib import Path
+    from PIL import Image as PILImage
+    from reportlab.graphics.shapes import Group, Image
+    from pdfmarq.graphics import load_svg
+    def images(node) -> int:
+      if isinstance(node, Group): return sum(images(child) for child in node.contents)
+      return int(isinstance(node, Image))
+    PILImage.new("RGB", (4, 4), "red").save(self.path("dot.png"))
+    src = self.path("pic.svg")
+    with open(src, "w", encoding="utf-8") as f:
+      f.write('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        '<image href="dot.png" width="10" height="10"/></svg>')
+    self.assertEqual(1, images(load_svg(Path(src))))
+
+  def test_minified_arc_flags(self):
+    """Flags run into the next number: `a5 5 0 0110 0` is `0`, `1`, `10`."""
+    from pdfmarq.svgmarkers import path_vertices
+    ends = [(round(v.x), round(v.y)) for v in path_vertices("M0 0a5 5 0 0110 0")]
+    self.assertEqual([(0, 0), (10, 0)], ends)
 
 #------------------------------------------------------------------------------------ MathJax fonts
 

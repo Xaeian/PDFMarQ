@@ -94,6 +94,31 @@ def pdf_pages(path:str) -> int:
   finally:
     doc.close()
 
+def pdf_words(path:str) -> list:
+  """Word boxes `(x0, y0, x1, y1, word, ...)` of every page, in pt."""
+  import fitz
+  doc = fitz.open(path)
+  try:
+    return [w for page in doc for w in page.get_text("words")]
+  finally:
+    doc.close()
+
+def pdf_glyphs_past(path:str, right_pt:float) -> list[str]:
+  """Glyphs whose box ends right of `right_pt`: text spilling over a margin or border."""
+  import fitz
+  right_pt += 0.3 # rounding slack: a glyph set flush to the edge still passes
+  out = []
+  doc = fitz.open(path)
+  try:
+    for page in doc:
+      for block in page.get_text("rawdict")["blocks"]:
+        for line in block.get("lines", []):
+          for span in line["spans"]:
+            out += [c["c"] for c in span["chars"] if c["bbox"][2] > right_pt]
+  finally:
+    doc.close()
+  return out
+
 def pdf_offpage_words(path:str) -> list:
   """Words drawn outside the page box - in the file, invisible in a viewer."""
   import fitz

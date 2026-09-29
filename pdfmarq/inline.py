@@ -12,6 +12,7 @@ from reportlab.lib.colors import Color
 from reportlab.pdfbase import pdfmetrics
 from .constants import Align, MM_TO_PT
 from .fonts import is_builtin, builtin_name
+from .text import FIT_EPS_PT, split_word
 
 #------------------------------------------------------------------------------------ Layout ratios
 
@@ -33,12 +34,6 @@ _BG_OUTER_GAP_PT = 1.2  # extra gap between bg rect and adjacent text
 # glyph width (outer gap + inner pad on each side). Used by `measure_extent`
 # so table column-width estimation reserves room for the shaded rect.
 _BG_RUN_EXTRA_PT = 2 * (_BG_OUTER_GAP_PT + _BG_INNER_PAD_PT)
-
-# Preferred break points inside a token wider than the wrap width
-# (URLs, long file paths). Break happens AFTER one of these chars so the
-# delimiter stays attached to the preceding chunk - matches how readers
-# scan URLs. Falls back to character-level break when none is reachable.
-_BREAK_CHARS = "/?&=._-:,;"
 
 # Math drawings: tiny breathing room around an inline formula (pt).
 _MATH_INLINE_PAD_PT = 1.0
@@ -216,87 +211,139 @@ class _WrapResult:
   overflow: bool = False
 
 def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
-  """Split a token wider than `width_pt` into chunks each fitting the width.
-  Prefers a URL/path delimiter from `_BREAK_CHARS` as the break boundary;
-  falls back to character-level break. All chunks share the original
-  segment so link rect, bg, color, and font stay continuous across the
-  break."""
+  """
+  Cut a token wider than `width_pt` into chunks that each fit, by `split_word`.
+  Chunks share the original segment, so link rect, bg, color and font carry across the break.
+  """
   seg = word.seg
   eff_size = _effective_size(seg)
-  text = word.text
-  if not text:
-    return [word]
-  tw = metrics.text_width
-  family, mode = seg.family, seg.mode
-  chunks: list[_Word] = []
-  i, n = 0, len(text)
-  while i < n:
-    j, last_fit = i + 1, i + 1
-    while j <= n:
-      if tw(text[i:j], family, mode, eff_size) > width_pt:
-        break
-      last_fit = j
-      j += 1
-    if last_fit == i:
-      last_fit = i + 1  # single glyph still > width_pt, emit it anyway
-    if last_fit < n:
-      for k in range(last_fit - 1, i, -1):
-        if text[k-1] in _BREAK_CHARS:
-          last_fit = k
-          break
-    piece = text[i:last_fit]
-    chunks.append(_Word(piece, seg, tw(piece, family, mode, eff_size), is_space=False))
-    i = last_fit
-  return chunks
+  def measure(text:str) -> float:
+    return metrics.text_width(text, seg.family, seg.mode, eff_size)
+  return [
+    _Word(piece, seg, measure(piece), is_space=False)
+    for piece in split_word(word.text, width_pt, measure)
+  ]
+
+def _run_pad_pt(seg:RichSegment) -> float:
+  """
+  Room a visual run takes beyond its glyphs:
+  the inline-code rect with its gaps, or the breathing room around a formula.
+  `render_rich` adds it once per run on each line, and wrapping counts it the same way.
+  """
+  if seg.math_drawing is not None: return 2 * _MATH_INLINE_PAD_PT
+  if seg.bg_color is not None: return _BG_RUN_EXTRA_PT
+  return 0.0
+
+def _advance_pt(prev:_Word|None, word:_Word) -> float:
+  """
+  Width `word` adds to a line right after `prev`, which is `None` at line start.
+  Its glyphs, plus the run padding when it opens a new visual run.
+  """
+  # most neighbours come from one segment, and an identity check spares building two keys
+  if prev is not None and (prev.seg is word.seg or _run_key(prev.seg) == _run_key(word.seg)):
+    return word.width_pt
+  return word.width_pt + _run_pad_pt(word.seg)
+
+def _extent_pt(tokens:list[_Word], prev:_Word|None=None) -> float:
+  """Width `tokens` add to a line after `prev`, run padding included."""
+  total = 0.0
+  for token in tokens:
+    total += _advance_pt(prev, token)
+    prev = token
+  return total
+
+def _units(words:list[_Word]) -> list[list[_Word]]:
+  """
+  Group tokens into wrap units: a hard break, a whitespace run, or a word.
+
+  A word runs to the next whitespace, so it can span segments: `**PP**-1`, `[link](url).`.
+  A line never breaks inside a word that fits a line of its own.
+  """
+  units: list[list[_Word]] = []
+  for w in words:
+    last = units[-1][-1] if units else None
+    if last and not (w.is_break or last.is_break) and w.is_space == last.is_space:
+      units[-1].append(w)
+    else:
+      units.append([w])
+  return units
 
 def _wrap(
   words:list[_Word], width_pt:float, metrics,
   preserve_leading_space:bool=False,
 ) -> _WrapResult:
-  """Greedy word-wrap honoring hard breaks. Tokens wider than `width_pt`
-  are force-broken via `_break_oversized` (preferred at URL delimiters),
-  so long links and paths don't spill past the right edge.
+  """
+  Greedy word-wrap honoring hard breaks.
+
+  Lines break at whitespace only, never inside a word from `_units`.
+  A word wider than a whole line is the exception: it breaks between its segments first.
+  So does a word too wide for the rest of an indented code line: an indent never stands alone.
+  A token still too wide goes to `_break_oversized`, so long links never spill past the edge.
+  Widths include the run padding `render_rich` draws, via `_advance_pt`.
 
   Args:
-    preserve_leading_space: If True, leading whitespace on a line is kept
-      (for code blocks where indentation is semantic). Default False
-      strips leading space (normal prose behavior).
+    preserve_leading_space: Keep leading whitespace, for code where indent means something.
+      Prose drops it.
   """
+  limit = width_pt + FIT_EPS_PT
   lines: list[list[_Word]] = []
   current: list[_Word] = []
-  current_w = 0
+  current_w = 0.0
   overflow = False
-  def flush(line):
-    while line and line[-1].is_space:
-      line.pop()
-    lines.append(line)
-  def place(w):
-    nonlocal current, current_w, overflow
-    if w.width_pt > width_pt:
-      overflow = True  # even one glyph wider than wrap width
-    if current_w + w.width_pt > width_pt and current:
-      flush(current)
-      current, current_w = [w], w.width_pt
+  def indent_only() -> bool:
+    return all(w.is_space for w in current)
+  def flush():
+    nonlocal current, current_w
+    while current and current[-1].is_space:
+      current.pop()
+    lines.append(current)
+    current, current_w = [], 0.0
+  def wrap():
+    nonlocal current, current_w
+    if indent_only(): # an indent alone is no line: the text moves to the margin
+      current, current_w = [], 0.0
     else:
-      current.append(w)
-      current_w += w.width_pt
-  for w in words:
-    if w.is_break:
-      flush(current)
-      current, current_w = [], 0
+      flush()
+  def append(tokens:list[_Word], width:float):
+    nonlocal current_w
+    current.extend(tokens)
+    current_w += width
+  def place(token:_Word):
+    nonlocal overflow
+    alone = _advance_pt(None, token)
+    if alone > limit:
+      overflow = True # even one glyph wider than wrap width
+    after = _advance_pt(current[-1], token) if current else alone
+    if current and current_w + after > limit:
+      wrap()
+      after = alone
+    append([token], after)
+  for unit in _units(words):
+    head = unit[0]
+    if head.is_break:
+      flush()
       continue
-    if w.is_space:
-      if not current and not preserve_leading_space:
-        continue  # no leading space in prose
-      current.append(w)
-      current_w += w.width_pt
+    after = _extent_pt(unit, current[-1] if current else None)
+    if head.is_space:
+      if current or preserve_leading_space: # no leading space in prose
+        append(unit, after)
       continue
-    if w.width_pt > width_pt and w.text:
-      for chunk in _break_oversized(w, width_pt, metrics):
-        place(chunk)
+    if current_w + after <= limit:
+      append(unit, after)
       continue
-    place(w)
-  flush(current)
+    alone = _extent_pt(unit)
+    if alone <= limit and not indent_only():
+      flush()
+      append(unit, alone)
+      continue
+    for token in unit:
+      if token.text and _advance_pt(None, token) > limit:
+        room = width_pt - _run_pad_pt(token.seg)
+        for chunk in _break_oversized(token, room, metrics):
+          place(chunk)
+      else:
+        place(token)
+  flush()
   return _WrapResult(lines, overflow)
 
 #---------------------------------------------------------------------------------- Metrics helpers
@@ -308,14 +355,17 @@ def _font_name(seg:RichSegment, font_manager) -> str:
   return font_manager.register(seg.family, seg.mode)
 
 def _line_width_pt(line:list[_Word]) -> float:
-  """Total horizontal extent of rendered line in pt."""
-  return sum(w.width_pt for w in line)
+  """Total horizontal extent of rendered line in pt, run padding included."""
+  return _extent_pt(line)
 
 def _run_key(seg:RichSegment) -> tuple:
-  """Visual-run key: consecutive words with same key share bg/underline/link.
-  Math segments get a unique id so they always form their own run. Script flags
-  too - a run draws at one baseline, so `x^2^~n~` must not merge sup with sub."""
-  math_id = id(seg.math_drawing) if seg.math_drawing is not None else None
+  """
+  Visual-run key: consecutive words with the same key share bg, underline and link.
+  A math segment keys on itself, not its drawing, so it always forms its own run:
+  two emoji side by side share one cached drawing, yet each must be drawn.
+  Script flags count too: a run draws at one baseline, so `x^2^~n~` keeps sup apart from sub.
+  """
+  math_id = id(seg) if seg.math_drawing is not None else None
   return (
     seg.bg_color, seg.link_url, seg.link_target, seg.underline, seg.strike,
     seg.family, seg.mode, seg.size, seg.color, math_id,
@@ -341,49 +391,30 @@ def _group_runs(line:list[_Word]) -> list[list[_Word]]:
 #------------------------------------------------------------------------------------------ Measure
 
 def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
-  """Return `(min_word_width_mm, total_width_mm)` for word-wrap planning.
-
-  - **min_word_width**: width of the widest single unbreakable token (the
-    narrowest column width at which this content can fit without breaking
-    any word). Math/image segments count as single atoms.
-  - **total_width**: sum of all token widths - how wide this content would
-    be if it never wrapped.
-
-  Used by the table column-width solver to compute HTML-style auto-layout
-  (distribute available space proportionally between `min` and `max` per
-  column).
   """
-  if not segments:
-    return 0, 0
-  metrics = pdf._metrics
-  max_word = 0
-  total = 0
-  for seg in segments:
-    if seg.math_drawing is not None:
-      w = seg.math_width_pt / MM_TO_PT
-      if w > max_word: max_word = w
-      total += w
+  Return `(min_word_width_mm, total_width_mm)` for word-wrap planning.
+
+  - **min_word_width**: the widest word, which is the narrowest width that breaks none.
+    A word may span segments, and a math or image segment is one atom.
+  - **total_width**: how wide the content would be if it never wrapped.
+
+  Feeds the table column-width solver, HTML-style auto-layout between `min` and `max`.
+  Built on the same tokens, units and run padding as `_wrap`,
+  so a column sized to `min_word_width` never breaks a word.
+  """
+  if not segments: return 0, 0
+  widest = total = 0.0
+  prev: _Word|None = None
+  for unit in _units(_tokenize(segments, pdf._metrics)):
+    if unit[0].is_break:
+      prev = None
       continue
-    if not seg.text:
-      continue
-    if seg.text == "\n":
-      continue
-    # Inline-code draws a shaded rect with outer gap + inner pad on each
-    # side. That overhead must show up here or table columns sized for
-    # `` `x` `` clip the bg rect against the cell border.
-    bg_extra_mm = (_BG_RUN_EXTRA_PT / MM_TO_PT) if seg.bg_color is not None else 0
-    font_name = _font_name(seg, metrics.fonts)
-    # Match `_tokenize`: a script run reserves the width it actually draws at.
-    eff_size = _effective_size(seg)
-    for part in re.findall(r"\S+|\s+", seg.text):
-      part = _remap_for_font(part, font_name)
-      w = metrics.text_width(part, seg.family, seg.mode, eff_size) / MM_TO_PT
-      if not part.isspace():
-        word_w = w + bg_extra_mm  # any word may end up alone on a wrapped line
-        if word_w > max_word: max_word = word_w
-      total += w
-    total += bg_extra_mm
-  return max_word, total
+    if not unit[0].is_space:
+      # Any word may end up alone on a wrapped line, opening its own runs.
+      widest = max(widest, _extent_pt(unit))
+    total += _extent_pt(unit, prev)
+    prev = unit[-1]
+  return widest / MM_TO_PT, total / MM_TO_PT
 
 def _line_box(line:list, line_gap:float) -> tuple[float, float]:
   """`(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
@@ -549,39 +580,31 @@ def render_rich(
     # so backgrounds and underlines are drawn continuously across spaces.
     for run in _group_runs(line):
       rseg = run[0].seg
+      # The room `_wrap` counted for this run, half on each side:
+      # breathing room around a formula, or the inline-code rect with its outer gap.
+      pad_pt = _run_pad_pt(rseg) / 2
+      cursor_x_pt += pad_pt
       # Math run - draw vector formula, not text
       if rseg.math_drawing is not None:
         try:
           from reportlab.graphics import renderPDF
-          # Small breathing room before and after math
-          cursor_x_pt += _MATH_INLINE_PAD_PT
-          draw_x = cursor_x_pt
           # Vertical alignment: match text baseline to formula baseline
           draw_y = baseline_canvas_y_pt - rseg.math_baseline_from_bottom_pt
-          renderPDF.draw(rseg.math_drawing, canvas, draw_x, draw_y)
-          cursor_x_pt += rseg.math_width_pt + _MATH_INLINE_PAD_PT
+          renderPDF.draw(rseg.math_drawing, canvas, cursor_x_pt, draw_y)
         except Exception:
-          cursor_x_pt += rseg.math_width_pt
+          pass # a formula that fails to draw leaves its gap: the line keeps its measured width
+        cursor_x_pt += rseg.math_width_pt + pad_pt
         continue
-      # Runs with background (inline code) get outer breathing room so the
-      # shaded rect doesn't butt up against surrounding text. `bg_pad_x` =
-      # how far the shaded rect extends past the glyphs; `bg_outer` = extra
-      # gap between that rect and the words on either side.
-      has_bg = rseg.bg_color is not None
-      bg_pad_x = _BG_INNER_PAD_PT if has_bg else 0
-      bg_outer = _BG_OUTER_GAP_PT if has_bg else 0
-      if has_bg:
-        cursor_x_pt += bg_outer + bg_pad_x
       run_start_pt = cursor_x_pt
       run_width_pt = sum(w.width_pt for w in run)
-      # Background (inline code) - rounded rect
-      if has_bg:
+      # Background (inline code) - rounded rect, reaching `_BG_INNER_PAD_PT` past the glyphs
+      if rseg.bg_color is not None:
         canvas.setFillColor(Color(*rseg.bg_color[:3]))
         bg_y_pt = baseline_canvas_y_pt - rseg.size * _BG_DESCENT_RATIO
         bg_h_pt = rseg.size * _BG_HEIGHT_RATIO
         canvas.roundRect(
-          run_start_pt - bg_pad_x, bg_y_pt,
-          run_width_pt + 2 * bg_pad_x, bg_h_pt,
+          run_start_pt - _BG_INNER_PAD_PT, bg_y_pt,
+          run_width_pt + 2 * _BG_INNER_PAD_PT, bg_h_pt,
           radius=bg_h_pt * _BG_CORNER_RATIO,
           stroke=0, fill=1,
         )
@@ -628,9 +651,7 @@ def render_rich(
             contents="", destinationname=rseg.link_target,
             Rect=rect, relative=0,
           )
-      # Push cursor past the outer margin on the right side
-      if has_bg:
-        cursor_x_pt += bg_pad_x + bg_outer
+      cursor_x_pt += pad_pt
     current_top_mm -= line_height_mm
     total_used_mm += line_height_mm
   # Reset fill AND stroke color and line width for subsequent drawing.

@@ -1,9 +1,11 @@
 # pdfmarq/graphics.py
 
 """Graphics primitives - shapes, images, SVG."""
+import os
 from reportlab.lib.utils import ImageReader
-from svglib.svglib import svg2rlg
+from svglib.svglib import svg2rlg, load_svg_file, SvgRenderer
 from reportlab.graphics import renderPDF
+from . import svgmarkers
 
 #------------------------------------------------------------------------------------------- Shapes
 
@@ -100,6 +102,21 @@ def draw_image(
   """Draw image on canvas (coordinates in pt)."""
   canvas.drawImage(path, x, y, width=width, height=height, mask="auto")
 
+def load_svg(path:str|os.PathLike):
+  """
+  svglib `Drawing` of the SVG file at `path`, arrowheads included, or `None`.
+
+  svglib drops `<marker>` without a word, so markers are expanded into plain shapes first.
+  A `Path` becomes a `str`: svglib resolves a relative `<image>` only against a `str`.
+  `.svgz` goes to `svg2rlg` as it is, its markers still dropped.
+  """
+  if isinstance(path, os.PathLike): path = os.fspath(path)
+  if isinstance(path, str) and path.lower().endswith(".svgz"): return svg2rlg(path)
+  root = load_svg_file(path)
+  if root is None: return None
+  svgmarkers.expand(root)
+  return SvgRenderer(path).render(root)
+
 def draw_svg(
   canvas,
   path:str,
@@ -112,7 +129,7 @@ def draw_svg(
   attributes like `transform` and `scale` are inconsistent across versions,
   especially on Python 3.13 + Windows. Falls back to the union bounding
   box when intrinsic dims are missing."""
-  drawing = svg2rlg(path)
+  drawing = load_svg(path)
   if drawing is None:
     raise ValueError(f"Could not load SVG: {path}")
   nat_w = float(drawing.width or 0)
