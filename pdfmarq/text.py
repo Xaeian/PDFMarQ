@@ -1,10 +1,11 @@
 # pdfmarq/text.py
 
 """Text measurement and box fitting."""
+import warnings
 from typing import Callable
 from dataclasses import dataclass
 from PIL import ImageFont
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase.pdfmetrics import stringWidth, getAscent, getDescent
 from .fonts import FontManager, is_builtin, builtin_name
 from .constants import MM_TO_PT
 
@@ -49,17 +50,16 @@ class BoxFitResult:
   """Result of text box fitting."""
   text: str
   font_size: float
-  height: float  # total height in pt
+  height: float # total height in pt
   lines: int
   overflow: bool = False
 
-# Below this the type is decoration, not text. Reaching it means the box is
-# too small for its content, whatever `overflow` says about fitting.
+# Below this the type is decoration, not text.
+# Reaching it means the box is too small for its content, whatever `overflow` says about fitting.
 READABLE_MIN_PT = 5.0
 
 def _warn_unreadable(text:str, size:float, width:float, height:float) -> None:
   """Report type that shrank past legibility, with the box that forced it."""
-  import warnings
   warnings.warn(
     f"text shrank to {size:.1f}pt to fit a {width / MM_TO_PT:.1f}x"
     f"{height / MM_TO_PT:.1f}mm box and is no longer readable; widen the box "
@@ -79,8 +79,8 @@ class TextMetrics:
     """Cached PIL font for TTF metrics.
 
     `ImageFont.truetype()` re-reads and re-parses the file on every call,
-    and the autoscale loop in `box_fit` measures the same font dozens of
-    times per cell. Keyed on the integer size PIL itself rasterizes at.
+    and the autoscale loop in `box_fit` measures the same font dozens of times per cell.
+    Keyed on the integer size PIL itself rasterizes at.
     """
     key = (path, int(size))
     font = self._pil_cache.get(key)
@@ -130,13 +130,12 @@ class TextMetrics:
     """Real `(ascent, descent)` in points for visual centering.
 
     Returns line-box ascent and descent from reportlab (builtin) or PIL (TTF).
-    Used by `core.text()` for vertical positioning inside fixed-height boxes
-    like table cells. The line-box ascent includes a small amount of space
-    above capital letters (for accent marks) - this is DESIRED: it makes text
-    visually sit in the lower portion of the box rather than cap-top-flush.
+    Used by `core.text()` for vertical positioning inside fixed-height boxes like table cells.
+    The line-box ascent includes a small amount of space above capital letters (for accent marks).
+    This is DESIRED: it makes text visually sit in the lower portion of the box
+    rather than cap-top-flush.
     """
     if is_builtin(family, mode):
-      from reportlab.pdfbase.pdfmetrics import getAscent, getDescent
       name = builtin_name(family, mode)
       try:
         return float(getAscent(name, size)), float(abs(getDescent(name, size)))

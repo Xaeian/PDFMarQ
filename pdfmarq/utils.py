@@ -1,6 +1,7 @@
 # pdfmarq/utils.py
 
 """Utility functions - unit conversion, color parsing, helpers."""
+from datetime import date, datetime
 from .constants import Unit, MM_TO_PT
 
 #-------------------------------------------------------------------------------------------- Units
@@ -25,19 +26,19 @@ def mm_to_pt(*values:float) -> list[float]|float:
 
 #------------------------------------------------------------------------------- Typographic ladder
 
-# Word's font-size dropdown values - the de facto standard typographic
-# ladder. Jumps are non-linear: 12→14→16 skips 13/15 because those don't
-# read well in print. "One step smaller" should walk this list, not just
-# subtract 1pt and hope for the best.
+# Word's font-size dropdown values - the de facto standard typographic ladder.
+# Jumps are non-linear: 12→14→16 skips 13/15 because those don't read well in print.
+# "One step smaller" should walk this list, not just subtract 1pt and hope for the best.
 _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72)
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
   """Next-smaller standard typographic size below `body_pt`.
 
-  Walks `_SIZE_LADDER`. Used by tables and bibliography to derive
-  a "one step smaller" reading size that hits expected Word ladder values
-  (11→10, 12→11, 14→12, 16→14, 18→16) instead of arbitrary `body - 1`
-  deltas that produce non-standard sizes like 13. Clamps at `min_pt`."""
+  Walks `_SIZE_LADDER`.
+  Used by tables and bibliography to derive a "one step smaller" reading size
+  that hits expected Word ladder values (11→10, 12→11, 14→12, 16→14, 18→16)
+  instead of arbitrary `body - 1` deltas that produce non-standard sizes like 13.
+  Clamps at `min_pt`."""
   for i, size in enumerate(_SIZE_LADDER):
     if size >= body_pt:
       return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
@@ -62,7 +63,7 @@ def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
       hex_str = "".join(c * 2 for c in hex_str)
     if len(hex_str) != 6:
       raise ValueError(
-        f"Invalid hex color {raw!r}: expected #RGB or #RRGGBB, got {len(hex_str)} digit(s)"
+        f"Invalid hex color {raw!r}: expected #RGB or #RRGGBB, got {len(hex_str)} digit(s)",
       )
     if not all(c in _HEX_DIGITS for c in hex_str):
       raise ValueError(f"Invalid hex color {raw!r}: contains non-hex characters")
@@ -83,6 +84,24 @@ def color_hex(color:tuple|str) -> str:
   """
   r, g, b = parse_color(color)
   return f"{int(round(r * 255)):02X}{int(round(g * 255)):02X}{int(round(b * 255)):02X}"
+
+#-------------------------------------------------------------------------------------------- Dates
+
+def format_date(value:date|str|None, fmt:str) -> str:
+  """
+  `value` printed with the strftime pattern `fmt`.
+
+  A `date`, a `datetime` and text in ISO `YYYY-MM-DD` are formatted.
+  Other text passes through as written, and `None` gives an empty string.
+  """
+  if value is None: return ""
+  if isinstance(value, date): return value.strftime(fmt) # a `datetime` too
+  if isinstance(value, str):
+    try:
+      return datetime.strptime(value, "%Y-%m-%d").date().strftime(fmt)
+    except ValueError:
+      return value
+  return str(value)
 
 #------------------------------------------------------------------------------------------- Margin
 

@@ -3,8 +3,8 @@
 """
 Footnote and definition-list rendering.
 
-Footnotes: end-of-document collection with a short horizontal rule, each
-entry gets a named PDF bookmark so in-body `[^n]` refs navigate to it.
+Footnotes: end-of-document collection with a short horizontal rule.
+Each entry gets a named PDF bookmark so in-body `[^n]` refs navigate to it.
 
 Definition list: `Term` (bold) above `: definition` (indented).
 """
@@ -18,17 +18,17 @@ from ..utils import smaller_size
 
 class FootnotesMixin:
   """Footnote section rendering and definition lists. Mixed into `MarkdownRenderer`."""
-
   def _render_footnote_heading(self, label:str):
     """Emit an h2-styled standalone heading above the footnote section."""
     s = self.style
+    size = self._heading_size(2)
     seg = RichSegment(
       text=label, family=s.font_head, mode=s.head_mode,
-      size=s.h2_size, color=s.head_color,
+      size=size, color=s.head_color,
     )
     x = self._indent_mm
     width = self.pdf.content_width - x
-    self._ensure_space(s.h2_size / MM_TO_PT * 2)
+    self.pdf.keep(size / MM_TO_PT * 2)
     self.pdf.enter(s.head_gap_top)
     y = self.pdf.y
     h = render_rich(self.pdf, [seg], width, x, y, Align.LEFT, s.line_height)
@@ -38,8 +38,8 @@ class FootnotesMixin:
     """Render footnote collection at end of document.
 
     When `style.footnote_label` is set, emits a heading above the section
-    (e.g. `"References"`, `"Bibliografia"`). When `None`, just draws a thin
-    HR - the smaller font signals reference matter on its own.
+    (e.g. `"References"`, `"Bibliografia"`).
+    When `None`, just draws a thin HR - the smaller font signals reference matter on its own.
     """
     s = self.style
     end = self._find_close(tokens, start, "footnote_block_open", "footnote_block_close")
@@ -55,8 +55,8 @@ class FootnotesMixin:
       self.pdf.line(w, 0, s.hr_thick)
       self._reset_stroke()
       self.pdf.enter(s.para_gap)
-    # One typographic ladder step below body, so the
-    # bibliography reads at the same relative weight in both formats.
+    # One typographic ladder step below body,
+    # so the bibliography reads at the same relative weight in both formats.
     biblio_pt = smaller_size(s.body_size)
     i = start + 1
     while i < end:
@@ -68,9 +68,8 @@ class FootnotesMixin:
           j += 1
         # `footnote_anchor` is the back-reference marker, nothing to draw.
         body = [tk for tk in tokens[i+1:j] if tk.type != "footnote_anchor"]
-        # The first paragraph shares its line with the `[n]` label; any
-        # further blocks (more paragraphs, lists, code) are rendered
-        # recursively below it.
+        # The first paragraph shares its line with the `[n]` label.
+        # Any further blocks (more paragraphs, lists, code) are rendered recursively below it.
         first_inline: Token|None = None
         rest: list[Token] = body
         if (len(body) >= 3 and body[0].type == "paragraph_open"
@@ -79,7 +78,7 @@ class FootnotesMixin:
           rest = body[3:]
         base = RichSegment(
           text="", family=s.font_body, mode=s.body_mode,
-          size=biblio_pt, color=s.muted_color,
+          size=biblio_pt, color=s.muted_color, hyphenate=s.hyphenate,
         )
         prefix = RichSegment(
           text=f"[{label}] ", family=s.font_body, mode=s.bold_mode,
@@ -90,11 +89,11 @@ class FootnotesMixin:
           segs.extend(self._inline_to_segments(first_inline, base))
         x = self._indent_mm
         width = self.pdf.content_width - x
-        self._ensure_space(biblio_pt * s.line_height / MM_TO_PT)
+        self.pdf.keep(biblio_pt * s.line_height / MM_TO_PT)
         y = self.pdf.y
         self.pdf.cursor(x, y)
-        self.pdf.anchor(f"fn_{label}") # [^label] refs navigate here
-        h = render_rich(self.pdf, segs, width, x, y, Align.LEFT, s.line_height)
+        self.pdf.anchor(f"{self._anchors}fn_{label}") # [^label] refs navigate here
+        h = render_rich(self.pdf, segs, width, x, y, self._para_align(), s.line_height)
         self.pdf.cursor(x, y + h + s.list_gap)
         if rest:
           self._render_footnote_rest(rest, biblio_pt)
@@ -105,11 +104,11 @@ class FootnotesMixin:
   def _render_footnote_rest(self, tokens:list[Token], size_pt:float):
     """Render a footnote's continuation blocks, indented under its label.
 
-    Goes through the normal block dispatcher so lists, code blocks and
-    nested markup keep working. Body size and color are dropped to the
-    bibliography scale for the duration so the continuation matches the
-    first line, then restored in a `finally` so an exception mid-footnote
-    cannot leak the smaller size into the rest of the document.
+    Goes through the normal block dispatcher, so lists, code blocks and nested markup keep working.
+    Body size and color are dropped to the bibliography scale for the duration,
+    so the continuation matches the first line.
+    A `finally` restores them,
+    so an exception mid-footnote cannot leak the smaller size into the rest of the document.
     """
     s = self.style
     old_indent = self._indent_mm
@@ -145,7 +144,7 @@ class FootnotesMixin:
           segs = self._inline_to_segments(inline_token, base)
           x = self._indent_mm
           width = self.pdf.content_width - x
-          self._ensure_space(s.body_size * s.line_height / MM_TO_PT)
+          self.pdf.keep(s.body_size * s.line_height / MM_TO_PT)
           y = self.pdf.y
           h = render_rich(
             self.pdf, segs, width, x, y, Align.LEFT, s.line_height,

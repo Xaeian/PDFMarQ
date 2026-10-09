@@ -8,17 +8,18 @@ r"""Source text preprocessors run before markdown-it parsing.
 - `normalize_math_delimiters` LaTeX `\[...\]` / `\(...\)` → `$$` / `$...$`
 """
 import re
+from .._warn import warn_missing
 
 #---------------------------------------------------------------------------------- PreprocessMixin
 
 class PreprocessMixin:
   """Source text preprocessing mixed into `MarkdownRenderer`.
   Runs before markdown-it parsing: list indent normalization and emoji expansion."""
-
   @staticmethod
   def _iter_content_lines(md_text:str):
-    """Yield `(line, is_content)` for each line. `is_content` is False for
-    lines inside fenced code blocks AND for the fence delimiter lines."""
+    """Yield `(line, is_content)` for each line.
+    `is_content` is `False` for lines inside fenced code blocks
+    AND for the fence delimiter lines."""
     in_fence = False
     marker = ""
     for line in md_text.split("\n"):
@@ -39,9 +40,9 @@ class PreprocessMixin:
         continue
       yield line, True
 
-  # A sub-item nests only when indented to the parent's content column
-  # (2 for `- `, 3 for `1. `). Below that it gets doubled; from 3 up it already
-  # clears the bar and doubling would push it past the 4-space code threshold.
+  # A sub-item nests only when indented to the parent's content column (2 for `- `, 3 for `1. `).
+  # Below that it gets doubled; from 3 up it already clears the bar,
+  # and doubling would push it past the 4-space code threshold.
   _NEST_PROMOTE_BELOW = 3
 
   @staticmethod
@@ -69,7 +70,6 @@ class PreprocessMixin:
     try:
       import emoji as _emoji
     except ImportError:
-      from .._warn import warn_missing
       warn_missing("emoji", "emoji", "emoji shortcodes (:name:)")
       return md_text
     out: list[str] = []
@@ -91,9 +91,9 @@ _MATH_BLOCK_LINE_RE = re.compile(r"^(\s*)\\\[\s*(.+?)\s*\\\]\s*$")
 def normalize_math_delimiters(md_text:str) -> str:
   r"""LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
 
-  The bracket forms are what LaTeX sources and AI assistants emit; only the
-  dollar forms reach the parser. Fenced code passes through untouched and
-  inline code spans keep their backslashes.
+  The bracket forms are what LaTeX sources and AI assistants emit;
+  only the dollar forms reach the parser.
+  Fenced code passes through untouched and inline code spans keep their backslashes.
   """
   out: list[str] = []
   in_fence = False

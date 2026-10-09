@@ -2,20 +2,20 @@
 
 """Blockquote rendering with GitHub-style callout support.
 
-Left colored bar + indented content. Callouts (`> [!NOTE]`, `> [!WARNING]`,
-etc.) override bar color and prepend a bold title. Content is pre-measured so
-the blockquote fits on one page when possible."""
+Left colored bar + indented content.
+Callouts (`> [!NOTE]`, `> [!WARNING]`, etc.) override bar color and prepend a bold title.
+Content is pre-measured so the blockquote fits on one page when possible."""
 
 from markdown_it.token import Token
-import re
+import copy, re
 from ..inline import RichSegment, render_rich, measure_rich
 from ..constants import Align, MM_TO_PT
 
 #------------------------------------------------------------------------------------ Callout types
 
-# Per-type metadata that's NOT user-configurable (regex routing + emoji
-# icon + style-field name for label). Colors come from
-# `MarkdownStyle.callout_colors` (override there for theming).
+# Per-type metadata that's NOT user-configurable:
+# regex routing + emoji icon + style-field name for label.
+# Colors come from `MarkdownStyle.callout_colors` (override there for theming).
 CALLOUT_TYPES = {
   "NOTE": ("ℹ", "callout_label_note"),
   "TIP": ("💡", "callout_label_tip"),
@@ -26,9 +26,9 @@ CALLOUT_TYPES = {
 _CALLOUT_MARKER_RE = re.compile(rf"^\[!({'|'.join(CALLOUT_TYPES)})\]\s*")
 
 def _callout_palette(style, name:str) -> tuple[tuple, tuple]:
-  """Return `(border_rgb, text_rgb)` for callout `name`. Looks up
-  `MarkdownStyle.callout_colors` (lowercase key); falls back to NOTE
-  blue when the type is missing."""
+  """Return `(border_rgb, text_rgb)` for callout `name`.
+  Looks up `MarkdownStyle.callout_colors` (lowercase key);
+  falls back to NOTE blue when the type is missing."""
   default = ((0.035, 0.41, 0.855), (0.035, 0.41, 0.855))
   pal = (style.callout_colors or {}).get(name.lower())
   return pal if pal else default
@@ -37,11 +37,10 @@ def _callout_palette(style, name:str) -> tuple[tuple, tuple]:
 
 class BlockquoteMixin:
   """
-  Blockquote rendering plus GitHub-style callouts (`> [!NOTE]`, `> [!TIP]`,
-  `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`). Mixed into
-  `MarkdownRenderer`.
+  Blockquote rendering plus GitHub-style callouts
+  (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`).
+  Mixed into `MarkdownRenderer`.
   """
-
   def _detect_callout(self, tokens:list[Token], start:int, end:int) -> tuple[str, int]|None:
     """Check if blockquote starts with `[!TYPE]` marker. Returns (type, idx) or None."""
     for j in range(start + 1, end):
@@ -65,37 +64,36 @@ class BlockquoteMixin:
   def _render_blockquote(self, tokens:list[Token], start:int) -> int:
     s = self.style
     end = self._find_close(tokens, start, "blockquote_open", "blockquote_close")
+    # a callout marker is stripped from a copy: the caller may draw these tokens again
+    quote = copy.deepcopy(tokens[start:end + 1])
+    last = len(quote) - 1
     # Pre-measure so the left bar (drawn post-factum) isn't split across a page break.
     content_w_mm = self.pdf.content_width - self._indent_mm - s.quote_pad
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
     total_h = 0.0
-    for j in range(start + 1, end):
-      tk = tokens[j]
+    for tk in quote[1:last]:
       if tk.type == "inline":
-        base = RichSegment(
-          text="", family=s.font_body, mode=s.body_mode,
-          size=s.body_size, color=s.body_color,
-        )
         try:
-          segs = self._inline_to_segments(tk, base)
-          h = measure_rich(self.pdf, segs, content_w_mm, line_gap=s.line_height)
+          segs = self._inline_to_segments(tk, self._body_base())
+          h = measure_rich(self.pdf, segs, content_w_mm, line_gap=s.line_height,
+            align=self._para_align())
         except Exception:
           h = body_line_mm
         total_h += max(h, body_line_mm) + s.list_gap
-    callout = self._detect_callout(tokens, start, end)
+    callout = self._detect_callout(quote, 0, last)
     if callout:
-      total_h += body_line_mm * 1.2  # title line
-      total_h += s.body_size * (s.line_height - 1.0) / MM_TO_PT  # title→content gap
-    total_h += body_line_mm * 0.5  # padding
+      total_h += body_line_mm * 1.2 # title line
+      total_h += s.body_size * (s.line_height - 1.0) / MM_TO_PT # title→content gap
+    total_h += body_line_mm * 0.5 # padding
     page_avail = self.pdf.content_height
     # Inside a `<!-- group -->`, the group owns atomicity; skip own pre-break
     # to avoid orphaning the preceding figure/code above the break.
     if not getattr(self, "_in_group", False):
       if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
-        self.pdf.new_page()
+        self.pdf.next_frame()
     x_start = self._indent_mm
     y_start = self.pdf.y
-    if callout:  # wider bar + colored text
+    if callout: # wider bar + colored text
       bar_color, text_color = _callout_palette(s, callout[0])
       bar_width = s.quote_border_w * 1.5
     else:
@@ -128,7 +126,7 @@ class BlockquoteMixin:
     # because `_render_paragraph` and `_render_list` already key off it.
     if callout:
       self._list_depth += 1
-    self._render_tokens(tokens[start+1:end])
+    self._render_tokens(quote[1:last])
     if callout:
       self._list_depth -= 1
     self._indent_mm = old_indent

@@ -13,7 +13,7 @@ Showcases:
   - Ghostscript post-process for a smaller, distribution-ready PDF
 """
 import sys
-from pdfmarq.md import md_to_pdf, lang_style
+from pdfmarq.paper import md_to_pdf, lang_style
 from xaeian import PATH, FILE, Print, Color as c
 from xaeian.media.pdf import pdf_compress
 
@@ -58,7 +58,7 @@ def main():
       p.ok(
         f"compressed {COMPRESS} | "
         f"{c.GREEN}{s1/1024:.1f} kB{c.END} "
-        f"({c.YELLOW}{s1/s0*100:.0f}%{c.END})"
+        f"({c.YELLOW}{s1/s0*100:.0f}%{c.END})",
       )
     except RuntimeError as e:
       p.wrn(f"compress skipped | {e}")

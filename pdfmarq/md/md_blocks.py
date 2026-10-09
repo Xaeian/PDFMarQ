@@ -3,21 +3,23 @@
 """
 Block-level renderers: headings, paragraphs, code blocks, hr, math, images.
 
-Each method draws one block element and advances `pdf.y` past it. All
-methods assume the caller (`_render_tokens`) has positioned the cursor
-at the block's top-left corner.
+Each method draws one block element and advances `pdf.y` past it.
+All methods assume the caller (`_render_tokens`) has put the cursor at the block's top-left corner.
 """
 
+import re, warnings
 from markdown_it.token import Token
-import re
+from reportlab.graphics import renderPDF
+from reportlab.graphics.shapes import Drawing, Image
 from ..inline import RichSegment, render_rich, measure_rich, wrap_line_heights
 from ..constants import Align, MM_TO_PT
 from .md_images import (ImageDSL, ImageInfo, apply_dsl, load_image_info,
-  size_block, size_inline)
+  size_block, size_inline, parse_image_dsl)
+from ..graphics import load_svg
 
 #---------------------------------------------------------------------------------- Image paragraph
 
-_ROW_MIN_SLOT_MM = 20  # figures narrower than this wrap to another row
+_ROW_MIN_SLOT_MM = 20 # figures narrower than this wrap to another row
 
 def _image_row(inline_token:Token) -> list[Token]|None:
   """Image children of a paragraph holding nothing but local images.
@@ -49,15 +51,35 @@ def _split_rows(n:int, cols:int) -> list[int]:
   base, extra = divmod(n, rows)
   return [base + (i < extra) for i in range(rows)]
 
+#------------------------------------------------------------------------------------- Flowing text
+
+FLOW_MIN_LINES = 2 # lines on each side of a paragraph split when text flows
+LIST_LEAD_MM = 1 # space a top-level list keeps above its first item
+
+def flow_head(line_h:list[float]) -> list[float]:
+  """Heights of the lines a flowing paragraph opens a frame with: all of one too short to split."""
+  return line_h[:FLOW_MIN_LINES] if len(line_h) >= 2 * FLOW_MIN_LINES else line_h
+
+def flowing_kind(tokens:list[Token], start:int) -> str:
+  """
+  `paragraph` or `list` when the block at `start` is text that can flow on to the next frame.
+  Anything else gives `""`, a paragraph of images too: that is a figure.
+  """
+  if start >= len(tokens): return ""
+  t = tokens[start]
+  if t.type in ("bullet_list_open", "ordered_list_open"): return "list"
+  if t.type == "paragraph_open" and not _image_row(tokens[start + 1]): return "paragraph"
+  return ""
+
 #------------------------------------------------------------------------------------- Line fitting
 
 def _fit_math_width(drawing, max_w_pt:float, formula:str) -> None:
   """Shrink a formula drawing in place until it fits `max_w_pt`.
 
-  Centring a drawing wider than the column yields a negative offset, which
-  puts both ends of the formula outside the page. Scaling keeps all of it
-  on paper, and the warning says it happened - a long formula reads better
-  split across two `$$` blocks than shrunk.
+  Centring a drawing wider than the column yields a negative offset,
+  which puts both ends of the formula outside the page.
+  Scaling keeps all of it on paper, and the warning says it happened -
+  a long formula reads better split across two `$$` blocks than shrunk.
   """
   if drawing.width <= max_w_pt or drawing.width <= 0:
     return
@@ -65,7 +87,6 @@ def _fit_math_width(drawing, max_w_pt:float, formula:str) -> None:
   drawing.scale(scale, scale)
   drawing.width *= scale
   drawing.height *= scale
-  import warnings
   warnings.warn(
     f"block formula is {1 / scale:.1f}x wider than the column and was "
     f"scaled to fit: {formula.strip()[:60]!r}",
@@ -75,9 +96,9 @@ def _fit_math_width(drawing, max_w_pt:float, formula:str) -> None:
 def _fit_lines(heights:list[float], start:int, budget:float) -> tuple[int, float]:
   """How many lines from `start` fit `budget`, and their total height.
 
-  Takes at least one line even when it does not fit, so a line taller
-  than a whole page still advances the caller instead of spinning on a
-  chunk that can never be placed.
+  Takes at least one line even when it does not fit,
+  so a line taller than a whole page still advances the caller
+  instead of spinning on a chunk that can never be placed.
   """
   count = 0
   used = 0.0
@@ -93,41 +114,58 @@ def _fit_lines(heights:list[float], start:int, budget:float) -> tuple[int, float
 class BlocksMixin:
   """Headings, paragraphs, code blocks, horizontal rules, math blocks,
   and standalone block images. Mixed into `MarkdownRenderer`."""
-
   #---------------------------------------------------------------------------------------- Heading
   
-  def _render_heading(self, level:int, inline_token:Token, lookahead_mm:float=0):
+  def _render_heading(
+    self, level:int, inline_token:Token,
+    lookahead_mm:float = 0,
+    next_kind:str = "",
+  ):
+    """
+    Heading at the cursor, kept with what follows it.
+
+    `next_kind` is the `flowing_kind` of the next block.
+    Such text can flow on without the heading,
+    so with `keep_together` off the heading reserves only itself, as drawn, and three lines.
+    """
     s = self.style
-    size = [s.h1_size, s.h2_size, s.h3_size, s.h4_size, s.h5_size, s.h6_size][level-1]
-    # h1 page-break is unconditional here: the frontmatter title goes through
-    # _render_frontmatter_header, never this path.
+    size = self._heading_size(level)
+    # h1 page-break is unconditional here:
+    # a frontmatter title is drawn by the document package, never through this path.
     if level == 1 and s.h1_page_break and self.pdf.y > 0.5:
       self.pdf.new_page()
     elif self.pdf.y > 0.5:
       self.pdf.enter(s.head_gap_top)
-    # Keep-with-next: reserve heading height + at least 3 body lines.
-    heading_block_mm = size / MM_TO_PT * 2
-    min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
-    self._ensure_space(heading_block_mm + max(lookahead_mm, min_followup_mm))
     base = RichSegment(
       text="", family=s.font_head, mode=s.head_mode,
       size=size, color=s.head_color,
     )
     segments = self._inline_to_segments(inline_token, base)
     x = self._indent_mm
-    y = self.pdf.y
     width = self.pdf.content_width - x
+    ruled = (level == 1 and s.h1_underline) or (level == 2 and s.h2_underline)
+    # Keep-with-next: reserve the heading and at least 3 body lines.
+    min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
+    if next_kind and not s.keep_together:
+      heading_block_mm = measure_rich(self.pdf, segments, width, s.line_height) \
+        + (2 if ruled else 0) + s.head_gap_bot
+      followup_mm = min_followup_mm + (LIST_LEAD_MM if next_kind == "list" else 0)
+    else:
+      heading_block_mm = size / MM_TO_PT * 2
+      followup_mm = max(lookahead_mm, min_followup_mm)
+    self.pdf.keep(heading_block_mm + followup_mm)
+    y = self.pdf.y
     # Named destination for `[text](#slug)` anchor links.
     # Must be registered while the canvas is on the correct page.
     slug = self._slugify_inline(inline_token)
     if slug:
       slug = self.dedupe_slug(slug, self._slug_uses)
       self.pdf.cursor(x, y)
-      self.pdf.anchor(slug)
+      self.pdf.anchor(self._anchors + slug)
     self.pdf.cursor(x, y)
     h = render_rich(self.pdf, segments, width, x, y, Align.LEFT, s.line_height)
     new_y = y + h
-    if (level == 1 and s.h1_underline) or (level == 2 and s.h2_underline):
+    if ruled:
       self.pdf.cursor(x, new_y + 0.8)
       self.pdf.stroke_color(*s.hr_color)
       self.pdf.line(width, 0, s.underline_thick)
@@ -135,15 +173,21 @@ class BlocksMixin:
       new_y += 2
     self.pdf.cursor(x, new_y + s.head_gap_bot)
 
+  def _heading_size(self, level:int) -> float:
+    """Font size (pt) of a level `1..6` heading, `body_size` where the style leaves it `None`."""
+    s = self.style
+    size = (s.h1_size, s.h2_size, s.h3_size, s.h4_size, s.h5_size, s.h6_size)[level - 1]
+    return s.body_size if size is None else size
+
   @staticmethod
   def dedupe_slug(slug:str, seen:dict) -> str:
     """`slug`, suffixed when the document already used it.
 
     Second use becomes `slug-1`, third `slug-2` (GitHub's convention).
-    Without it two headings reading the same share one destination and
-    every link to either lands on the first. `seen` counts uses and is
-    walked in document order by both the pre-scan and the render pass, so
-    the two agree on which heading owns which slug.
+    Without it two headings reading the same share one destination,
+    and every link to either lands on the first.
+    `seen` counts uses and is walked in document order by both the pre-scan and the render pass,
+    so the two agree on which heading owns which slug.
     """
     used = seen.get(slug, 0)
     seen[slug] = used + 1
@@ -152,9 +196,10 @@ class BlocksMixin:
   @staticmethod
   def _slugify_inline(inline_token:Token) -> str:
     """GitHub-style slug from heading's inline token.
-    Concatenates text and inline-code children so markdown syntax chars
-    (`*`, `_`, etc.) from `.content` don't pollute the slug while the words
-    inside backticks still count. Preserves unicode letters (PL/DE/...).
+    Concatenates text and inline-code children
+    so markdown syntax chars (`*`, `_`, etc.) from `.content` don't pollute the slug
+    while the words inside backticks still count.
+    Preserves unicode letters (PL/DE/...).
     """
     children = inline_token.children or []
     parts = [c.content for c in children
@@ -170,23 +215,34 @@ class BlocksMixin:
 
   def _render_rich_paged(
     self, segments:list, line_h:list[float], x_mm:float, width_mm:float,
-    line_gap:float, align:str=Align.LEFT, preserve_leading_space:bool=False,
+    line_gap:float,
+    align:str = Align.LEFT,
+    preserve_leading_space:bool = False,
+    min_lines:int = 1,
   ):
-    """Draw wrapped text taller than one page, breaking pages between lines.
+    """
+    Draw wrapped text across frames, breaking between lines.
 
-    `render_rich` lays a block out from a single `y`, so lines past the
-    page bottom fall outside the MediaBox and are invisible in the output.
-    This walks the wrapped lines one page-sized window at a time. Leaves
-    the cursor just below the last line drawn (no trailing block gap).
+    `render_rich` lays a block out from a single `y`,
+    so lines past the page bottom fall outside the MediaBox and are invisible in the output.
+    This walks the wrapped lines one frame-sized window at a time.
+    Leaves the cursor just below the last line drawn (no trailing block gap).
+
+    `min_lines` is the least a frame holds on either side of a break:
+    `1` draws whatever fits, `2` keeps a single first or last line from standing alone.
     """
     n = len(line_h)
     i = 0
     while i < n:
       avail = self.pdf.content_height - self.pdf.y
-      if avail < line_h[i] and self.pdf.y > 0.5:
-        self.pdf.new_page()
+      if avail < sum(line_h[i:i + min_lines]) and self.pdf.y > 0.5:
+        self.pdf.next_frame()
         avail = self.pdf.content_height - self.pdf.y
       count, used = _fit_lines(line_h, i, avail)
+      short = min_lines - (n - i - count) # lines the next frame would lack
+      if 0 < short < min_lines and count - short >= min_lines:
+        used -= sum(line_h[i + count - short:i + count])
+        count -= short
       y = self.pdf.y
       self.pdf.cursor(x_mm, y)
       render_rich(
@@ -197,41 +253,58 @@ class BlocksMixin:
       self.pdf.cursor(x_mm, y + used)
       i += count
       if i < n:
-        self.pdf.new_page()
+        self.pdf.next_frame()
 
   #-------------------------------------------------------------------------------------- Paragraph
-  
+
+  def _para_align(self) -> str:
+    """
+    Alignment of body paragraphs. Whatever measures a paragraph passes it too,
+    since justified text wraps tighter.
+    """
+    return Align.JUSTIFY if self.style.justify else Align.LEFT
+
+  def _body_base(self) -> RichSegment:
+    """
+    Segment the text of a body paragraph grows from, hyphenated as the style says.
+    Whatever measures a paragraph starts from it too, so measured lines break as drawn ones.
+    """
+    s = self.style
+    return RichSegment(text="", family=s.font_body, mode=s.body_mode, size=s.body_size,
+      color=s.body_color, hyphenate=s.hyphenate)
+
   def _render_paragraph(self, inline_token:Token):
     s = self.style
     imgs = _image_row(inline_token)
     if imgs:
       self._render_images(imgs)
       return
-    base = RichSegment(
-      text="", family=s.font_body, mode=s.body_mode,
-      size=s.body_size, color=s.body_color,
-    )
-    segments = self._inline_to_segments(inline_token, base)
+    segments = self._inline_to_segments(inline_token, self._body_base())
     x = self._indent_mm
     width = self.pdf.content_width - x
     spacing = s.list_gap if self._list_depth > 0 else s.para_gap
+    align = self._para_align()
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
-    line_h = wrap_line_heights(self.pdf, segments, width, line_gap=s.line_height)
+    line_h = wrap_line_heights(self.pdf, segments, width, line_gap=s.line_height, align=align)
     para_h = sum(line_h) or body_line_mm
     page_h = self.pdf.content_height
-    if para_h > (page_h - self.pdf.y):
-      if para_h <= page_h:
-        # Fits a page, just not what is left of this one - keep it whole.
-        self.pdf.new_page()
-      else:
-        # Taller than a whole page: split it, otherwise every line past the
-        # page bottom is drawn off-page and lost.
-        self._render_rich_paged(segments, line_h, x, width, s.line_height)
+    room = page_h - self.pdf.y
+    if para_h > room:
+      # flowing text splits once its head fits here and as many lines are left for the next frame
+      head = flow_head(line_h)
+      flows = not s.keep_together and len(head) < len(line_h) and sum(head) <= room
+      if para_h > page_h or flows:
+        # Taller than a whole page, or flowing: split it.
+        # Otherwise every line past the page bottom is drawn off-page and lost.
+        self._render_rich_paged(segments, line_h, x, width, s.line_height, align,
+          min_lines=1 if s.keep_together else FLOW_MIN_LINES)
         self.pdf.cursor(x, self.pdf.y + spacing)
         return
+      # Fits a frame, just not what is left of this one - keep it whole.
+      self.pdf.next_frame()
     y = self.pdf.y
     self.pdf.cursor(x, y)
-    h = render_rich(self.pdf, segments, width, x, y, Align.LEFT, s.line_height)
+    h = render_rich(self.pdf, segments, width, x, y, align, s.line_height)
     self.pdf.cursor(x, y + h + spacing)
 
   #------------------------------------------------------------------------------------- Code block
@@ -241,40 +314,29 @@ class BlocksMixin:
     content = content.rstrip("\n")
     # Mermaid: render to PNG; `info_rest` carries optional image DSL overrides.
     if lang == "mermaid" and s.mermaid_enable:
-      try:
-        from .mermaid import render_mermaid
-        result = render_mermaid(
-          content,
-          cli=s.mermaid_cli, theme=s.mermaid_theme,
-          background=s.mermaid_background, scale=s.mermaid_scale,
-          font_family=s.font_body,
-          font_dir=str(self.pdf._fonts.font_dir),
-          remote=s.mermaid_remote,
-        )
-      except ImportError:
-        from .._warn import warn_missing
-        warn_missing("mermaid", "Pillow", "mermaid diagrams")
-        result = None
+      result = render_mermaid(
+        content,
+        cli=s.mermaid_cli, theme=s.mermaid_theme,
+        background=s.mermaid_background, scale=s.mermaid_scale,
+        font_family=s.font_body,
+        font_dir=str(self.pdf.fonts.font_dir),
+        remote=s.mermaid_remote,
+      )
       if result is not None:
         path, w_pt, h_pt = result
-        from .md_images import parse_image_dsl
         dsl = parse_image_dsl(info_rest) if info_rest else None
         self._render_mermaid_image(path, w_pt, h_pt, dsl)
         return
     # highlight_code returns None when pygments is absent (warns once);
-    # the ImportError guard is defensive against partial installs.
     highlighted = None
     if lang:
-      try:
-        from .highlight import highlight_code
-        highlighted = highlight_code(
-          content, lang,
-          family=s.font_mono, mode=s.mono_mode, bold_mode=s.bold_mode,
-          size=s.code_block_size, default_color=s.body_color,
-          theme=s.syntax_theme,
-        )
-      except ImportError:
-        highlighted = None
+      from .highlight import highlight_code # loads pygments, so not on import
+      highlighted = highlight_code(
+        content, lang,
+        family=s.font_mono, mode=s.mono_mode, bold_mode=s.bold_mode,
+        size=s.code_block_size, default_color=s.body_color,
+        theme=s.syntax_theme,
+      )
     lines = content.split("\n") if content else [""]
     pad = s.code_block_pad
     left_offset = 2
@@ -308,15 +370,15 @@ class BlocksMixin:
     page_h = self.pdf.content_height
     # Fits a page but not the rest of this one: move it whole.
     if block_h > (page_h - self.pdf.y) and block_h <= page_h and self.pdf.y > 0.5:
-      self.pdf.new_page()
-    # A taller block is drawn in chunks, one frame per chunk: lines placed
-    # below the page bottom fall outside the MediaBox and are invisible.
+      self.pdf.next_frame()
+    # A taller block is drawn in chunks, one frame per chunk:
+    # lines placed below the page bottom fall outside the MediaBox and are invisible.
     n = len(per_line_segs)
     i = 0
     while i < n:
       avail = self.pdf.content_height - self.pdf.y
       if avail < frame_h_mm + line_heights_mm[i] and self.pdf.y > 0.5:
-        self.pdf.new_page()
+        self.pdf.next_frame()
         avail = self.pdf.content_height - self.pdf.y
       count, used = _fit_lines(line_heights_mm, i, avail - frame_h_mm)
       chunk_h = used + frame_h_mm
@@ -340,7 +402,7 @@ class BlocksMixin:
       self.pdf.cursor(x, y + chunk_h)
       i += count
       if i < n:
-        self.pdf.new_page()
+        self.pdf.next_frame()
     self.pdf.cursor(x, self.pdf.y + s.code_block_gap)
 
   #----------------------------------------------------------------------------------------- Images
@@ -351,7 +413,7 @@ class BlocksMixin:
     Used for inline mid-paragraph images: capped at `inline_image_max_h`
     via `size_inline` so an inline image never blows up line height.
     """
-    src = self._resolve_image_path(src)
+    src = self.resolve_path(src)
     info = load_image_info(src, attrs=attrs, default_dpi=self.style.image_dpi)
     if info is None:
       return None
@@ -360,9 +422,7 @@ class BlocksMixin:
     w_mm, h_mm = size_inline(info, inline_cap_mm)
     w_pt, h_pt = w_mm * MM_TO_PT, h_mm * MM_TO_PT
     try:
-      from reportlab.graphics.shapes import Drawing, Image
       if info.is_svg:
-        from ..graphics import load_svg
         src_drawing = load_svg(src)
         if src_drawing is None or src_drawing.width <= 0 or src_drawing.height <= 0:
           return None
@@ -384,7 +444,7 @@ class BlocksMixin:
     s = self.style
     pdf = self.pdf
     x_start = self._indent_mm
-    src = self._resolve_image_path(src)
+    src = self.resolve_path(src)
     info = load_image_info(src, attrs=attrs, alt=alt, default_dpi=s.image_dpi)
     if info is None:
       base = RichSegment(
@@ -408,7 +468,7 @@ class BlocksMixin:
     avail_w_mm = pdf.content_width - x_start
     w, h = size_block(info, avail_w_mm, s.image_max_h,
       svg_fill_width=s.svg_block_fill_width, min_dpi=s.image_min_dpi)
-    self._ensure_space(h + s.para_gap)
+    self.pdf.keep(h + s.para_gap)
     y = pdf.y
     if info.align == "L": x = x_start
     elif info.align == "R": x = x_start + (avail_w_mm - w)
@@ -446,7 +506,7 @@ class BlocksMixin:
     avail_w_mm = pdf.content_width - x_start
     boxes = []
     for src, alt, attrs in refs:
-      info = load_image_info(self._resolve_image_path(src), attrs=attrs, alt=alt,
+      info = load_image_info(self.resolve_path(src), attrs=attrs, alt=alt,
         default_dpi=s.image_dpi)
       if info is None:
         return False
@@ -455,7 +515,7 @@ class BlocksMixin:
       boxes.append((info, w, h))
     row_h = max(h for _, _, h in boxes)
     row_w = sum(w for _, w, _ in boxes) + s.para_gap * (len(boxes) - 1)
-    self._ensure_space(row_h + s.para_gap)
+    self.pdf.keep(row_h + s.para_gap)
     y = pdf.y
     x = x_start + (avail_w_mm - row_w) / 2
     for info, w, h in boxes:
@@ -493,14 +553,7 @@ class BlocksMixin:
     """Render a block-level math formula, centered. Numbered on the right:
     a `\tag{...}` names the label, otherwise the auto counter does."""
     s = self.style
-    try:
-      from .math import pop_tag, render_math_svg
-      from reportlab.graphics import renderPDF
-    except ImportError:
-      from .._warn import warn_missing
-      warn_missing("matplotlib", "matplotlib", "block math formulas")
-      self._render_code_block(formula, "")
-      return
+    from .math import pop_tag, render_math_svg # loads matplotlib, so not on import
     formula, tag = pop_tag(formula)
     drawing = render_math_svg(
       formula.strip(), fontsize=s.body_size, color=s.body_color,
@@ -516,13 +569,13 @@ class BlocksMixin:
     w_pt = drawing.width
     h_pt = drawing.height
     h_mm = h_pt / MM_TO_PT
-    # The paragraph above ends with its line leading; the drawing carries
-    # none. A quarter of it is pulled back, so the formula keeps slightly
-    # more air above than below without doubling the gap.
+    # The paragraph above ends with its line leading; the drawing carries none.
+    # A quarter of it is pulled back,
+    # so the formula keeps slightly more air above than below without doubling the gap.
     lead_mm = (s.line_height - 1) * s.body_size / MM_TO_PT / 4
     if self.pdf.y > lead_mm:
       self.pdf.cursor(self._indent_mm, self.pdf.y - lead_mm)
-    self._ensure_space(h_mm + s.math_block_gap)
+    self.pdf.keep(h_mm + s.math_block_gap)
     x_center_offset_pt = (content_w_pt - w_pt) / 2
     page = self.pdf._page
     x_abs_mm = page.margin_left + self._indent_mm

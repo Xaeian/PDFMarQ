@@ -3,32 +3,34 @@
 """
 Image metadata + sizing rules.
 
-Distilled from how GitHub, VSCode, MkDocs, Pandoc, LaTeX and Typst handle
-images in markdown-rendered documents:
+Distilled from how GitHub, VSCode, MkDocs, Pandoc, LaTeX and Typst handle images
+in markdown-rendered documents:
 
 - Natural size at metadata-DPI _(fallback 96)_.
 - **Block raster**: fit page width down to `min_dpi`, capped by `image_max_h`.
-- **Block SVG**: fill page width. Vector scales for free; small embedded SVG
-  schematics typically want page width regardless of intrinsic dims. Browser
-  also does this for SVGs without intrinsic dims (replaced-element fallback).
+- **Block SVG**: fill page width. Vector scales for free;
+  small embedded SVG schematics typically want page width regardless of intrinsic dims.
+  Browser also does this for SVGs without intrinsic dims (replaced-element fallback).
 - **Inline (mid-paragraph)**: cap at `inline_image_max_h` (LaTeX `2ex` idiom).
-- **Table cell**: render at natural size capped by column width and
-  `image_max_h`. The column-min contribution is separately capped by
-  `cell_image_max_w` so a giant image cannot blow up the table layout. CSS
-  auto-layout would otherwise treat the image's intrinsic pixel width as a
-  hard floor on column width - that's the source of the "huge icon in cell"
-  bug. Dimensionless SVGs in cells render at inline cap (icon size).
+- **Table cell**: render at natural size capped by column width and `image_max_h`.
+  The column-min contribution is separately capped by `cell_image_max_w`,
+  so a giant image cannot blow up the table layout.
+  CSS auto-layout would otherwise floor the column at the image's intrinsic pixel width -
+  that's the source of the "huge icon in cell" bug.
+  Dimensionless SVGs in cells render at inline cap (icon size).
 
 Author overrides come from the image **title** slot as a `key=value` DSL:
-`![alt](img.png "w=80 max_h=40 align=C")`. Keys: `w`, `h`, `max_w`, `max_h`,
-`scale`, `align` _(L/C/R)_ - see `parse_image_dsl`. Numbers are **millimetres**
-(`scale` is a plain factor); there is no unit suffix support and `width=` /
-`height=` HTML attributes are not read. Unknown keys and non-numeric values
-warn and are ignored.
+`![alt](img.png "w=80 max_h=40 align=C")`.
+Keys: `w`, `h`, `max_w`, `max_h`, `scale`, `align` _(L/C/R)_ - see `parse_image_dsl`.
+Numbers are **millimetres** (`scale` is a plain factor);
+there is no unit suffix support and `width=` / `height=` HTML attributes are not read.
+Unknown keys and non-numeric values warn and are ignored.
 """
 
-import os
+import os, warnings
 from dataclasses import dataclass
+from svglib.svglib import svg2rlg
+from PIL import Image as PILImage
 from ..constants import MM_TO_PT
 
 #---------------------------------------------------------------------------------------- ImageInfo
@@ -40,14 +42,14 @@ class ImageInfo:
   is_svg: bool
   nat_w_mm: float  # natural width in mm at metadata-DPI (or 96 fallback)
   nat_h_mm: float  # natural height in mm
-  dimensionless: bool = False  # True only when SVG has no width/height/viewBox
-  dpi: float|None = None  # DPI behind `nat_*_mm`; None for vector
-  generated: bool = False  # rasterized here from vector source - upscaling is free
+  dimensionless: bool = False # True only when SVG has no width/height/viewBox
+  dpi: float|None = None # DPI behind `nat_*_mm`; None for vector
+  generated: bool = False # rasterized here from vector source - upscaling is free
   explicit_w_mm: float|None = None # author-specified width (DSL `w=` or `scale=`)
   explicit_h_mm: float|None = None # author-specified height (DSL `h=` or `scale=`)
   dsl_max_w_mm: float|None = None  # DSL `max_w=` soft cap
   dsl_max_h_mm: float|None = None  # DSL `max_h=` soft cap
-  align: str|None = None  # DSL `align=L/C/R` block-level horizontal alignment
+  align: str|None = None # DSL `align=L/C/R` block-level horizontal alignment
   alt: str = ""
 
 #------------------------------------------------------------------------------------------ Loaders
@@ -58,8 +60,8 @@ def load_image_info(
   alt:str = "",
   default_dpi:int = 96,
 ) -> ImageInfo|None:
-  """Read image metadata + parse author overrides. Returns `None` if the
-  file cannot be opened.
+  """Read image metadata + parse author overrides.
+  Returns `None` if the file cannot be opened.
 
   Author overrides come from the markdown image title `![alt](src "DSL")`,
   parsed as space-separated `key=value` pairs (`w h max_w max_h scale align`).
@@ -86,27 +88,25 @@ def load_image_info(
   return apply_dsl(info, parse_image_dsl(title))
 
 def _load_svg_dims(src:str) -> tuple[float, float, bool, None]|None:
-  """Returns `(w_mm, h_mm, dimensionless, None)`. `dimensionless=True` when the
-  SVG declares neither intrinsic dims nor viewBox - render context decides
-  the size."""
+  """Returns `(w_mm, h_mm, dimensionless, None)`.
+  `dimensionless=True` when the SVG declares neither intrinsic dims nor viewBox -
+  render context decides the size."""
   try:
-    from svglib.svglib import svg2rlg
     d = svg2rlg(src)
     if d is None:
       return None
     w, h = float(d.width or 0), float(d.height or 0)
     if w <= 0 or h <= 0:
-      return 1.0, 1.0, True, None  # dimensionless - aspect derived from context
+      return 1.0, 1.0, True, None # dimensionless - aspect derived from context
     return w / MM_TO_PT, h / MM_TO_PT, False, None
   except Exception:
     return None
 
 def _load_raster_dims(src:str, default_dpi:int) -> tuple[float, float, bool, float]|None:
-  """Returns `(w_mm, h_mm, False, dpi)`. DPI is read from PIL `info["dpi"]`
-  _(present in PNG/JPEG metadata as pHYs/JFIF resolution)_, fallback to
-  `default_dpi`."""
+  """Returns `(w_mm, h_mm, False, dpi)`.
+  DPI is read from PIL `info["dpi"]` _(present in PNG/JPEG metadata as pHYs/JFIF resolution)_,
+  fallback to `default_dpi`."""
   try:
-    from PIL import Image as PILImage
     with PILImage.open(src) as im:
       px_w, px_h = im.size
       meta = im.info.get("dpi")
@@ -122,9 +122,8 @@ class ImageDSL:
   """Parsed `![alt](src "key=value ...")` title DSL.
 
   When `is_dsl=False` the title was either empty or contained no `=` token -
-  treat it as opaque description and do not apply any overrides. Mixed
-  titles (some `key=value`, some plain) parse the DSL bits and warn on
-  the rest.
+  treat it as opaque description and do not apply any overrides.
+  Mixed titles (some `key=value`, some plain) parse the DSL bits and warn on the rest.
   """
   exact_w_mm: float|None = None
   exact_h_mm: float|None = None
@@ -147,19 +146,18 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
                      suppresses w/h/max_* when present)
     `align`          `L` / `C` / `R` block-level horizontal alignment
 
-  When the title contains no `=` token at all, returns `is_dsl=False` so
-  the title is silently ignored (a plain caption).
-  Unknown keys, malformed values, and non-positive numerics are warned
-  and individually ignored - parsing never raises.
+  When the title contains no `=` token at all, returns `is_dsl=False`,
+  so the title is silently ignored (a plain caption).
+  Unknown keys, malformed values, and non-positive numerics are warned and individually ignored.
+  Parsing never raises.
   """
   out = ImageDSL()
   if not title or not title.strip():
     return out
   tokens = title.split()
   if not any("=" in t for t in tokens):
-    return out  # opaque description, no DSL parsing
+    return out # opaque description, no DSL parsing
   out.is_dsl = True
-  import warnings
   for tok in tokens:
     if "=" not in tok:
       warnings.warn(
@@ -234,17 +232,17 @@ def size_block(
 ) -> tuple[float, float]:
   """Size a paragraph-level (block) image.
 
-  - Author override (`w`/`h`/`scale`) wins; final size still clamped to
-    `(page_w_mm, max_h_mm)` so explicit dimensions can't run off-page.
-  - **Raster**: fits page width while staying above `min_dpi`, then capped
-    by `max_h_mm`. `min_dpi=0` always fills the width.
-  - **SVG with `svg_fill_width=True`** _(default)_: fills page width, height
-    from aspect ratio. `False` pins it to its intrinsic size.
-  - DSL `max_w`/`max_h` apply as additional soft caps on top of the page
-    constraints (effective cap = `min(style_cap, dsl_cap)`).
+  - Author override (`w`/`h`/`scale`) wins; final size still clamped to `(page_w_mm, max_h_mm)`
+    so explicit dimensions can't run off-page.
+  - **Raster**: fits page width while staying above `min_dpi`, then capped by `max_h_mm`.
+    `min_dpi=0` always fills the width.
+  - **SVG with `svg_fill_width=True`** _(default)_: fills page width, height from aspect ratio.
+    `False` pins it to its intrinsic size.
+  - DSL `max_w`/`max_h` apply as additional soft caps on top of the page constraints:
+    effective cap = `min(style_cap, dsl_cap)`.
   """
-  # DSL soft caps narrow the effective constraints. `min` works because
-  # both are upper bounds; user explicitly asks for a smaller cap.
+  # DSL soft caps narrow the effective constraints.
+  # `min` works because both are upper bounds; user explicitly asks for a smaller cap.
   if info.dsl_max_w_mm is not None:
     page_w_mm = min(page_w_mm, info.dsl_max_w_mm)
   if info.dsl_max_h_mm is not None:
@@ -259,10 +257,10 @@ def size_inline(
   info:ImageInfo,
   inline_cap_mm:float,
 ) -> tuple[float, float]:
-  """Size an inline mid-paragraph image. Always height-capped at
-  `inline_cap_mm` (LaTeX `height=2ex` idiom). Width scales proportionally.
-  DSL `max_w`/`max_h` further narrow the cap; `align` is ignored for
-  inline (text-anchored)."""
+  """Size an inline mid-paragraph image.
+  Always height-capped at `inline_cap_mm` (LaTeX `height=2ex` idiom).
+  Width scales proportionally.
+  DSL `max_w`/`max_h` further narrow the cap; `align` is ignored for inline (text-anchored)."""
   cap_w = inline_cap_mm * 6
   cap_h = inline_cap_mm
   if info.dsl_max_w_mm is not None: cap_w = min(cap_w, info.dsl_max_w_mm)
@@ -277,8 +275,8 @@ def size_inline(
     return effective_cap_h, effective_cap_h
   if nh > effective_cap_h:
     nw, nh = nw * (effective_cap_h / nh), effective_cap_h
-  # Width is capped too: a very wide, very short image clears the height
-  # cap untouched and would push the line box past the page edge.
+  # Width is capped too: a very wide, very short image clears the height cap untouched
+  # and would push the line box past the page edge.
   if cap_w > 0 and nw > cap_w:
     nh = nh * (cap_w / nw)
     nw = cap_w
@@ -296,13 +294,13 @@ def cell_intrinsic_w_mm(
 
   - **col_max**: `min(natural × cell_image_scale, cell_image_max_w_mm)`.
     Half-natural is a heuristic that works across both common table styles:
-    icon-grids (small natural like 50mm symbols → render ~25mm) and
-    procedure tables (large natural like 100mm photos → render ~50mm). The
-    image-to-text visual ratio ends up roughly 1:2-1:3 in both cases,
+    icon-grids (small natural like 50mm symbols → render ~25mm)
+    and procedure tables (large natural like 100mm photos → render ~50mm).
+    The image-to-text visual ratio ends up roughly 1:2-1:3 in both cases,
     matching how GitHub renders tables with `td img { max-width: 100% }`
     after auto-layout pressures the column.
-  - **col_min**: `max(inline_cap, 60% × col_max)` - image cells participate
-    in overflow shrink without collapsing to icon scale.
+  - **col_min**: `max(inline_cap, 60% × col_max)`.
+    Image cells participate in overflow shrink without collapsing to icon scale.
 
   Explicit author width wins, clamped to absolute cap only.
   Dimensionless SVG = inline cap (icon).
@@ -313,8 +311,8 @@ def cell_intrinsic_w_mm(
   if info.is_svg and info.dimensionless:
     return inline_cap_mm, inline_cap_mm
   col_max = min(info.nat_w_mm * cell_image_scale, cell_image_max_w_mm)
-  # `inline_cap_mm` is a readability floor, clamped to the max: an icon
-  # narrower than the cap would otherwise invert the range.
+  # `inline_cap_mm` is a readability floor, clamped to the max:
+  # an icon narrower than the cap would otherwise invert the range.
   col_min = min(max(inline_cap_mm, col_max * 0.6), col_max)
   return col_min, col_max
 
@@ -328,12 +326,12 @@ def size_cell(
 ) -> tuple[float, float]:
   """Size an image inside a table cell.
 
-  Render at `min(natural × cell_image_scale, cell_image_max_w_mm, cell_w_mm,
-  max_h_mm)`. Never upscales (unlike block SVG) - a cell-filling SVG looks
-  broken inside a multi-column table. The scale + abs cap mirror the
-  intrinsic-width logic so that when a mixed col gets stretched wider by
-  long text, the image doesn't grow to fill - it stays at its preferred
-  scaled size. Dimensionless SVGs render at inline cap (icon)."""
+  Render at `min(natural × cell_image_scale, cell_image_max_w_mm, cell_w_mm, max_h_mm)`.
+  Never upscales (unlike block SVG) - a cell-filling SVG looks broken inside a multi-column table.
+  The scale + abs cap mirror the intrinsic-width logic,
+  so that when a mixed col gets stretched wider by long text, the image doesn't grow to fill -
+  it stays at its preferred scaled size.
+  Dimensionless SVGs render at inline cap (icon)."""
   if info.explicit_w_mm or info.explicit_h_mm:
     return _explicit(info, cell_w_mm, max_h_mm)
   if info.is_svg and info.dimensionless:
@@ -366,8 +364,8 @@ def _upscale_cap_mm(
 def _clamp_no_upscale(
   nw:float, nh:float, max_w:float, max_h:float,
 ) -> tuple[float, float]:
-  """Scale uniformly DOWN to fit `(max_w, max_h)`. Returns natural size when
-  it already fits."""
+  """Scale uniformly DOWN to fit `(max_w, max_h)`.
+  Returns natural size when it already fits."""
   if nw <= 0 or nh <= 0:
     return nw, nh
   sw = max_w / nw if max_w > 0 and nw > max_w else 1.0
@@ -378,8 +376,8 @@ def _clamp_no_upscale(
 def _explicit(
   info:ImageInfo, max_w:float, max_h:float,
 ) -> tuple[float, float]:
-  """Resolve explicit width/height; missing dimension comes from natural
-  aspect ratio. Final size still clamped to `(max_w, max_h)`."""
+  """Resolve explicit width/height; missing dimension comes from natural aspect ratio.
+  Final size still clamped to `(max_w, max_h)`."""
   ew, eh = info.explicit_w_mm, info.explicit_h_mm
   nw, nh = info.nat_w_mm, info.nat_h_mm
   if ew and eh:

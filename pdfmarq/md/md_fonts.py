@@ -7,6 +7,10 @@ falls back to Vera bundled with reportlab. Updates `MarkdownStyle` defaults
 only when the user has not overridden the family.
 """
 
+import os
+import reportlab
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from .markdown_style import MarkdownStyle
 
 #---------------------------------------------------------------------------------------- Constants
@@ -28,14 +32,12 @@ _FONT_DIRS = [
 class FontsMixin:
   """Font auto-registration mixin for `MarkdownRenderer`.
   Loads body/heading/mono families before the first draw."""
-
   _FONT_FILES = _FONT_FILES
   _FONT_DIRS = _FONT_DIRS
 
   def _ensure_default_font(self):
     """Register DejaVu sans + mono TTFs (Polish/Latin-Ext coverage); fall back to Vera."""
     def family_paths(family:str, base:str) -> dict:
-      import os
       return {
         mode: os.path.join(base, tmpl.format(family=family))
         for mode, tmpl in _FONT_FILES.items()
@@ -60,7 +62,6 @@ class FontsMixin:
   def _vera_paths() -> dict:
     """Paths to Vera TTFs bundled with reportlab (fallback font)."""
     try:
-      import reportlab, os
       base = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
       return {
         "Regular": os.path.join(base, "Vera.ttf"),
@@ -73,10 +74,7 @@ class FontsMixin:
 
   def _try_register_family(self, candidates:list) -> str|None:
     """Register first candidate where Regular exists; return family name or None."""
-    import os
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    fm = self.pdf._fonts
+    fm = self.pdf.fonts
     for family_name, mode_paths in candidates:
       reg_path = mode_paths.get("Regular")
       if not reg_path or not os.path.exists(reg_path):

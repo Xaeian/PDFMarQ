@@ -2,22 +2,25 @@
 
 """Rich inline text rendering - mixed styles within a single line.
 
-Provides `RichSegment` and `render_rich()` for drawing a sequence of
-styled text spans (bold, italic, code, links) with word-wrap. This is
-the low-level engine used by `markdown.py`; `core.PDF.text()` is a
-simpler single-style variant."""
-from dataclasses import dataclass
-import re
+`RichSegment` is one styled text span (bold, italic, code, links).
+`render_rich()` draws a sequence of them with word-wrap.
+This is the low-level engine used by the markdown renderer (`pdfmarq.md`, `MarkdownRenderer`).
+`core.PDF.text()` is a simpler single-style variant."""
+import re, warnings
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Callable
 from reportlab.lib.colors import Color
 from reportlab.pdfbase import pdfmetrics
+from reportlab.graphics import renderPDF
 from .constants import Align, MM_TO_PT
 from .fonts import is_builtin, builtin_name
 from .text import FIT_EPS_PT, split_word
 
 #------------------------------------------------------------------------------------ Layout ratios
 
-# Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light
-# look. Centralised here so future visual tweaks don't require code-hunting.
+# Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light look.
+# Centralised here so future visual tweaks don't require code-hunting.
 _ASCENT_RATIO = 0.80        # line-box ascent: positions baseline below top edge
 _BG_DESCENT_RATIO = 0.32    # how far below baseline the inline-code bg starts
 _BG_HEIGHT_RATIO = 1.35     # inline-code bg height in glyph units
@@ -30,13 +33,24 @@ _UNDERLINE_OFFSET_PT = 1.0  # underline distance below baseline (pt, size-indepe
 # Inline-code shaded background padding (pt - not font-size relative).
 _BG_INNER_PAD_PT = 2.5  # bg rect extends this far past glyphs
 _BG_OUTER_GAP_PT = 1.2  # extra gap between bg rect and adjacent text
-# Total horizontal overhead a single inline-code run draws on top of its
-# glyph width (outer gap + inner pad on each side). Used by `measure_extent`
-# so table column-width estimation reserves room for the shaded rect.
+# Total horizontal overhead a single inline-code run draws on top of its glyph width:
+# outer gap + inner pad on each side.
+# Used by `measure_extent` so table column-width estimation reserves room for the shaded rect.
 _BG_RUN_EXTRA_PT = 2 * (_BG_OUTER_GAP_PT + _BG_INNER_PAD_PT)
 
 # Math drawings: tiny breathing room around an inline formula (pt).
 _MATH_INLINE_PAD_PT = 1.0
+
+# A justified line takes one more word when its spaces can tighten to this share of their width,
+# as page layout programs do with limits between 2/3 and 80%.
+# A gap this wide still reads as a space when text is copied out.
+# Wrapping, measuring and drawing all use it.
+_JUSTIFY_SHRINK = 0.75
+
+# A word splits at a line end only from this many letters, so a short one never does.
+_HYPHEN_MIN = 5
+# The letters a hyphenation point may split; punctuation around them stays whole.
+_SPLITTABLE = re.compile(r"(\W*)([^\W\d_]+)(\W*)")
 
 # Superscript / subscript scaling. Industry-standard: glyph at ~70% size,
 # baseline raised (sup) or lowered (sub) by a fraction of full size.
@@ -50,20 +64,20 @@ _SUB_BASELINE_RATIO = 0.15  # lower baseline by this fraction of full size
 class RichSegment:
   """Single span of styled text, inline code, or inline math drawing.
 
-  Multiple segments render on one line with shared baseline. Background
-  color draws a filled rect behind the span (used for inline code).
+  Multiple segments render on one line with shared baseline.
+  Background color draws a filled rect behind the span (used for inline code).
 
   Two ways to set face weight/slant:
-    - `mode`: explicit reportlab font mode (`"Regular"`/`"Bold"`/`"Italic"`/
-      `"BoldItalic"`). Direct mapping to TTF lookup.
-    - `bold` / `italic`: boolean flags. When set, `__post_init__` derives
-      `mode` from them.
+    - `mode`: explicit reportlab font mode (`"Regular"`/`"Bold"`/`"Italic"`/`"BoldItalic"`).
+      Direct mapping to TTF lookup.
+    - `bold` / `italic`: boolean flags.
+      When set, `__post_init__` derives `mode` from them.
 
-  Math mode: if `math_drawing` is set, the segment is a pre-rendered vector
-  formula (from matplotlib → svglib). `text` is ignored, `math_width_pt` is
-  the full glyph width, and `math_baseline_from_bottom_pt` is how far the
-  text baseline sits above the bottom edge of the drawing (for vertical
-  alignment with surrounding text).
+  Math mode: if `math_drawing` is set, `text` is ignored
+  and the segment is a pre-rendered vector formula (from matplotlib → svglib).
+  `math_width_pt` is the full glyph width.
+  `math_baseline_from_bottom_pt` is how far the text baseline sits above the drawing's bottom edge,
+  for vertical alignment with surrounding text.
   """
   text: str
   family: str = "Helvetica"
@@ -77,11 +91,13 @@ class RichSegment:
   italic: bool = False
   underline: bool = False
   strike: bool = False
-  # Soft line break BEFORE this segment. Flag-based rather than a
-  # break; an alternative to embedding `\n` in `text`.
+  char_space: float = 0 # pt after every character: letter-spacing, as capitals want
+  hyphenate: str|None = None # language whose patterns may split a word at a line end
+  # Soft line break BEFORE this segment.
+  # Flag-based rather than a break; an alternative to embedding `\n` in `text`.
   break_line: bool = False
-  # Vertical script. Render at smaller size with baseline offset. Useful for
-  # footnote refs (sup) and chemical formulae (sub).
+  # Vertical script. Render at smaller size with baseline offset.
+  # Useful for footnote refs (sup) and chemical formulae (sub).
   superscript: bool = False
   subscript: bool = False
   math_drawing: object|None = None # reportlab Drawing or None
@@ -89,9 +105,8 @@ class RichSegment:
   math_baseline_from_bottom_pt: float = 0 # baseline offset from drawing bottom
 
   def __post_init__(self):
-    # `bold`/`italic` flags win over `mode` when explicitly set. Lets users
-    # write `RichSegment(text="x", bold=True)` without
-    # spelling out the reportlab mode string.
+    # `bold`/`italic` flags win over `mode` when explicitly set.
+    # Lets users write `RichSegment(text="x", bold=True)` without the reportlab mode string.
     if self.bold and self.italic:
       self.mode = "BoldItalic"
     elif self.bold:
@@ -101,11 +116,12 @@ class RichSegment:
 
 #----------------------------------------------------------------------------------- Glyph fallback
 
-# Visually-equivalent codepoints. Many fonts (IBM Plex, Inter, ...) ship the
-# glyph under one of these but not the other; e.g. IBM Plex Sans has Ω only
-# at U+2126 (Ohm sign), not U+03A9 (Greek capital Omega) which is what most
-# editors emit. We remap to whichever codepoint the font actually has so the
-# user sees the glyph instead of a `.notdef` box.
+# Visually-equivalent codepoints.
+# Many fonts (IBM Plex, Inter, ...) ship the glyph under one of these but not the other:
+# IBM Plex Sans has Ω only at U+2126 (Ohm sign), not U+03A9 (Greek capital Omega),
+# which is what most editors emit.
+# We remap to whichever codepoint the font actually has,
+# so the user sees the glyph instead of a `.notdef` box.
 _GLYPH_EQUIVALENTS: dict[int, int] = {
   0x03A9: 0x2126, 0x2126: 0x03A9,  # Greek Omega ↔ Ohm sign
   0x03BC: 0x00B5, 0x00B5: 0x03BC,  # Greek mu ↔ micro sign
@@ -119,9 +135,8 @@ _cmap_cache: dict[str, dict|None] = {}
 _remap_cache: dict[tuple[str, str], str] = {}
 
 def _font_cmap(font_name:str) -> dict|None:
-  """Return the char→glyph dict for a registered TTF font, or None for
-  builtins / unregistered. Result cached - the dict identity is stable
-  for the lifetime of the process."""
+  """Return the char→glyph dict for a registered TTF font, or `None` for builtins / unregistered.
+  Result cached - the dict identity is stable for the lifetime of the process."""
   cached = _cmap_cache.get(font_name)
   if cached is not None or font_name in _cmap_cache:
     return cached
@@ -134,9 +149,8 @@ def _font_cmap(font_name:str) -> dict|None:
   return cmap
 
 def _remap_for_font(text:str, font_name:str) -> str:
-  """Substitute codepoints missing from `font_name` with visually-equivalent
-  ones the font does have. Returns `text` unchanged when no substitution is
-  needed (the common case)."""
+  """Substitute codepoints missing from `font_name` with visually-equivalent ones the font has.
+  Returns `text` unchanged when no substitution is needed (the common case)."""
   if not text:
     return text
   cmap = _font_cmap(font_name)
@@ -168,7 +182,7 @@ class _Word:
   seg: RichSegment
   width_pt: float
   is_space: bool
-  is_break: bool = False  # hard line break
+  is_break: bool = False # hard line break
 
 #----------------------------------------------------------------------------------------- Tokenize
 
@@ -180,11 +194,11 @@ def _effective_size(seg:RichSegment) -> float:
 
 def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
   """Split segments into word tokens preserving per-segment style.
-  Codepoints missing from the seg's font get remapped to visually-equivalent
-  ones the font has (Ω→Ohm, μ→micro, etc.) before width measurement."""
+  Codepoints missing from the seg's font get remapped before width measurement,
+  to visually-equivalent ones the font has (Ω→Ohm, μ→micro, etc.)."""
   words = []
   for seg in segments:
-    # `break_line` flag emits a hard break before the segment's content,
+    # `break_line` flag emits a hard break before the segment's content.
     if seg.break_line:
       words.append(_Word("", seg, 0, is_space=False, is_break=True))
     # Math segment - single atomic word (no splitting on spaces)
@@ -196,19 +210,26 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
       continue
     eff_size = _effective_size(seg)
     font_name = _font_name(seg, metrics.fonts)
-    for part in re.findall(r"\S+|\s+", seg.text):
+    # a no-break space binds the words around it, as `w\u00a0domu` in Polish text
+    for part in re.findall(r"(?:\S|\u00a0)+|[^\S\u00a0]+", seg.text):
       part = _remap_for_font(part, font_name)
-      w = metrics.text_width(part, seg.family, seg.mode, eff_size)
-      words.append(_Word(part, seg, w, is_space=part.isspace()))
+      w = _text_pt(part, seg, eff_size, metrics)
+      words.append(_Word(part, seg, w, is_space=part.isspace() and "\u00a0" not in part))
   return words
+
+def _text_pt(text:str, seg:RichSegment, size:float, metrics) -> float:
+  """Advance of `text` set in `seg` at `size`, its letter-spacing included."""
+  return metrics.text_width(text, seg.family, seg.mode, size) + seg.char_space * len(text)
 
 #--------------------------------------------------------------------------------------------- Wrap
 @dataclass
 class _WrapResult:
   """Output of `_wrap`. `overflow=True` means a chunk still didn't fit
-  after the force-break pass (wrap width too narrow for even one glyph)."""
+  after the force-break pass (wrap width too narrow for even one glyph).
+  `hard` holds the indices of lines a hard break ended, which justifying leaves alone."""
   lines: list[list["_Word"]]
   overflow: bool = False
+  hard: set[int] = field(default_factory=set)
 
 def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
   """
@@ -218,11 +239,57 @@ def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
   seg = word.seg
   eff_size = _effective_size(seg)
   def measure(text:str) -> float:
-    return metrics.text_width(text, seg.family, seg.mode, eff_size)
+    return _text_pt(text, seg, eff_size, metrics)
   return [
     _Word(piece, seg, measure(piece), is_space=False)
     for piece in split_word(word.text, width_pt, measure)
   ]
+
+_hyphenators: dict[str, object] = {}
+
+def _hyphenator(lang:str):
+  """
+  `pyphen` patterns of `lang`, or `None` without `pyphen`, which warns once per language.
+  A language with no patterns raises: the style named it, so that is a mistake.
+  """
+  if lang in _hyphenators: return _hyphenators[lang]
+  try:
+    import pyphen
+  except ModuleNotFoundError:
+    warnings.warn("hyphenation needs pyphen (pip install pyphen), words stay whole",
+      RuntimeWarning, stacklevel=2)
+    _hyphenators[lang] = None
+    return None
+  if not pyphen.language_fallback(lang):
+    raise ValueError(f"no hyphenation patterns for {lang!r}")
+  _hyphenators[lang] = pyphen.Pyphen(lang=lang)
+  return _hyphenators[lang]
+
+def _hyphen_split(
+  word:_Word, fits:Callable[[float], bool], metrics,
+) -> tuple[_Word, _Word]|None:
+  """
+  `word` cut at its last hyphenation point whose head, hyphen included, still `fits` the line.
+
+  Only plain text whose segment sets `hyphenate` splits: never code, a link or a number.
+  A word under `_HYPHEN_MIN` letters or in capitals stays whole, and so does one no cut fits.
+  """
+  seg = word.seg
+  if not seg.hyphenate or seg.bg_color is not None or seg.link_url or seg.link_target: return None
+  match = _SPLITTABLE.fullmatch(word.text)
+  if not match or len(match[2]) < _HYPHEN_MIN or match[2].isupper(): return None
+  patterns = _hyphenator(seg.hyphenate)
+  if patterns is None: return None
+  lead, letters, trail = match.groups()
+  size = _effective_size(seg)
+  for cut in reversed(patterns.positions(letters)):
+    head = f"{lead}{letters[:cut]}-"
+    width = _text_pt(head, seg, size, metrics)
+    if fits(width):
+      tail = letters[cut:] + trail
+      rest = _Word(tail, seg, _text_pt(tail, seg, size, metrics), False)
+      return _Word(head, seg, width, False), rest
+  return None
 
 def _run_pad_pt(seg:RichSegment) -> float:
   """
@@ -270,12 +337,14 @@ def _units(words:list[_Word]) -> list[list[_Word]]:
 
 def _wrap(
   words:list[_Word], width_pt:float, metrics,
-  preserve_leading_space:bool=False,
+  preserve_leading_space:bool = False,
+  shrink:float = 1.0,
 ) -> _WrapResult:
   """
   Greedy word-wrap honoring hard breaks.
 
-  Lines break at whitespace only, never inside a word from `_units`.
+  Lines break at whitespace, never inside a word from `_units`,
+  unless its segment sets `hyphenate` and the head of a hyphenated split fits: see `_hyphen_split`.
   A word wider than a whole line is the exception: it breaks between its segments first.
   So does a word too wide for the rest of an indented code line: an indent never stands alone.
   A token still too wide goes to `_break_oversized`, so long links never spill past the edge.
@@ -284,52 +353,68 @@ def _wrap(
   Args:
     preserve_leading_space: Keep leading whitespace, for code where indent means something.
       Prose drops it.
+    shrink: Share of their width the spaces between words may tighten to, so a word fits.
+      `1` keeps them whole; justified text passes `_JUSTIFY_SHRINK`.
   """
   limit = width_pt + FIT_EPS_PT
   lines: list[list[_Word]] = []
+  hard: set[int] = set()
   current: list[_Word] = []
   current_w = 0.0
+  current_sp = 0.0 # width of the spaces on the line justifying may tighten
   overflow = False
   def indent_only() -> bool:
     return all(w.is_space for w in current)
+  def fits(width:float) -> bool:
+    return current_w + width - (1 - shrink) * current_sp <= limit
+  def reset():
+    nonlocal current, current_w, current_sp
+    current, current_w, current_sp = [], 0.0, 0.0
   def flush():
-    nonlocal current, current_w
     while current and current[-1].is_space:
       current.pop()
     lines.append(current)
-    current, current_w = [], 0.0
+    reset()
   def wrap():
-    nonlocal current, current_w
-    if indent_only(): # an indent alone is no line: the text moves to the margin
-      current, current_w = [], 0.0
-    else:
-      flush()
+    if indent_only(): reset() # an indent alone is no line: the text moves to the margin
+    else: flush()
   def append(tokens:list[_Word], width:float):
-    nonlocal current_w
+    nonlocal current_w, current_sp
     current.extend(tokens)
     current_w += width
+    current_sp += sum(t.width_pt for t in tokens if _stretches(t))
   def place(token:_Word):
     nonlocal overflow
     alone = _advance_pt(None, token)
     if alone > limit:
       overflow = True # even one glyph wider than wrap width
     after = _advance_pt(current[-1], token) if current else alone
-    if current and current_w + after > limit:
+    if current and not fits(after):
       wrap()
       after = alone
     append([token], after)
-  for unit in _units(words):
+  units = deque(_units(words))
+  while units:
+    unit = units.popleft()
     head = unit[0]
     if head.is_break:
       flush()
+      hard.add(len(lines) - 1)
       continue
     after = _extent_pt(unit, current[-1] if current else None)
     if head.is_space:
       if current or preserve_leading_space: # no leading space in prose
         append(unit, after)
       continue
-    if current_w + after <= limit:
+    if fits(after):
       append(unit, after)
+      continue
+    split = _hyphen_split(head, fits, metrics) if len(unit) == 1 else None
+    if split:
+      first, rest = split
+      append([first], first.width_pt)
+      flush()
+      units.appendleft([rest]) # the rest of the word opens the next line
       continue
     alone = _extent_pt(unit)
     if alone <= limit and not indent_only():
@@ -344,7 +429,7 @@ def _wrap(
       else:
         place(token)
   flush()
-  return _WrapResult(lines, overflow)
+  return _WrapResult(lines, overflow, hard)
 
 #---------------------------------------------------------------------------------- Metrics helpers
 
@@ -419,14 +504,14 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
 def _line_box(line:list, line_gap:float) -> tuple[float, float]:
   """`(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
 
-  Text sets the box from its size. A drawing - a formula, an emoji - carries
-  its own extent, and a big operator with limits stands several times taller
-  than the size it was rendered at.
+  Text sets the box from its size.
+  A drawing - a formula, an emoji - carries its own extent,
+  and a big operator with limits stands several times taller than the size it was rendered at.
 
-  A drawing that fits inside the text box leaves the box alone, so the
-  leading absorbs it and nothing around it shifts. One that does not fit
-  pushes the box out, since it would otherwise reach into the neighbouring
-  line or, inside a table cell, across the row border.
+  A drawing that fits inside the text box leaves the box alone,
+  so the leading absorbs it and nothing around it shifts.
+  One that does not fit pushes the box out: it would otherwise reach into the neighbouring line
+  or, inside a table cell, across the row border.
   """
   max_size = max(w.seg.size for w in line)
   ascent = max_size * _ASCENT_RATIO
@@ -449,19 +534,21 @@ def wrap_line_heights(
   width_mm:float,
   line_gap:float = 1.45,
   preserve_leading_space:bool = False,
+  align:str = Align.LEFT,
 ) -> list[float]:
   """Per-line heights (mm) of the layout `render_rich` produces.
 
-  Lets a caller split a block across pages: pick how many lines fit the
-  space left on the page, then draw that slice via `render_rich` with
-  `first_line` / `max_lines`. Uses the same tokenize + wrap pass as the
-  drawing code, so the cut lands exactly where the line is drawn.
+  Lets a caller split a block across pages: pick how many lines fit the space left on the page,
+  then draw that slice via `render_rich` with `first_line` / `max_lines`.
+  Uses the same tokenize + wrap pass as the drawing code,
+  so the cut lands exactly where the line is drawn.
+  `align` must be the one the text is drawn with: justified lines wrap tighter.
   """
   if not segments: return []
   words = _tokenize(segments, pdf._metrics)
   wrapped = _wrap(
     words, width_mm * MM_TO_PT, pdf._metrics,
-    preserve_leading_space=preserve_leading_space,
+    preserve_leading_space=preserve_leading_space, shrink=_shrink(align),
   )
   heights: list[float] = []
   for line in wrapped.lines:
@@ -478,19 +565,43 @@ def measure_rich(
   width_mm:float,
   line_gap:float = 1.45,
   preserve_leading_space:bool = False,
+  align:str = Align.LEFT,
 ) -> float:
-  """Calculate how much vertical space `render_rich` would use, without
-  actually drawing anything. Uses the same tokenization + wrap logic as
-  `render_rich` so the number is accurate to the pixel.
+  """Calculate how much vertical space `render_rich` would use, without actually drawing anything.
+  Uses the same tokenization + wrap logic as `render_rich`,
+  so the number is accurate to the pixel.
 
-  Used for pre-computing heights of cells and boxes (code blocks, table
-  cells) before drawing, so backgrounds and borders can be sized correctly.
+  Used for pre-computing heights of cells and boxes (code blocks, table cells) before drawing,
+  so backgrounds and borders can be sized correctly.
   """
   if not segments: return 0
   return sum(wrap_line_heights(
     pdf, segments, width_mm, line_gap,
-    preserve_leading_space=preserve_leading_space,
+    preserve_leading_space=preserve_leading_space, align=align,
   ))
+
+#------------------------------------------------------------------------------------------ Justify
+
+def _shrink(align:str) -> float:
+  """Share of their width spaces may tighten to when wrapping text drawn with `align`."""
+  return _JUSTIFY_SHRINK if align == Align.JUSTIFY else 1.0
+
+def _stretches(word:_Word) -> bool:
+  """A space justifying may resize: one between words, never one inside inline code."""
+  return word.is_space and word.seg.bg_color is None
+
+def _spaced_width(word:_Word, ratio:float) -> float:
+  """Advance of `word` on a line whose stretchable spaces each change by `ratio` of their width."""
+  return word.width_pt * (1 + ratio) if _stretches(word) else word.width_pt
+
+def _justify_ratio(line:list[_Word], extra_pt:float) -> float:
+  """
+  Share of its width each stretchable space gains, so `line` spends `extra_pt` and fills it.
+  Spaces change in proportion to their width, as `_wrap` counted them when tightening.
+  Negative when the line took its last word by tightening, `0` when no space can change.
+  """
+  room = sum(w.width_pt for w in line if _stretches(w))
+  return extra_pt / room if room else 0.0
 
 #------------------------------------------------------------------------------------------- Render
 
@@ -514,13 +625,15 @@ def render_rich(
     width_mm: Wrap width (from left edge `x_mm`).
     x_mm: Left edge in cursor coords (from content area left margin).
     y_mm: Top edge in cursor coords (from content area top margin).
-    align: `L` / `C` / `R`.
+    align: `L` / `C` / `R` / `J`. Justified lines resize their spaces to fill `width_mm`,
+      tightening them to take one more word when `_JUSTIFY_SHRINK` allows.
+      The last line and lines a hard break ends stay left, unless they took a word by tightening.
     line_gap: Line height multiplier (e.g. 1.45 = 145% of font size).
     preserve_leading_space: Keep leading whitespace on each line (for code).
-    first_line: Index of the first wrapped line to draw. Lines before it
-      are laid out but skipped, so the visible text starts at `y_mm`.
-    max_lines: Draw at most this many lines (`None` = to the end). With
-      `first_line` this renders one page-sized window of a long block;
+    first_line: Index of the first wrapped line to draw.
+      Lines before it are laid out but skipped, so the visible text starts at `y_mm`.
+    max_lines: Draw at most this many lines (`None` = to the end).
+      With `first_line` this renders one page-sized window of a long block;
       use `wrap_line_heights` to decide where to cut.
 
   Returns:
@@ -532,8 +645,10 @@ def render_rich(
   page = pdf._page
   width_pt = width_mm * MM_TO_PT
   words = _tokenize(segments, metrics)
-  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space)
+  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space,
+    shrink=_shrink(align))
   lines = wrapped.lines
+  last = len(lines) - 1 # the block's own last line, wherever the window falls
   if first_line or max_lines is not None:
     end = None if max_lines is None else first_line + max_lines
     lines = lines[first_line:end]
@@ -541,7 +656,6 @@ def render_rich(
   if wrapped.overflow and not first_line:
     # Wrap width too narrow for even a single glyph after force-break.
     # Pathological - surface it so callers know the column is unusable.
-    import warnings
     warnings.warn(
       f"render_rich: wrap width {width_mm:.1f}mm too narrow for one glyph; "
       "content extends past the right edge",
@@ -550,9 +664,9 @@ def render_rich(
   # Absolute canvas coords for top-left of text block
   x_base_mm = page.margin_left + x_mm
   y_top_mm = page.height - page.margin_top - y_mm
-  current_top_mm = y_top_mm  # canvas y (grows up) - top of next line
+  current_top_mm = y_top_mm # canvas y (grows up) - top of next line
   total_used_mm = 0
-  for line in lines:
+  for index, line in enumerate(lines, first_line):
     # Line metrics - use max size to determine baseline and height
     if not line:
       # Empty line from hard break
@@ -561,20 +675,25 @@ def render_rich(
       total_used_mm += gap_mm
       continue
     max_size = max(w.seg.size for w in line)
-    # Ascent positions the baseline below the top edge; both numbers come
-    # from `_line_box` so the drawn line matches the measured one exactly.
+    # Ascent positions the baseline below the top edge.
+    # Both numbers come from `_line_box`, so the drawn line matches the measured one exactly.
     ascent_pt, descent_pt = _line_box(line, line_gap)
     line_height_mm = (ascent_pt + descent_pt) / MM_TO_PT
     # Baseline canvas y in pt (canvas coords, y grows up)
     baseline_canvas_y_pt = (current_top_mm * MM_TO_PT) - ascent_pt
     # Alignment offset
     line_w_pt = _line_width_pt(line)
+    ratio = 0.0
     if align == Align.CENTER:
       x_offset_pt = (width_pt - line_w_pt) / 2
     elif align == Align.RIGHT:
       x_offset_pt = width_pt - line_w_pt
     else:
       x_offset_pt = 0
+      # every line tightened to take a word fits; the last and hard-broken ones stay left
+      extra_pt = width_pt - line_w_pt
+      if align == Align.JUSTIFY and (extra_pt < 0 or index != last and index not in wrapped.hard):
+        ratio = _justify_ratio(line, extra_pt)
     cursor_x_pt = x_base_mm * MM_TO_PT + x_offset_pt
     # Group consecutive words into visual runs by (bg, underline, link_url, color)
     # so backgrounds and underlines are drawn continuously across spaces.
@@ -587,7 +706,6 @@ def render_rich(
       # Math run - draw vector formula, not text
       if rseg.math_drawing is not None:
         try:
-          from reportlab.graphics import renderPDF
           # Vertical alignment: match text baseline to formula baseline
           draw_y = baseline_canvas_y_pt - rseg.math_baseline_from_bottom_pt
           renderPDF.draw(rseg.math_drawing, canvas, cursor_x_pt, draw_y)
@@ -596,7 +714,7 @@ def render_rich(
         cursor_x_pt += rseg.math_width_pt + pad_pt
         continue
       run_start_pt = cursor_x_pt
-      run_width_pt = sum(w.width_pt for w in run)
+      run_width_pt = sum(_spaced_width(w, ratio) for w in run)
       # Background (inline code) - rounded rect, reaching `_BG_INNER_PAD_PT` past the glyphs
       if rseg.bg_color is not None:
         canvas.setFillColor(Color(*rseg.bg_color[:3]))
@@ -620,10 +738,10 @@ def render_rich(
       canvas.setFillColor(Color(*rseg.color[:3]))
       for w in run:
         if not w.is_space:
-          font_name = _font_name(w.seg, pdf._fonts)
+          font_name = _font_name(w.seg, pdf.fonts)
           canvas.setFont(font_name, eff_size)
-          canvas.drawString(cursor_x_pt, word_baseline_pt, w.text)
-        cursor_x_pt += w.width_pt
+          canvas.drawString(cursor_x_pt, word_baseline_pt, w.text, charSpace=w.seg.char_space)
+        cursor_x_pt += _spaced_width(w, ratio)
       # Underline across whole run
       if rseg.underline:
         canvas.setStrokeColor(Color(*rseg.color[:3]))
@@ -655,8 +773,8 @@ def render_rich(
     current_top_mm -= line_height_mm
     total_used_mm += line_height_mm
   # Reset fill AND stroke color and line width for subsequent drawing.
-  # Without stroke reset, link underlines leak blue stroke into following
-  # elements (e.g. table borders after a link-containing paragraph).
+  # Without stroke reset, link underlines leak blue stroke into following elements
+  # (e.g. table borders after a link-containing paragraph).
   canvas.setFillColor(Color(0, 0, 0))
   canvas.setStrokeColor(Color(0, 0, 0))
   canvas.setLineWidth(1)

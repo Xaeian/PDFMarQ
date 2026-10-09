@@ -24,7 +24,7 @@ def draw_line(
     canvas.setDash()
   canvas.line(x1, y1, x2, y2)
   if dash:
-    canvas.setDash()  # restore solid stroke for subsequent calls
+    canvas.setDash() # restore solid stroke for subsequent calls
 
 def draw_rect(
   canvas,
@@ -102,6 +102,20 @@ def draw_image(
   """Draw image on canvas (coordinates in pt)."""
   canvas.drawImage(path, x, y, width=width, height=height, mask="auto")
 
+def image_aspect(path:str|os.PathLike) -> float:
+  """Width over height of an SVG or raster image as it is drawn, `1.0` when it cannot be read."""
+  path = os.fspath(path)
+  try:
+    if path.lower().endswith((".svg", ".svgz")):
+      drawing = load_svg(path)
+      if drawing is None: return 1.0
+      width, height = _svg_size(drawing, (1.0, 1.0))
+    else:
+      width, height = ImageReader(path).getSize()
+  except Exception:
+    return 1.0
+  return width / height if height else 1.0
+
 def load_svg(path:str|os.PathLike):
   """
   svglib `Drawing` of the SVG file at `path`, arrowheads included, or `None`.
@@ -117,31 +131,36 @@ def load_svg(path:str|os.PathLike):
   svgmarkers.expand(root)
   return SvgRenderer(path).render(root)
 
+def _svg_size(drawing, fallback:tuple[float, float]) -> tuple[float, float]:
+  """
+  Natural `(width, height)` of an SVG `Drawing` in pt.
+  A side it does not declare comes from its bounds, or from `fallback` when it has none.
+  """
+  width, height = float(drawing.width or 0), float(drawing.height or 0)
+  if width > 0 and height > 0: return width, height
+  try:
+    x0, y0, x1, y1 = drawing.getBounds()
+    bounds = (max(x1 - x0, 1.0), max(y1 - y0, 1.0))
+  except Exception:
+    bounds = fallback
+  return (width if width > 0 else bounds[0]), (height if height > 0 else bounds[1])
+
 def draw_svg(
   canvas,
   path:str,
   x:float, y:float,
   width:float, height:float,
 ):
-  """Draw SVG on canvas (coordinates in pt). Uses canvas-level transform
-  (`saveState`/`translate`/`scale`/`restoreState`) so target size is
-  deterministic on every platform/svglib version - internal `Drawing`
-  attributes like `transform` and `scale` are inconsistent across versions,
-  especially on Python 3.13 + Windows. Falls back to the union bounding
-  box when intrinsic dims are missing."""
+  """Draw SVG on canvas (coordinates in pt).
+  Uses canvas-level transform (`saveState`/`translate`/`scale`/`restoreState`)
+  so target size is deterministic on every platform/svglib version.
+  Internal `Drawing` attributes like `transform` and `scale` are inconsistent across versions,
+  especially on Python 3.13 + Windows.
+  Falls back to the union bounding box when intrinsic dims are missing."""
   drawing = load_svg(path)
   if drawing is None:
     raise ValueError(f"Could not load SVG: {path}")
-  nat_w = float(drawing.width or 0)
-  nat_h = float(drawing.height or 0)
-  if nat_w <= 0 or nat_h <= 0:
-    try:
-      x0, y0, x1, y1 = drawing.getBounds()
-      nat_w = nat_w if nat_w > 0 else max(x1 - x0, 1.0)
-      nat_h = nat_h if nat_h > 0 else max(y1 - y0, 1.0)
-    except Exception:
-      nat_w = nat_w if nat_w > 0 else width
-      nat_h = nat_h if nat_h > 0 else height
+  nat_w, nat_h = _svg_size(drawing, (width, height))
   s = min(width / nat_w, height / nat_h)
   canvas.saveState()
   canvas.translate(x, y)

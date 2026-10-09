@@ -77,7 +77,7 @@ def text_wrapped_to_width(tmp_path):
   assert_valid_pdf(path)
 
 def text_autoscale_does_not_recurse_to_stack_ceiling(tmp_path):
-  # regression: tiny box → autoscale must terminate iteratively (see review.md)
+  # tiny box → autoscale must terminate iteratively
   path = tmp_path / "autoscale.pdf"
   with PDF(str(path)) as pdf:
     pdf.font("Helvetica", 14)
@@ -113,8 +113,8 @@ def shapes_all_render(tmp_path):
   assert_valid_pdf(path)
 
 def pdf_path_polygon_is_reachable(tmp_path):
-  # regression: `self.path` (file path attr) used to shadow `def path()`,
-  # making the documented `pdf.path([...])` polygon API unreachable
+  # the file path attribute does not shadow `def path()`,
+  # so the documented `pdf.path([...])` polygon API is reachable
   path = tmp_path / "poly.pdf"
   with PDF(str(path)) as pdf:
     pdf.path([(0, 0), (10, 5), (20, 0)], close=True)

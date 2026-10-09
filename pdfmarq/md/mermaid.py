@@ -4,15 +4,17 @@
 
 Backends tried in priority order:
   1. mermaid-cli (mmdc) - local subprocess, best quality, fully offline.
-  2. mermaid.ink - public HTTP fallback, needs internet, **sends the diagram
-     source to a third party**. Warns once per process; disable entirely with
-     `MarkdownStyle(mermaid_remote=False)` / `render_mermaid(remote=False)`.
-  3. None - both failed; caller falls back to a plain code block.
+  2. mermaid.ink - public HTTP fallback, needs internet,
+     **sends the diagram source to a third party**.
+     Warns once per process.
+     Disable entirely with `MarkdownStyle(mermaid_remote=False)` / `render_mermaid(remote=False)`.
+  3. `None` - both failed; caller falls back to a plain code block.
 
-Output cached to `~/.cache/marq/mermaid/{hash}.png`, keyed on everything
-that affects the pixels (source, theme, background, scale, font, cli), so a
-diagram is rendered once per distinct look. Writes go through a temp file
-and an atomic rename; a cached PNG that fails to decode is re-rendered.
+Output cached to `~/.cache/marq/mermaid/{hash}.png`,
+keyed on everything that affects the pixels (source, theme, background, scale, font, cli),
+so a diagram is rendered once per distinct look.
+Writes go through a temp file and an atomic rename;
+a cached PNG that fails to decode is re-rendered.
 
 Usage:
   >>> from pdfmarq.mermaid import render_mermaid
@@ -22,26 +24,24 @@ Usage:
 
 __extras__ = ("mermaid", [])
 
-import hashlib
-import os
-import shutil
-import subprocess
-import time
+import base64, hashlib, json, os, shutil, subprocess, time, warnings, zlib
+import urllib.parse, urllib.request
 from pathlib import Path
+from PIL import Image
 
 #-------------------------------------------------------------------------------------------- Cache
 
 # `marq`, not `pdfmarq`: docmarq computes the same key for the same diagram
-# and both packages read each other's entries. Package-private caches (the
-# openmoji checkout) live under `pdfmarq` instead.
+# and both packages read each other's entries.
+# Package-private caches (the openmoji checkout) live under `pdfmarq` instead.
 _CACHE_DIR = Path.home() / ".cache" / "marq" / "mermaid"
 
 _MISS = object() # "not in cache", distinct from a cached failure (None)
 _RENDER_CACHE: dict = {} # key → (path, w_pt, h_pt)
 _FAIL_CACHE: dict = {} # key → time.monotonic() of the last failure
-# Failures expire so a transient network error costs one diagram for a
-# minute, not for the life of the process. Matters for long-running
-# servers: connectivity returns, and the diagram has to return with it.
+# Failures expire so a transient network error costs one diagram for a minute,
+# not for the life of the process.
+# Matters for long-running servers: connectivity returns, and the diagram has to return with it.
 _FAIL_TTL_S = 60.0
 
 def _ensure_cache():
@@ -50,11 +50,11 @@ def _ensure_cache():
 
 def _cache_key(
   code:str, theme:str, background:str, scale:float,
-  font_family:str="", font_dir:str="", cli:str="",
+  font_family:str = "", font_dir:str = "", cli:str = "",
 ) -> str:
-  """SHA-1 over every input that affects rendering. Different theme, bg,
-  scale, font (family *and* directory - same family name can resolve to a
-  different TTF) or cli must produce a different cache file.
+  """SHA-1 over every input that affects rendering.
+  Different theme, bg, scale, font or cli must produce a different cache file.
+  Font means family *and* directory: the same family name can resolve to a different TTF.
 
   docmarq builds this payload identically so both packages share entries;
   the field order is part of that contract.
@@ -81,17 +81,17 @@ def _cache_fail(key:str) -> None:
   _FAIL_CACHE[key] = time.monotonic()
 
 def _tmp_path(out_path:Path) -> Path:
-  """Unique sibling temp path. Rendering straight into the cache name would
-  leave a truncated PNG behind on a crash or a killed subprocess."""
+  """Unique sibling temp path.
+  Rendering straight into the cache name would leave a truncated PNG behind
+  on a crash or a killed subprocess."""
   return out_path.with_name(f"{out_path.stem}.{os.getpid()}.tmp{out_path.suffix}")
 
 def _valid_png(path:Path) -> bool:
-  """True when `path` holds a PNG that decodes. A corrupt or half-written
-  leftover has to be re-rendered rather than served from cache."""
+  """True when `path` holds a PNG that decodes.
+  A corrupt or half-written leftover has to be re-rendered rather than served from cache."""
   if not path.exists() or path.stat().st_size == 0:
     return False
   try:
-    from PIL import Image
     with Image.open(path) as im:
       im.verify()
     return True
@@ -104,9 +104,10 @@ def _scale_sidecar(out_path:Path) -> Path:
 def _write_scale(out_path:Path, eff_scale:float) -> None:
   """Record the scale the PNG was actually rendered at.
 
-  The pt-per-pixel math needs the effective scale and the mermaid.ink
-  backend ignores the requested one, so the number has to survive next to
-  the file - a later process reads the cache without knowing the backend.
+  The pt-per-pixel math needs the effective scale
+  and the mermaid.ink backend ignores the requested one,
+  so the number has to survive next to the file -
+  a later process reads the cache without knowing the backend.
   """
   try:
     _scale_sidecar(out_path).write_text(str(eff_scale), encoding="utf-8")
@@ -144,8 +145,8 @@ def _mmdc_css_with_font(ttf_path:Path, family:str) -> str:
 def _puppeteer_config() -> str|None:
   """Path to a puppeteer config for mmdc, from the environment.
 
-  `PDFMARQ_MMDC_PUPPETEER_CONFIG` is the documented name; the `XAEIAN_*`
-  spelling is accepted as an alias.
+  `PDFMARQ_MMDC_PUPPETEER_CONFIG` is the documented name;
+  the `XAEIAN_*` spelling is accepted as an alias.
   """
   for name in ("PDFMARQ_MMDC_PUPPETEER_CONFIG", "XAEIAN_MMDC_PUPPETEER_CONFIG"):
     val = os.environ.get(name)
@@ -158,11 +159,11 @@ def _puppeteer_config() -> str|None:
 def _try_mmdc(
   code:str, out_path:Path, *, cli:str, theme:str,
   background:str, scale:float,
-  font_family:str|None=None, font_dir:str|None=None,
+  font_family:str|None = None, font_dir:str|None = None,
 ) -> bool:
   """Render via local mermaid-cli. Returns `True` on success.
-  When `font_family`+`font_dir` are set and a matching TTF is found, a
-  temp CSS file with `@font-face` is injected via `--cssFile`."""
+  When `font_family`+`font_dir` are set and a matching TTF is found,
+  a temp CSS file with `@font-face` is injected via `--cssFile`."""
   mmdc = shutil.which(cli)
   if not mmdc: return False
   in_path = out_path.with_suffix(".mmd")
@@ -189,9 +190,8 @@ def _try_mmdc(
 
 #----------------------------------------------------------------------------- Backend: mermaid.ink
 
-# mermaid.ink renders at a fixed oversampling factor regardless of what the
-# caller asked for, so the pt-per-pixel math has to use this number and not
-# the requested `scale`.
+# mermaid.ink renders at a fixed oversampling factor regardless of what the caller asked for,
+# so the pt-per-pixel math has to use this number and not the requested `scale`.
 _INK_SCALE = 3
 
 _INK_WARNED = False
@@ -202,7 +202,6 @@ def _warn_remote_once() -> None:
   if _INK_WARNED:
     return
   _INK_WARNED = True
-  import warnings
   warnings.warn(
     "mermaid: local `mmdc` not found, falling back to the mermaid.ink public "
     "HTTP service - the diagram source is sent to a third-party server. "
@@ -219,7 +218,6 @@ def _try_mermaid_ink(
   Internal `scale` is capped at 3 by the API regardless of mmdc setting."""
   _warn_remote_once()
   try:
-    import urllib.request, urllib.parse, base64, zlib, json
     payload = json.dumps({"code": code, "mermaid": {"theme": theme}})
     deflated = zlib.compress(payload.encode("utf-8"), 9)
     encoded = base64.urlsafe_b64encode(deflated).decode("ascii").rstrip("=")
@@ -246,10 +244,10 @@ def _try_mermaid_ink(
 #--------------------------------------------------------------------------------------- Public API
 
 def render_mermaid(
-  code:str, *, cli:str="mmdc", theme:str="default",
-  background:str="transparent", scale:float=3,
-  font_family:str|None=None, font_dir:str|None=None,
-  remote:bool=True,
+  code:str, *, cli:str = "mmdc", theme:str = "default",
+  background:str = "transparent", scale:float = 3,
+  font_family:str|None = None, font_dir:str|None = None,
+  remote:bool = True,
 ) -> tuple[str, float, float]|None:
   """Render a mermaid diagram to a PNG file.
 
@@ -259,18 +257,20 @@ def render_mermaid(
     theme: Mermaid theme - `default` / `dark` / `forest` / `neutral`.
     background: PNG background - `transparent`, hex (`#RRGGBB`), or named.
     scale: Oversampling factor for the mmdc backend (mermaid.ink caps at 3).
-    font_family: Font family name (matches body). Diagram text uses it
-      instead of system default. Requires `font_dir` with a matching TTF.
+    font_family: Font family name (matches body).
+      Diagram text uses it instead of system default.
+      Requires `font_dir` with a matching TTF.
       Ignored by the mermaid.ink HTTP fallback (no custom-font support).
-    font_dir: Directory holding `<family>/<family>-Regular.ttf` (mirrors
-      `FontManager._resolve_path`). Skipped when family TTF isn't found.
+    font_dir: Directory holding `<family>/<family>-Regular.ttf`
+      (mirrors `FontManager._resolve_path`).
+      Skipped when family TTF isn't found.
     remote: Allow the mermaid.ink HTTP fallback when `mmdc` is unavailable.
-      Set `False` to keep the diagram source on this machine - rendering then
-      fails (returns `None`) instead, and the caller emits a code block.
+      Set `False` to keep the diagram source on this machine -
+      rendering then fails (returns `None`) instead, and the caller emits a code block.
 
   Returns:
-    `(path, width_pt, height_pt)` on success, `None` when no backend
-    succeeded. Failures are remembered for a minute, then retried.
+    `(path, width_pt, height_pt)` on success, `None` when no backend succeeded.
+    Failures are remembered for a minute, then retried.
   """
   code = code.strip()
   if not code: return None
@@ -305,11 +305,10 @@ def render_mermaid(
       return None
     _write_scale(out_path, eff_scale)
   try:
-    from PIL import Image
     with Image.open(out_path) as im:
       px_w, px_h = im.size
-    # Renders at 96 DPI * the scale actually used - which is the backend's
-    # fixed factor for mermaid.ink, not the requested one.
+    # Renders at 96 DPI * the scale actually used -
+    # which is the backend's fixed factor for mermaid.ink, not the requested one.
     dpi = 96 * eff_scale
     w_pt = px_w * 72 / dpi
     h_pt = px_h * 72 / dpi

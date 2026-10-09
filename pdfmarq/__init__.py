@@ -2,11 +2,12 @@
 
 """PDF generation with fluent API. Built on reportlab.
 
-Low-level drawing only - no markdown. For markdown rendering install
-the `[md]` extra and import from `pdfmarq.md`:
+Low-level drawing only - no markdown.
+For markdown documents install the `[md]` extra and import from a document package:
 
   pip install pdfmarq[md]
-  from pdfmarq.md import md_to_pdf, MarkdownStyle
+  from pdfmarq.paper import md_to_pdf, lang_style # documentation with a banner
+  from pdfmarq.legal import md_to_pdf, lang_style # letters, statements, contracts
 
 Example:
   >>> from pdfmarq import PDF, Align
@@ -17,17 +18,17 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.5.4"
+__version__ = "0.6.0"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"
 __author__ = "Xaeian"
 __keywords__ = ["pdf", "reportlab", "document", "generation", "markdown"]
 __dependencies__ = ["reportlab", "Pillow", "svglib"]
-# pip-name → import-name mapping for diagnostics. `Pillow` is the pip
-# package but the import is `from PIL import ...`; without this hint
-# users debugging a missing dep see `No module named 'PIL'` and don't
-# realize they need `pip install Pillow`.
+# pip-name → import-name mapping for diagnostics.
+# `Pillow` is the pip package but the import is `from PIL import ...`;
+# without this hint users debugging a missing dep see `No module named 'PIL'`
+# and don't realize they need `pip install Pillow`.
 __import_names__ = {"Pillow": "PIL"}
 
 #--------------------------------------------------------------------------------------- Public API

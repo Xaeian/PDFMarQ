@@ -4,7 +4,7 @@
 
 import pytest
 from conftest import assert_valid_pdf
-from pdfmarq.md import md_to_pdf, MarkdownStyle
+from pdfmarq.paper import md_to_pdf, PaperStyle
 from pdfmarq.constants import A4
 
 #----------------------------------------------------------------------------------------- Markdown
@@ -30,7 +30,7 @@ from pdfmarq.constants import A4
   ("frontmatter",
     "---\ntitle: Doc\nauthor: Xaeian\nsubject: smoke\nkeywords: [a, b]\n---\n\n"
     "# Doc\n\nBody."),
-  ("empty_string", ""),                    # edge: empty input must not blow up
+  ("empty_string", ""), # edge: empty input must not blow up
   ("inline_math", "Pythagoras: $a^2 + b^2 = c^2$ done.\n\n$$ E = mc^2 $$\n"),
 ])
 def md_constructs_render_valid_pdf(tmp_path, name, src):
@@ -59,16 +59,16 @@ def md_long_doc_renders_multipage(tmp_path):
 
 def md_custom_style_applies(tmp_path):
   path = tmp_path / "styled.pdf"
-  style = MarkdownStyle(body_size=10, head_gap_top=8, table_zebra=False)
+  style = PaperStyle(body_size=10, head_gap_top=8, table_zebra=False)
   md_to_pdf("# H\n\nbody", str(path), style=style)
   assert_valid_pdf(path)
 
 def md_footnote_label_renders_heading(tmp_path):
-  # when `footnote_label` is set, the footnote section gets an H2 heading
-  # above it instead of the HR separator
+  # when `footnote_label` is set, the footnote section gets an H2 heading above it
+  # instead of the HR separator
   path = tmp_path / "fn_label.pdf"
   src = "Body[^1].\n\n[^1]: footnote text."
-  style = MarkdownStyle(footnote_label="References")
+  style = PaperStyle(footnote_label="References")
   md_to_pdf(src, str(path), style=style)
   assert_valid_pdf(path)
 
@@ -91,12 +91,12 @@ def md_base_dir_resolves_relative_image(tmp_path):
   assert_valid_pdf(path)
 
 def md_two_renderers_keep_independent_fontsets(tmp_path):
-  # regression: two renderers used to clobber the global mathtext.fontset so
-  # whichever was constructed last won; now each holds its own MathFontConfig
+  # each renderer keeps its own `MathFontConfig` and applies it just before rendering,
+  # so renderers never clobber each other through the global `mathtext.fontset`
   src = "$x^2 + 1$"
-  md_to_pdf(src, str(tmp_path / "stix.pdf"), style=MarkdownStyle(math_fontset="stix"))
-  md_to_pdf(src, str(tmp_path / "cm.pdf"),   style=MarkdownStyle(math_fontset="cm"))
-  md_to_pdf(src, str(tmp_path / "stix2.pdf"), style=MarkdownStyle(math_fontset="stix"))
+  md_to_pdf(src, str(tmp_path / "stix.pdf"), style=PaperStyle(math_fontset="stix"))
+  md_to_pdf(src, str(tmp_path / "cm.pdf"), style=PaperStyle(math_fontset="cm"))
+  md_to_pdf(src, str(tmp_path / "stix2.pdf"), style=PaperStyle(math_fontset="stix"))
   for name in ("stix.pdf", "cm.pdf", "stix2.pdf"):
     assert_valid_pdf(tmp_path / name)
 
@@ -134,8 +134,8 @@ def inline_code_keeps_its_backslashes():
   assert norm(src) == src
 
 def tagged_block_renders_with_its_own_label(tmp_path):
-  # `\tag{...}` must never reach the engine: MathJax drew it as a giant glyph
-  # across the page, mathtext fell back to a code block
+  # `\tag{...}` must never reach the engine:
+  # MathJax draws it as a giant glyph across the page, mathtext falls back to a code block
   pytest.importorskip("fitz", reason="PyMuPDF not installed")
   from conftest import pdf_text
   src = "$$\nE = I R\n" + r"\tag{X1.1}" + "\n$$"
@@ -146,3 +146,14 @@ def tagged_block_renders_with_its_own_label(tmp_path):
   assert "(X1.1)" in text, f"tag label missing from page: {text!r}"
   assert "(1)" not in text, "auto number printed alongside an explicit tag"
 
+def math_with_no_engine_says_so(tmp_path, monkeypatch, capsys):
+  # no MathJax and no matplotlib: formulas stay as code, and stderr names the package
+  import pdfmarq.md.math as math, pdfmarq.md.mathjax as mathjax
+  from pdfmarq._warn import reset_warnings
+  monkeypatch.setattr(math, "_HAS_MATPLOTLIB", False)
+  monkeypatch.setattr(mathjax, "available", lambda: False)
+  reset_warnings()
+  path = tmp_path / "plain.pdf"
+  md_to_pdf("$$\nE = mc^2\n$$\n\nInline $x^2$ too.\n", str(path))
+  assert_valid_pdf(path)
+  assert "pip install matplotlib" in capsys.readouterr().err

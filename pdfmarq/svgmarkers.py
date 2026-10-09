@@ -247,7 +247,7 @@ def path_vertices(data:str) -> list[Vertex]:
       end = (v[0] + ox, v[1] + oy)
       segment(end, _back(end, c, p0), _way(p0, c, end))
       curve = ("Q", c)
-    else: # A
+    else: # `A`
       end = (v[5] + ox, v[6] + oy)
       leave, into = _arc_ways(p0, v[0], v[1], v[2], bool(v[3]), bool(v[4]), end)
       segment(end, into, leave)

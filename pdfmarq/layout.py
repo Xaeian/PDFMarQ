@@ -1,7 +1,7 @@
 # pdfmarq/layout.py
 
 """Layout system - cursor positioning, alignment, page geometry."""
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from .constants import Align
 
 #------------------------------------------------------------------------------------------- Cursor
@@ -70,14 +70,20 @@ class Cursor:
 
 @dataclass
 class PageGeometry:
-  """Page dimensions and margins (all in mm). CSS-style margins - left and
-  right can differ."""
+  """
+  Page dimensions and margins (all in mm). CSS-style margins - left and right can differ.
+
+  A column is a copy with its margins moved in to the column edges,
+  so everything drawn relative to the margins lands inside it.
+  `axis` is the line `Align.CENTER` centres on: the page centre when `None`.
+  """
   width: float
   height: float
   margin_top: float = 20
   margin_right: float = 20
   margin_bot: float = 20
   margin_left: float = 20
+  axis: float|None = None
 
   @property
   def content_width(self) -> float:
@@ -89,12 +95,17 @@ class PageGeometry:
     """Available height for content."""
     return self.height - self.margin_top - self.margin_bot
 
+  def centered_x(self, width:float) -> float:
+    """Left edge of an element of `width` placed on the centre line."""
+    if self.axis is None: return (self.width - width) / 2
+    return self.axis - width / 2
+
   def x_for_align(self, width:float, align:str) -> float:
     """Canvas x origin for an element of `width` at the requested alignment."""
     if align == Align.LEFT:
       return self.margin_left
     elif align == Align.CENTER:
-      return (self.width - width) / 2
+      return self.centered_x(width)
     elif align == Align.RIGHT:
       return self.width - self.margin_right - width
     return self.margin_left
@@ -111,7 +122,36 @@ class PageGeometry:
     if cursor.align == Align.LEFT:
       x += self.margin_left
     elif cursor.align == Align.CENTER:
-      x += (self.width - width) / 2
+      x += self.centered_x(width)
     elif cursor.align == Align.RIGHT:
       x += self.width - self.margin_right - width
     return x, y
+
+#------------------------------------------------------------------------------------------ Columns
+
+@dataclass
+class Columns:
+  """
+  Column region open on the current page.
+
+  `top` is where the region starts, in mm below the page's top margin.
+  `height` caps the columns on the current page, and `later` on each page after it in turn,
+  `None` leaving a page uncapped.
+  `left` and `right` narrow the region inside the page margins (mm).
+  `bottom` is the lowest point any column reached, measured from `top`.
+  """
+  count: int
+  gap: float
+  flow: bool
+  top: float
+  height: float|None = None
+  left: float = 0
+  right: float = 0
+  index: int = 0
+  bottom: float = 0
+  later: list = field(default_factory=list)
+
+  def column_width(self, content_width:float) -> float:
+    """Width (mm) of each column on a page whose content is `content_width` mm wide."""
+    inner = content_width - self.left - self.right
+    return (inner - self.gap * (self.count - 1)) / self.count

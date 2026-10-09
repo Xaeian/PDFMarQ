@@ -6,7 +6,7 @@ import pytest
 from pdfmarq import PDF
 from conftest import needs_twin
 from pdfmarq.utils import to_mm, mm_to_pt, parse_color, color_alpha, color_hex, parse_margin
-from pdfmarq.fonts import FontManager, is_builtin, builtin_name
+from pdfmarq.fonts import FontManager, is_builtin, builtin_name, builtin_families
 from pdfmarq.inline import RichSegment
 from pdfmarq.layout import Cursor, PageGeometry
 from pdfmarq.text import TextMetrics
@@ -88,7 +88,7 @@ def rich_segment_flags_derive_mode(kwargs, expected):
   assert RichSegment(text="x", **kwargs).mode == expected
 
 def rich_segment_strike_field_exists():
-  # regression: was `strikethrough`, renamed for cross-lib parity with docmarq
+  # named `strike` as in docmarq, for cross-lib parity
   assert RichSegment(text="x", strike=True).strike is True
 
 def rich_segment_break_line_field():
@@ -188,7 +188,7 @@ def versions_aligned():
   (10, (10, 10, 10, 10)),          # scalar
   ((10, 20), (10, 20, 10, 20)),    # (v, h)
   ((10, 20, 30), (10, 20, 30, 20)),# (t, h, b)
-  ((1, 2, 3, 4), (1, 2, 3, 4)),    # regression: 4-element CSS form used to drop last
+  ((1, 2, 3, 4), (1, 2, 3, 4)),    # 4-element CSS form keeps all four
   ([1, 2, 3, 4], (1, 2, 3, 4)),    # list accepted
 ])
 def parse_margin_css_forms(value, expected):
@@ -204,7 +204,7 @@ def parse_margin_rejects_invalid():
   ("Helvetica", "Regular"),
   ("Helvetica", "Bold"),
   ("Times", "Regular"),
-  ("Times", "Bold"), # regression: Times+Bold used to slip through is_builtin
+  ("Times", "Bold"), # Times+Bold counts as a builtin too
 ])
 def is_builtin_recognizes_builtins(family, mode):
   assert is_builtin(family, mode)
@@ -227,7 +227,7 @@ def builtin_name_resolves_modal_variant(family, mode, expected):
   assert builtin_name(family, mode) == expected
 
 def is_builtin_times_roman_alias():
-  # regression: `Times-Roman` + Bold used to silently produce Regular
+  # `Times-Roman` + Bold resolves to Bold, never silently to Regular
   assert is_builtin("Times", "Bold")
   assert is_builtin("Times-Roman", "Bold")
 
@@ -299,15 +299,16 @@ def box_fit_wraps_long_text(metrics):
   assert r.lines >= 2 and not r.overflow
 
 def box_fit_autoscale_fine_step_no_stack_overflow(metrics):
-  # regression: was recursive, could blow the stack at small autoscale steps
-  r = metrics.box_fit(
-    "A" * 200, width=50, height=10,
-    family="Helvetica", mode="Regular", size=12, autoscale=0.1,
-  )
+  # `box_fit` loops rather than recurses, so a small autoscale step cannot blow the stack
+  with pytest.warns(RuntimeWarning, match="no longer readable"):
+    r = metrics.box_fit(
+      "A" * 200, width=50, height=10,
+      family="Helvetica", mode="Regular", size=12, autoscale=0.1,
+    )
   assert r is not None # won't fit even at minimum, but must return (not crash)
 
 def box_fit_autoscale_extreme_step(metrics):
-  # autoscale=0.001 would have meant ~12000 recursions in the old impl
+  # `autoscale=0.001` from 12pt is up to ~12000 rounds, far past the recursion limit
   r = metrics.box_fit(
     "word " * 100, width=60,
     family="Helvetica", mode="Regular", size=12, autoscale=0.001,
@@ -321,3 +322,11 @@ def box_fit_overflow_flag_on_unbreakable_word(metrics):
     width=20, family="Helvetica", mode="Regular", size=12,
   )
   assert r.overflow is True
+
+def builtin_families_name_the_core_fonts():
+  assert {"Helvetica", "Times", "Courier"} <= set(builtin_families())
+  assert all(is_builtin(family) for family in builtin_families())
+
+def fonts_property_is_the_registry(tmp_path):
+  pdf = PDF(str(tmp_path / "f.pdf"))
+  assert pdf.fonts is pdf._fonts

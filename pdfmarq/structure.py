@@ -30,10 +30,9 @@ class TOCEntry:
 class Metadata:
   """PDF document metadata.
 
-  `comments` and `category` are accepted and stored but NOT applied to the PDF /Info
-  dictionary because reportlab's `Canvas` has no native setter for them.
-  Round-tripping through the dataclass works; the resulting PDF file
-  won't carry those fields.
+  `comments` and `category` are accepted and stored but NOT applied to the PDF /Info dictionary,
+  because reportlab's `Canvas` has no native setter for them.
+  Round-tripping through the dataclass works; the resulting PDF file won't carry those fields.
   """
   title: str|None = None
   author: str|None = None
@@ -58,9 +57,9 @@ class Metadata:
 class BookmarkManager:
   """Manages PDF bookmarks/outlines.
 
-  Call order: `apply_page` during each page render, then `apply_outline`
-  once before `canvas.save()`. Order matters - anchors must exist before
-  the outline references them.
+  Call order: `apply_page` during each page render,
+  then `apply_outline` once before `canvas.save()`.
+  Order matters - anchors must exist before the outline references them.
   """
   def __init__(self):
     self._bookmarks: list[Bookmark] = []
@@ -74,8 +73,8 @@ class BookmarkManager:
   def apply_page(self, canvas, page:int):
     """Register anchors for all bookmarks on this page. Canvas must be on that page.
 
-    Each destination carries its entry's own height, so following the
-    outline scrolls to the heading rather than fitting the whole page.
+    Each destination carries its entry's own height,
+    so following the outline scrolls to the heading rather than fitting the whole page.
     """
     for i, bm in enumerate(self._bookmarks):
       if bm.page == page:

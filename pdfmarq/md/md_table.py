@@ -64,7 +64,6 @@ def _cap_widths(widths:list[float], total:float) -> list[float]:
 class TableMixin:
   """Markdown table rendering with HTML-like auto-layout and inline image
   support. Mixed into `MarkdownRenderer`."""
-
   def _extract_cell_image(self, inline_token:Token|None) -> ImageInfo|None:
     """Return `ImageInfo` when the cell contains exactly one local image.
     Mixed content, multiple images, or remote URLs return `None` and fall
@@ -80,7 +79,7 @@ class TableMixin:
     src = img_attrs.get("src", "")
     if not src or src.startswith(("http://", "https://")):
       return None
-    src = self._resolve_image_path(src)
+    src = self.resolve_path(src)
     return load_image_info(
       src, attrs=img_attrs, alt=img.content or "",
       default_dpi=self.style.image_dpi,
@@ -157,8 +156,8 @@ class TableMixin:
 
     def cell_data(inline_token:Token|None, bold:bool) -> dict:
       """Convert one cell to a render-ready dict.
-      Single-image cells get block-style sizing; everything else is `text` with
-      a list of `RichSegment`s for `render_rich`.
+      Single-image cells get block-style sizing;
+      everything else is `text` with a list of `RichSegment`s for `render_rich`.
       """
       img = self._extract_cell_image(inline_token)
       if img is not None:
@@ -231,8 +230,8 @@ class TableMixin:
 
     row_idx = 0
     total_body = len(body_data)
-    min_rows = 2          # body rows required alongside header per chunk
-    tried_new_page = False  # prevents infinite loop when a row exceeds page height
+    min_rows = 2 # body rows required alongside header per chunk
+    tried_new_page = False # prevents infinite loop when a row exceeds page height
 
     while row_idx < total_body:
       avail = pdf.content_height - pdf.y
@@ -251,7 +250,7 @@ class TableMixin:
         pass
       elif fit_count < min_rows and not tried_new_page:
         # Can't fit minimum rows - page break, try again with full page
-        pdf.new_page()
+        pdf.next_frame()
         tried_new_page = True
         continue
       # else: fresh page already tried, render what we can (at least 1 row)
@@ -269,17 +268,17 @@ class TableMixin:
         chunk_body_data, chunk_body_heights, chunk_body_cell_h,
         aligns, col_widths, text_width_mm,
         x_start, total_w, h_pad, v_pad, text_top_offset,
-        row_offset=row_idx,  # for correct zebra striping
+        row_offset=row_idx, # for correct zebra striping
       )
 
       row_idx += chunk_count
       tried_new_page = False
 
-      if row_idx < total_body:  # page break between chunks, not after last
-        pdf.new_page()
+      if row_idx < total_body: # page break between chunks, not after last
+        pdf.next_frame()
 
-    if total_body == 0 and header_data:  # header-only table
-      self._ensure_space(header_h)
+    if total_body == 0 and header_data: # header-only table
+      self.pdf.keep(header_h)
       self._draw_table_chunk(
         header_data, header_h, header_cell_h,
         [], [], [],
@@ -300,8 +299,8 @@ class TableMixin:
   ) -> tuple[list[float], list[float]]:
     """HTML-style auto layout. Returns `(col_widths, text_width_mm)`.
 
-    Text and image contributions are tracked separately per column so an
-    image-only row cannot pin the column max below what the text rows need.
+    Text and image contributions are tracked separately per column,
+    so an image-only row cannot pin the column max below what the text rows need.
     """
     pdf = self.pdf
     s = self.style
@@ -337,7 +336,7 @@ class TableMixin:
     for i in range(ncols):
       cmin = max(col_min_img[i], col_min_text[i])
       if has_text[i]:
-        cmax = max(col_max_text[i], col_min_img[i])  # text width, floored at image min
+        cmax = max(col_max_text[i], col_min_img[i]) # text width, floored at image min
       else:
         cmax = col_max_img[i]
       col_min.append(cmin)
@@ -369,15 +368,15 @@ class TableMixin:
     h_pad:float,
     col_min:list[float],
   ) -> tuple[list[float], list[float]]:
-    """Reflow widths so a pure-image col's height matches its widest text-col
-    partner. Mixed cols (both image and text rows) are skipped - they need
-    full text width and balancing would truncate text.
+    """Reflow widths so a pure-image col's height matches its widest text-col partner.
+    Mixed cols (both image and text rows) are skipped -
+    they need full text width and balancing would truncate text.
 
     Per image col `i` paired with text col `j`:
       image_h(w_i) = w_text_i × aspect_mean
       text_h(w_j)  ≈ K / w_text_j  (K = total_text_w × line_h)
-    Budget constraint: w_i + w_j = const. Equating heights yields a
-    quadratic in w_i.
+    Budget constraint: w_i + w_j = const.
+    Equating heights yields a quadratic in w_i.
     """
     if not any(is_image_col) or ncols < 2:
       return col_widths, text_width_mm
@@ -389,7 +388,7 @@ class TableMixin:
       if not is_image_col[ic]:
         continue
       if has_text[ic]:
-        continue  # mixed col: text rows need full width
+        continue # mixed col: text rows need full width
       aspects = []
       for row in all_rows:
         if ic < len(row) and row[ic]["type"] == "image":
@@ -406,7 +405,6 @@ class TableMixin:
       K = 0.0
       for row in all_rows:
         if tc >= len(row) or row[tc]["type"] != "text": continue
-        from ..inline import measure_extent
         _, text_w_mm = measure_extent(pdf, row[tc]["segs"])
         k = text_w_mm * line_h_mm
         if k > K: K = k
@@ -428,13 +426,13 @@ class TableMixin:
         # Text dominates; give image its minimum width.
         w_i_text = max(col_min[ic] - pad2, 1.0)
       else:
-        w_i_text = (-b - disc**0.5) / (2 * a)  # smaller root keeps image narrower
+        w_i_text = (-b - disc**0.5) / (2 * a) # smaller root keeps image narrower
       img_min_text = col_min[ic] - pad2
-      img_max_text = col_widths[ic] - pad2  # don't exceed linear-solver result
-      img_max_text = max(img_max_text, budget_text * 0.45)  # allow growth for heavy text
+      img_max_text = col_widths[ic] - pad2 # don't exceed linear-solver result
+      img_max_text = max(img_max_text, budget_text * 0.45) # allow growth for heavy text
       w_i_text = max(img_min_text, min(w_i_text, img_max_text))
       w_j_text = budget_text - w_i_text
-      partner_min_text = col_min[tc] - pad2  # partner must not shrink below its min
+      partner_min_text = col_min[tc] - pad2 # partner must not shrink below its min
       if w_j_text < partner_min_text:
         w_j_text = partner_min_text
         w_i_text = budget_text - w_j_text
@@ -474,12 +472,12 @@ class TableMixin:
     chunk_body_h = sum(body_heights)
     chunk_h = header_h + chunk_body_h
 
-    if header_data:  # header background
+    if header_data: # header background
       pdf.cursor(x_start, y)
       pdf.color(*s.table_header_bg[:3])
       pdf.rect(total_w, header_h)
 
-    if s.table_zebra:  # zebra striping; row_offset ensures continuity across chunks
+    if s.table_zebra: # zebra striping; row_offset ensures continuity across chunks
       y_zebra = y + header_h
       for idx, rh in enumerate(body_heights):
         global_idx = row_offset + idx
@@ -512,7 +510,7 @@ class TableMixin:
       pdf.line(0, chunk_h, s.table_border_thick)
     self._reset_stroke()
 
-    if header_data:  # header content
+    if header_data: # header content
       x_cell = x_start
       for idx, cd in enumerate(header_data):
         cw = col_widths[idx]

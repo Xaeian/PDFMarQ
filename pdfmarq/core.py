@@ -3,6 +3,7 @@
 """Core PDF class - main facade for document generation."""
 import random
 from typing import Callable
+from dataclasses import replace
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.colors import Color
@@ -11,7 +12,7 @@ from .constants import Defaults, Align
 from .utils import to_mm, parse_margin, parse_color
 from .fonts import FontManager, is_builtin, builtin_name
 from .styles import Style, TableStyle
-from .layout import Cursor, PageGeometry
+from .layout import Cursor, PageGeometry, Columns
 from .text import TextMetrics
 from .tables import TableBuilder, TableData
 from .structure import Metadata, BookmarkManager, LinkManager
@@ -22,18 +23,18 @@ from . import graphics as gfx
 class NumberedCanvas(canvas.Canvas):
   """Canvas subclass that buffers pages instead of emitting immediately.
   
-  This enables deferred rendering of content that depends on the total page
-  count (e.g. footer "Page 1/5"). Pages are accumulated in `_saved_pages`
-  during normal `showPage()` calls; on `save()` we know the total, then
-  iterate through buffered states and let registered final-page callbacks
-  draw their content before each real `showPage()`.
+  This enables deferred rendering of content that depends on the total page count
+  (e.g. footer "Page 1/5").
+  Pages are accumulated in `_saved_pages` during normal `showPage()` calls.
+  On `save()` we know the total, then iterate through buffered states
+  and let registered final-page callbacks draw their content before each real `showPage()`.
 
-  Also defers named destinations: during buffered rendering the underlying
-  `_doc.pageCounter` never increments (real `showPage()` never runs), so a
-  destination registered now would resolve to "Page0" and jump to page 1.
-  They are replayed at save time, when each page's counter is correctly
-  advanced. Both the page-fit and the position-anchored form go through
-  the same queue.
+  Also defers named destinations.
+  Real `showPage()` never runs during buffered rendering,
+  so the underlying `_doc.pageCounter` never increments,
+  and a destination registered now would resolve to "Page0" and jump to page 1.
+  They are replayed at save time, when each page's counter is correctly advanced.
+  Both the page-fit and the position-anchored form go through the same queue.
   """
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -69,8 +70,8 @@ class NumberedCanvas(canvas.Canvas):
   
   def save(self):
     """Replay buffered pages, running final-page callbacks with known total."""
-    # Buffer any pending content from the last page (caller may not have
-    # called showPage on the final page - matches Canvas.save() behavior).
+    # Buffer any pending content from the last page
+    # (caller may not have called `showPage` on the final page - matches `Canvas.save()` behavior).
     if self._code:
       self.showPage()
     total = len(self._saved_pages)
@@ -81,10 +82,10 @@ class NumberedCanvas(canvas.Canvas):
     try:
       for state in self._saved_pages:
         self.__dict__.update(state)
-        # The saved state carries the flag as it was during buffering, so
-        # restoring a page turns it back off. Re-assert it: a destination
-        # that reaches `bookmarkPage` again from inside reportlab has to
-        # register now, not queue itself for a replay that already runs.
+        # The saved state carries the flag as it was during buffering,
+        # so restoring a page turns it back off.
+        # Re-assert it: a destination that reaches `bookmarkPage` again from inside reportlab
+        # has to register now, not queue itself for a replay that already runs.
         self._replaying = True
         page_num = self._pageNumber
         for cb in self._final_page_callbacks:
@@ -116,12 +117,16 @@ class PDF:
     unit:str = Defaults.UNIT,
     font_dir:str = "./fonts",
     debug:bool = False,
+    gutter:float = 0,
   ):
+    """`gutter` is a binding margin, added to the left one: PDF has no native gutter."""
     self._path = path
     self.debug = debug
     self.unit = unit
     # Page setup
     top, right, bot, left = parse_margin(margin)
+    self._gutter = to_mm(gutter, unit) # `margin()` adds it again whenever it moves the margins
+    left += gutter
     self._page = PageGeometry(
       width=to_mm(width, unit),
       height=to_mm(height, unit),
@@ -130,8 +135,11 @@ class PDF:
       margin_bot=to_mm(bot, unit),
       margin_left=to_mm(left, unit),
     )
-    # Canvas - NumberedCanvas buffers pages so deferred footer (with total
-    # page count) can be drawn at save() time.
+    # `_page` is the frame content is drawn into: the whole page, or the open column.
+    self._page_full = self._page
+    self._columns: Columns|None = None
+    # Canvas - `NumberedCanvas` buffers pages
+    # so deferred footer (with total page count) can be drawn at `save()` time.
     self._canvas = NumberedCanvas(path)
     self._canvas._pdf_ref = self
     self._canvas.setPageSize((self._page.width * mm, self._page.height * mm))
@@ -145,10 +153,10 @@ class PDF:
     # Current state
     self._style = Style().with_defaults()
     self._page_num = 1
-    self._total_pages: int|None = None  # set in save() for footer callbacks
-    self._saved = False  # guards the save-once canvas, see save()
-    self._page_callbacks: list[Callable] = []  # before showPage (header/footer)
-    self._new_page_callbacks: list[Callable] = []  # after showPage + cursor reset
+    self._total_pages: int|None = None # set in save() for footer callbacks
+    self._saved = False # guards the save-once canvas, see save()
+    self._page_callbacks: list[Callable] = [] # before showPage (header/footer)
+    self._new_page_callbacks: list[Callable] = [] # after showPage + cursor reset
 
   #-------------------------------------------------------------------------------- Context manager
   
@@ -198,37 +206,54 @@ class PDF:
 
   @property
   def c(self):
-    """Direct reportlab `Canvas` access for advanced operations not exposed
-    by the fluent API. Use sparingly - bypasses cursor / page tracking."""
+    """Direct reportlab `Canvas` access for advanced operations not exposed by the fluent API.
+    Use sparingly - bypasses cursor / page tracking."""
     return self._canvas
 
   @property
+  def fonts(self) -> FontManager:
+    """Font registry: `pdf.fonts.register(family)` loads a TTF family from `font_dir`."""
+    return self._fonts
+
+  @property
   def output_path(self) -> str:
-    """Destination file path. Symmetric with `DOCX.output_path`. `pdf.path()`
-    is reserved for the polygon-draw method, so use this for filename
-    inspection."""
+    """Destination file path. Symmetric with `DOCX.output_path`.
+    `pdf.path()` is reserved for the polygon-draw method, so use this for filename inspection."""
     return self._path
 
   #------------------------------------------------------------------------------------------- Page
   
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
     """Set page size."""
+    if self._columns: raise ValueError("page() cannot resize the page while columns are open")
     if width:
-      self._page.width = to_mm(width, self.unit)
+      self._page_full.width = to_mm(width, self.unit)
     if height:
-      self._page.height = to_mm(height, self.unit)
-    self._canvas.setPageSize((self._page.width * mm, self._page.height * mm))
+      self._page_full.height = to_mm(height, self.unit)
+    self._canvas.setPageSize((self._page_full.width * mm, self._page_full.height * mm))
     return self
 
   def new_page(self) -> "PDF":
-    """Add new page and reset cursor."""
+    """
+    Add new page and reset cursor.
+
+    An open column region carries on from its first column at the top of the new page,
+    below whatever the `on_new_page` callbacks placed there, capped as `columns()` asked.
+    """
     self._finalize_page()
     self._canvas.showPage()
     self._page_num += 1
+    self._page = self._page_full
     self._cursor.set(0, 0)
     self._apply_font() # re-apply font after page break
     for cb in self._new_page_callbacks:
       cb(self, self._page_num)
+    region = self._columns
+    if region:
+      region.top = self._cursor.y
+      region.height = region.later.pop(0) if region.later else None
+      region.bottom = 0
+      self._enter_column(0, 0)
     return self
 
   def margin(self, lr:float, top:float|None=None, bot:float|None=None) -> "PDF":
@@ -237,12 +262,128 @@ class PDF:
     For asymmetric left/right margins, pass a 4-tuple to the `PDF` constructor:
     `PDF(..., margin=(top, right, bot, left))`.
     """
+    if self._columns: raise ValueError("margin() cannot move margins while columns are open")
     top = top if top is not None else lr
     bot = bot if bot is not None else top
-    self._page.margin_left = self._page.margin_right = to_mm(lr, self.unit)
-    self._page.margin_top = to_mm(top, self.unit)
-    self._page.margin_bot = to_mm(bot, self.unit)
+    page = self._page_full
+    page.margin_left = page.margin_right = to_mm(lr, self.unit)
+    page.margin_left += self._gutter
+    page.margin_top = to_mm(top, self.unit)
+    page.margin_bot = to_mm(bot, self.unit)
     return self
+
+  #---------------------------------------------------------------------------------------- Columns
+
+  def columns(self, count:int, gap:float=8, flow:bool=True, height:float|list|None=None) -> "PDF":
+    """
+    Lay out what follows in `count` columns, starting at the current height.
+
+    Each column is a narrower page: content width, margins and `y` all refer to it.
+    Flowing columns fill left to right as `next_frame()` moves on.
+    With `flow=False` the caller places content per column and breaks pages itself.
+    `height` caps the columns on this page, which is how a caller balances them.
+    A list caps them page by page from this one, `None` leaving a page uncapped:
+    `[None, 120]` balances the second page of the region only.
+    `columns(1)` closes the region, below its lowest column.
+    """
+    if count < 1: raise ValueError(f"column count must be at least 1, got {count}")
+    self._end_columns()
+    if count == 1: return self
+    caps = height if isinstance(height, (list, tuple)) else [height]
+    caps = [None if cap is None else to_mm(cap, self.unit) for cap in caps] or [None]
+    self._open(Columns(count, to_mm(gap, self.unit), flow, self._cursor.y, caps[0],
+      later=caps[1:]))
+    return self
+
+  def inset(self, left:float=0, right:float=0) -> "PDF":
+    """
+    Narrow the content area by `left` and `right` from the current height, as one flowing frame.
+
+    Text set beside a logo or a photo wraps this way.
+    Like a column, the frame carries on over a page break.
+    `inset()` with no insets restores the full width, below what was drawn.
+    """
+    self._end_columns()
+    if not (left or right): return self
+    self._open(Columns(1, 0, True, self._cursor.y,
+      left=to_mm(left, self.unit), right=to_mm(right, self.unit)))
+    return self
+
+  def column(self, index:int) -> "PDF":
+    """Move to column `index` of the open region, keeping the current height."""
+    region = self._columns
+    if not region: raise ValueError("no column region is open, call columns() first")
+    if not 0 <= index < region.count:
+      raise ValueError(f"column {index} is outside 0..{region.count - 1}")
+    self._reach()
+    self._enter_column(index, self._cursor.y)
+    return self
+
+  def next_frame(self) -> "PDF":
+    """
+    Continue in the next frame: the next column, or a new page after the last one.
+
+    Without a column region this is `new_page()`.
+    Parallel columns (`flow=False`) belong to a caller that breaks pages itself,
+    so there it does nothing.
+    """
+    region = self._columns
+    if not region: return self.new_page()
+    if not region.flow: return self
+    if region.index + 1 < region.count:
+      self._reach()
+      self._enter_column(region.index + 1, 0)
+      return self
+    return self.new_page()
+
+  def keep(self, height:float) -> "PDF":
+    """
+    Make room for `height` here: move to the next frame unless it fits the rest of this one.
+    Something taller than a whole frame stays at the top of one,
+    since a fresh frame cannot hold it either and would only leave this one blank.
+    """
+    height = to_mm(height, self.unit)
+    if height <= self.content_height - self._cursor.y: return self
+    if height > self.content_height and self._cursor.y <= 0.5: return self
+    return self.next_frame()
+
+  def _open(self, region:Columns):
+    """Open `region` at its first column. One whose columns get no width is refused."""
+    width = region.column_width(self._page_full.content_width)
+    if width <= 0:
+      raise ValueError(f"columns would be {width:.1f}mm wide: fewer columns, a smaller gap"
+        " or smaller insets")
+    self._columns = region
+    self._enter_column(0, 0)
+
+  def _enter_column(self, index:int, y:float):
+    """Make column `index` the frame content is drawn into, cursor at `y` inside it."""
+    region = self._columns
+    full = self._page_full
+    width = region.column_width(full.content_width)
+    left = full.margin_left + region.left + index * (width + region.gap)
+    top = full.margin_top + region.top
+    bot = full.margin_bot
+    if region.height is not None:
+      bot = max(bot, full.height - top - region.height)
+    self._page = replace(full, margin_left=left, margin_right=full.width - left - width,
+      margin_top=top, margin_bot=bot, axis=left + width / 2)
+    region.index = index
+    self._cursor.set(0, y)
+
+  def _reach(self):
+    """Record how far down the current column went, text drawn without `enter()` included."""
+    cursor = self._cursor
+    self._columns.bottom = max(self._columns.bottom, cursor.y + cursor.last_height)
+
+  def _end_columns(self):
+    """Close the column region: full width again, cursor below the lowest column."""
+    region = self._columns
+    if not region: return
+    self._reach()
+    self._columns = None
+    self._page = self._page_full
+    self._cursor.set(0, region.top + region.bottom)
 
   #------------------------------------------------------------------------------------------ Fonts
   
@@ -364,7 +505,7 @@ class PDF:
     if width_pt:
       fit = self._metrics.box_fit(
         content, width_pt - 2 * padding_pt, height_pt,
-        family, mode, size, autoscale=0.1 if height_pt else None
+        family, mode, size, autoscale=0.1 if height_pt else None,
       )
       text = fit.text
       font_size = fit.font_size
@@ -388,10 +529,10 @@ class PDF:
       self.color_rand()
       self._canvas.rect(x_pt, y_pt - height_pt, width_pt, height_pt, stroke=0, fill=1)
       self.color_black()
-    # Vertical centering - use real visual metrics (`visual_metrics`) not
-    # `lines_height` which includes interline leading. Cell sizing still uses
-    # the (roomier) `lines_height`, but for positioning WITHIN the cell we
-    # want actual glyph extents so text ends up visually centered.
+    # Vertical centering - use real visual metrics (`visual_metrics`),
+    # not `lines_height`, which includes interline leading.
+    # Cell sizing still uses the (roomier) `lines_height`, but for positioning WITHIN the cell
+    # we want actual glyph extents so text ends up visually centered.
     ascent_pt, descent_pt = self._metrics.visual_metrics(family, mode, font_size)
     visual_h = (ascent_pt + descent_pt) * lines
     margin_v = max(0, (height_pt - visual_h) / 2)
@@ -431,7 +572,7 @@ class PDF:
 
   def rect(
     self, width:float, height:float,
-    thickness:float=0, dash:tuple|None=None, fill:bool=True,
+    thickness:float = 0, dash:tuple|None = None, fill:bool = True,
   ) -> "PDF":
     """Draw rectangle at cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
@@ -447,7 +588,7 @@ class PDF:
 
   def round_rect(
     self, width:float, height:float, radius:float,
-    thickness:float=0, fill:bool=True,
+    thickness:float = 0, fill:bool = True,
   ) -> "PDF":
     """Draw rectangle with rounded corners at cursor. Radius in current unit."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
@@ -473,7 +614,7 @@ class PDF:
 
   def path(
     self, points:list[tuple],
-    close:bool=False, thickness:float=1, fill:bool=False,
+    close:bool = False, thickness:float = 1, fill:bool = False,
   ) -> "PDF":
     """Draw path through points (relative to cursor)."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
@@ -615,9 +756,8 @@ class PDF:
   def anchor(self, key:str) -> "PDF":
     """Register a named destination at the current cursor position.
 
-    A viewer following a link to `key` scrolls to this point rather than
-    fitting the whole page, which is what makes an anchor useful in a long
-    document.
+    A viewer following a link to `key` scrolls to this point rather than fitting the whole page,
+    which is what makes an anchor useful in a long document.
     """
     _, y_mm = self._page.cursor_to_canvas(self._cursor)
     self._canvas.bookmarkHorizontalAbsolute(key, y_mm * mm)
@@ -630,18 +770,22 @@ class PDF:
     return self
 
   def link(self, url:str, width:float, height:float) -> "PDF":
-    """Add URL link at cursor."""
-    self._links.add_url(url, self._cursor.x, self._cursor.y,
-      to_mm(width, self.unit), to_mm(height, self.unit), self._page_num)
+    """Add URL link over the `width` × `height` box at the cursor."""
+    w_mm = to_mm(width, self.unit)
+    h_mm = to_mm(height, self.unit)
+    x_mm, y_mm = self._page.cursor_to_canvas(self._cursor, w_mm)
+    # `LinkManager` takes the box's top-left corner, measured from the page's top-left corner.
+    self._links.add_url(url, x_mm, self._page.height - y_mm, w_mm, h_mm, self._page_num)
     return self
 
   def metadata(
-    self, title:str|None=None, author:str|None=None,
-    subject:str|None=None, keywords:str|None=None,
-    comments:str|None=None, category:str|None=None,
+    self, title:str|None = None, author:str|None = None,
+    subject:str|None = None, keywords:str|None = None,
+    comments:str|None = None, category:str|None = None,
   ) -> "PDF":
-    """Set document metadata. `comments`/`category` accepted for parity
-    with `DOCX.metadata()` but not emitted to the PDF /Info dict."""
+    """Set document metadata.
+    `comments`/`category` accepted for parity with `DOCX.metadata()`,
+    but not emitted to the PDF /Info dict."""
     if title: self._metadata.title = title
     if author: self._metadata.author = author
     if subject: self._metadata.subject = subject
@@ -661,8 +805,8 @@ class PDF:
     return self
 
   def on_new_page(self, callback:Callable) -> "PDF":
-    """Register callback to run after a new page is started (after cursor
-    reset). Use to advance the cursor past a top header before content begins.
+    """Register callback to run after a new page is started (after cursor reset).
+    Use to advance the cursor past a top header before content begins.
 
     Callback receives (pdf, page_num) arguments.
     """
@@ -670,21 +814,23 @@ class PDF:
     return self
 
   def on_final_page(self, callback:Callable) -> "PDF":
-    """Register callback that runs at save() time once total page count is
-    known. Use for footers like "Page 1/5" that need the final page total.
+    """Register callback that runs at `save()` time once total page count is known.
+    Use for footers like "Page 1/5" that need the final page total.
 
-    Callback receives (pdf, page_num, total_pages). Canvas is on the correct
-    page; cursor state is saved and restored around each call.
+    Callback receives (pdf, page_num, total_pages).
+    Canvas is on the correct page; cursor state is saved and restored around each call.
     """
     self._canvas._final_page_callbacks.append(
-      lambda pdf, page_num, total: self._wrap_final_callback(callback, pdf, page_num, total)
+      lambda pdf, page_num, total: self._wrap_final_callback(callback, pdf, page_num, total),
     )
     return self
 
   def _wrap_final_callback(self, cb, pdf, page_num, total):
-    """Run final-page callback with cursor backup/restore."""
+    """Run final-page callback on the whole page, cursor and page state restored."""
     cursor_backup = self._cursor.copy()
     page_backup = self._page_num
+    frame = self._page
+    self._page = self._page_full
     self._page_num = page_num
     self._total_pages = total
     try:
@@ -692,19 +838,25 @@ class PDF:
     finally:
       self._cursor = cursor_backup
       self._page_num = page_backup
+      self._page = frame
 
   def _apply_page_callbacks(self):
-    """Run page callbacks."""
+    """Run page callbacks on the whole page, whatever column is open."""
     cursor_backup = self._cursor.copy()
-    for cb in self._page_callbacks:
-      cb(self, self._page_num)
-    self._cursor = cursor_backup
+    frame = self._page
+    self._page = self._page_full
+    try:
+      for cb in self._page_callbacks:
+        cb(self, self._page_num)
+    finally:
+      self._page = frame
+      self._cursor = cursor_backup
 
   def _finalize_page(self):
     """Run page callbacks and flush bookmarks/links for the current page.
 
-    Must be called while the canvas is still on this page - both
-    `bookmarkPage()` and `linkURL()` bind to the current canvas page.
+    Must be called while the canvas is still on this page:
+    both `bookmarkPage()` and `linkURL()` bind to the current canvas page.
     """
     self._apply_page_callbacks()
     self._bookmarks.apply_page(self._canvas, self._page_num)
@@ -720,8 +872,8 @@ class PDF:
     """
     if self._saved: return self
     self._saved = True
-    self._finalize_page()  # finalize last page
+    self._finalize_page() # finalize last page
     self._metadata.apply(self._canvas)
-    self._bookmarks.apply_outline(self._canvas)  # add outline entries once, at the end
+    self._bookmarks.apply_outline(self._canvas) # add outline entries once, at the end
     self._canvas.save()
     return self

@@ -3,16 +3,17 @@
 """
 Flatten an SVG to absolute coordinates: no transforms, no nested viewports.
 
-MathJax assembles a stretchy brace inside nested `<svg>` elements carrying
-their own `x`, `y` and `viewBox`. svglib does not reproduce that coordinate
-system, so the pieces of the brace land scattered across its label. Resolving
-the geometry here leaves svglib nothing to get wrong, and the result stays
-vector.
+MathJax assembles a stretchy brace inside nested `<svg>` elements
+carrying their own `x`, `y` and `viewBox`.
+svglib does not reproduce that coordinate system,
+so the pieces of the brace land scattered across its label.
+Resolving the geometry here leaves svglib nothing to get wrong, and the result stays vector.
 
-Deliberately narrow: `translate` and `scale`, absolute `M`/`L`/`C`/`Z` path
-data, `path`, `rect` and `text` shapes. That is what MathJax emits. Anything
-else returns `None` so the caller keeps the original rather than a drawing
-quietly reshaped by a rule this does not implement.
+Deliberately narrow: `translate` and `scale`, absolute `M`/`L`/`C`/`Z` path data,
+`path`, `rect` and `text` shapes.
+That is what MathJax emits.
+Anything else returns `None` so the caller keeps the original
+rather than a drawing quietly reshaped by a rule this does not implement.
 
   >>> from pdfmarq.md.svgflat import flatten
   >>> flat = flatten(svg_text)
@@ -70,8 +71,8 @@ def _number(node, name:str) -> float:
 def _with_viewport(frame:Frame, node) -> Frame:
   """`frame` with a nested `<svg>`: its `x`/`y` placement and `viewBox` mapping.
 
-  A nested viewport also clips, which is ignored: MathJax sizes these boxes to
-  the glyph pieces they hold, so nothing reaches an edge.
+  A nested viewport also clips, which is ignored:
+  MathJax sizes these boxes to the glyph pieces they hold, so nothing reaches an edge.
   """
   frame = frame.then(tx=_number(node, "x"), ty=_number(node, "y"))
   box = _NUM_RE.findall(node.get("viewBox") or "")
@@ -92,8 +93,8 @@ def _fmt(value:float) -> str:
 def transform_path(data:str, frame:Frame) -> str|None:
   """Absolute `M`/`L`/`C`/`Z` path data mapped through `frame`, or `None`.
 
-  `None` covers a relative command, an unknown letter and an odd coordinate
-  count alike: all of them mean the data says something this cannot restate.
+  `None` covers a relative command, an unknown letter and an odd coordinate count alike:
+  all of them mean the data says something this cannot restate.
   """
   out: list[str] = []
   pending: list[float] = []
@@ -121,10 +122,10 @@ def transform_path(data:str, frame:Frame) -> str|None:
 #------------------------------------------------------------------------------------------ Flatten
 
 _SKIP = ("defs", "title", "desc", "metadata") # only matter with <use>, unused here
-# Paint is inherited in SVG, and MathJax sets all of it - including
-# `stroke-width="0"` - on one wrapping group. Flattening drops the group,
-# so these travel down to the shapes or a renderer strokes every glyph
-# with its own default width.
+# Paint is inherited in SVG,
+# and MathJax sets all of it - including `stroke-width="0"` - on one wrapping group.
+# Flattening drops the group, so these travel down to the shapes
+# or a renderer strokes every glyph with its own default width.
 _PAINT = ("fill", "stroke", "stroke-width", "fill-rule", "fill-opacity")
 
 def _tag(node) -> str:
@@ -152,10 +153,10 @@ def _flat_rect(node, frame:Frame, paint:dict):
 def _flat_text(node, frame:Frame, paint:dict):
   """A `text` at its transformed anchor, or `None` when the frame turns it.
 
-  MathJax writes one of these in place of a glyph its font does not carry, so
-  it stands for a single character set in a system face. Text cannot be
-  reduced to coordinates the way a path can - it keeps its own size and
-  direction, which only survives an upright scale.
+  MathJax writes one of these in place of a glyph its font does not carry,
+  so it stands for a single character set in a system face.
+  Text cannot be reduced to coordinates the way a path can -
+  it keeps its own size and direction, which only survives an upright scale.
   """
   if frame.sx <= 0 or frame.sy <= 0:
     return None
@@ -198,9 +199,8 @@ def _walk(node, frame:Frame, paint:dict, out:list) -> bool:
 def _root_svg(fragment:str):
   """Outermost `<svg>` in `fragment`, or `None`.
 
-  MathJax hands over a container holding the SVG next to an assistive-MathML
-  copy, so the fragment is not one element and the SVG is not reliably the
-  first child.
+  MathJax hands over a container holding the SVG next to an assistive-MathML copy,
+  so the fragment is not one element and the SVG is not reliably the first child.
   """
   for candidate in (fragment, f"<wrap>{fragment}</wrap>"):
     try:
@@ -217,8 +217,7 @@ def _root_svg(fragment:str):
 def flatten(svg:str) -> str|None:
   """SVG with every transform and nested viewport resolved into coordinates.
 
-  `None` when the fragment holds no SVG, or a construct outside the
-  supported set.
+  `None` when the fragment holds no SVG, or a construct outside the supported set.
   """
   root = _root_svg(svg)
   if root is None:

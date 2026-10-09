@@ -5,10 +5,10 @@
 from pathlib import Path
 import pytest
 # every check here compares the two libraries, so without the twin there is nothing to run
-pytest.importorskip("docmarq.md", reason="docmarq not installed")
-from pdfmarq.md import md_to_pdf, MarkdownStyle as PdfStyle
+pytest.importorskip("docmarq.legal", reason="docmarq 0.4 not installed")
+from pdfmarq.paper import md_to_pdf, PaperStyle as PdfStyle
 from pdfmarq.constants import A4 as PdfA4
-from docmarq.md import md_to_docx, MarkdownStyle as DocStyle
+from docmarq.paper import md_to_docx, PaperStyle as DocxStyle
 from docmarq.constants import A4 as DocA4
 
 #----------------------------------------------------------------------------------- Shared sources
@@ -72,8 +72,8 @@ def same_source_renders_in_both_libs(render_both, is_pdf, is_docx, name, src):
   assert docx_path.stat().st_size > 2000
 
 def frontmatter_never_sets_geometry(tmp_path):
-  # a leftover `render:` block is inert content in BOTH libs - geometry belongs
-  # to the caller. guards the content/form split against a quiet regression
+  # a leftover `render:` block is inert content in BOTH libs - geometry belongs to the caller.
+  # guards the content/form split against a quiet regression
   src = "---\nrender:\n  landscape: true\n  page: A3\n---\n\n# Wide"
   pdf = md_to_pdf(src, str(tmp_path / "inert.pdf"))
   doc = md_to_docx(src, str(tmp_path / "inert.docx"))
@@ -93,7 +93,7 @@ def footnote_label_handled_in_both(tmp_path):
   md_to_pdf(src, str(tmp_path / "fn_default.pdf"))
   md_to_docx(src, str(tmp_path / "fn_default.docx"))
   md_to_pdf(src, str(tmp_path / "fn_labeled.pdf"), style=PdfStyle(footnote_label="References"))
-  md_to_docx(src, str(tmp_path / "fn_labeled.docx"), style=DocStyle(footnote_label="References"))
+  md_to_docx(src, str(tmp_path / "fn_labeled.docx"), style=DocxStyle(footnote_label="References"))
   for name in ("fn_default", "fn_labeled"):
     assert (tmp_path / f"{name}.pdf").exists()
     assert (tmp_path / f"{name}.docx").exists()
@@ -111,10 +111,9 @@ def smaller_size_function_parity():
 def heading_sizes_parity():
   # same h1..h6 sizes so markdown headings render at the same scale
   from docmarq.constants import Defaults as DocDef
-  p = PdfStyle()
-  pdf_sizes = (p.h1_size, p.h2_size, p.h3_size, p.h4_size, p.h5_size, p.h6_size)
-  doc_sizes = tuple(DocDef.HEAD_SIZES)
-  assert pdf_sizes == doc_sizes, f"heading size drift: pdf={pdf_sizes} doc={doc_sizes}"
+  def sizes(s) -> tuple:
+    return (s.h1_size, s.h2_size, s.h3_size, s.h4_size, s.h5_size, s.h6_size)
+  assert sizes(PdfStyle()) == sizes(DocxStyle()) == tuple(DocDef.HEAD_SIZES)
 
 def table_font_size_derivation_parity():
   # default markdown table cell size auto-derives from body via smaller_size
@@ -137,22 +136,22 @@ def markdown_body_line_height_intentionally_different():
   # Word multiplies the font's natural height, so docmarq=1.0 lands comparable.
   # regression guard against well-meaning "consistency" cleanup
   assert PdfStyle().line_height == 1.4
-  assert DocStyle().line_height == 1.0
+  assert DocxStyle().line_height == 1.0
 
 def mermaid_scale_parity():
   # same mermaid scale → same cache key + output regardless of pipeline
-  assert PdfStyle().mermaid_scale == DocStyle().mermaid_scale
+  assert PdfStyle().mermaid_scale == DocxStyle().mermaid_scale
 
 def banner_title_size_parity():
-  assert PdfStyle().banner_title_size == DocStyle().banner_title_size
+  assert PdfStyle().banner_title_size == DocxStyle().banner_title_size
 
 def callout_colors_parity():
   # same per-type RGB tuples for callout border + text in both libs
-  assert PdfStyle().callout_colors == DocStyle().callout_colors
+  assert PdfStyle().callout_colors == DocxStyle().callout_colors
 
 def mark_bg_default_parity():
   # both libs default `mark_bg` to the same named highlight ('yellow')
-  assert PdfStyle().mark_bg == DocStyle().mark_bg == "yellow"
+  assert PdfStyle().mark_bg == DocxStyle().mark_bg == "yellow"
 
 def block_image_box_parity():
   # both libs resolve a block image to the same box
@@ -194,7 +193,7 @@ def image_grid_parity(tmp_path, monkeypatch, count, rows):
   assert pdf_w == pytest.approx(docx_w, abs=0.05), f"pdf={pdf_w} docx={docx_w}"
 
 def image_min_dpi_parity():
-  assert PdfStyle().image_min_dpi == DocStyle().image_min_dpi
+  assert PdfStyle().image_min_dpi == DocxStyle().image_min_dpi
 
 def image_row_threshold_parity():
   # both libs drop back from a row to inline at the same slot width
@@ -204,19 +203,19 @@ def image_row_threshold_parity():
 
 def lang_presets_do_not_set_footnote_label():
   # footnote label is OFF by default in all language presets in both libs
-  from pdfmarq.md.presets import LANG_PRESETS as PdfPresets
-  from docmarq.md.presets import LANG_PRESETS as DocPresets
+  from pdfmarq.paper import LANG_PRESETS as PdfPresets
+  from docmarq.paper import LANG_PRESETS as DocPresets
   for lang, preset in PdfPresets.items():
     assert "footnote_label" not in preset, f"pdfmarq lang={lang!r} sets footnote_label"
   for lang, preset in DocPresets.items():
     assert "footnote_label" not in preset, f"docmarq lang={lang!r} sets footnote_label"
 
 def font_body_intentionally_different():
-  # INTENTIONAL: pdfmarq → Vera (bundled, has Polish glyphs), docmarq → Calibri
-  # (Word native). regression guard against well-meaning "consistency" cleanup
-  assert PdfStyle().font_body != DocStyle().font_body
+  # INTENTIONAL: pdfmarq → Vera (bundled, has Polish glyphs), docmarq → Calibri (Word native).
+  # regression guard against well-meaning "consistency" cleanup
+  assert PdfStyle().font_body != DocxStyle().font_body
   assert PdfStyle().font_body == "Vera"
-  assert DocStyle().font_body == "Calibri"
+  assert DocxStyle().font_body == "Calibri"
 
 def md_to_signatures_share_arg_names():
   # md_to_pdf and md_to_docx accept the same cross-lib keyword subset
@@ -236,24 +235,64 @@ def md_to_signatures_share_arg_names():
   ("unterminated", "---\ntitle: T\n\n# B"),
   ("crlf", "---\r\ntitle: T\r\n---\r\n\r\n# B"),
 ])
-def peek_frontmatter_agrees(name, src):
-  # two independent parsers (regex vs hand-rolled split) must read the same
-  # document the same way, `None` included - callers do `fm.get(...)`
-  from pdfmarq.md.md_frontmatter import peek_frontmatter as pdf_peek
-  from docmarq.md.renderer import peek_frontmatter as doc_peek
-  assert pdf_peek(src) == doc_peek(src), f"parsers disagree on {name!r}"
+@pytest.mark.filterwarnings("ignore:invalid YAML frontmatter")
+def frontmatter_readers_agree(name, src):
+  # both packages must read the same document the same way, `None` included:
+  # callers do `fm.get(...)`, and the document packages split it alike
+  from pdfmarq.md import peek_frontmatter as pdf_peek, split_frontmatter as pdf_split
+  from docmarq.md import peek_frontmatter as doc_peek, split_frontmatter as doc_split
+  assert pdf_peek(src) == doc_peek(src), f"readers disagree on {name!r}"
+  assert pdf_split(src) == doc_split(src), f"splits disagree on {name!r}"
 
 def shared_helpers_are_identical():
-  # `_metadata_from_frontmatter` / `_skip_matching_h1` are vendored twice on
-  # purpose; this is what keeps the copies from drifting
+  # helpers vendored twice on purpose; this is what keeps the copies from drifting
   import inspect
-  import pdfmarq.md.markdown as pdf_mod
-  import docmarq.md.renderer as doc_mod
-  assert (inspect.getsource(pdf_mod._skip_matching_h1)
-          == inspect.getsource(doc_mod._skip_matching_h1))
-  pdf_meta = inspect.getsource(pdf_mod._metadata_from_frontmatter)
-  doc_meta = inspect.getsource(doc_mod._metadata_from_frontmatter)
-  assert pdf_meta.replace("PDF.metadata", "X") == doc_meta.replace("DOCX.metadata", "X")
+  import pdfmarq.paper.render as pdf_paper, docmarq.paper.render as doc_paper
+  import pdfmarq.md.md_frontmatter as pdf_fm, docmarq.md.frontmatter as doc_fm
+  import pdfmarq.parts as pdf_parts, docmarq.parts as doc_parts
+  import pdfmarq.legal.header as pdf_header, docmarq.legal.header as doc_header
+  import pdfmarq.legal.render as pdf_legal, docmarq.legal.render as doc_legal
+  def same(a, b, name:str, *words:tuple[str, str]):
+    left, right = inspect.getsource(getattr(a, name)), inspect.getsource(getattr(b, name))
+    for pdf_word, docx_word in words:
+      left = left.replace(pdf_word, docx_word)
+    assert left == right, f"{name} drifted"
+  same(pdf_paper, doc_paper, "_skip_matching_h1")
+  same(pdf_fm, doc_fm, "metadata_from_frontmatter", ("PDF.metadata", "DOCX.metadata"))
+  for name in ("default_sign_labels", "sign_labels"):
+    same(pdf_parts, doc_parts, name)
+  assert pdf_parts.LANG_LABELS == doc_parts.LANG_LABELS
+  for name in ("lines_of", "_one_line"):
+    same(pdf_header, doc_header, name)
+  for name in ("_clauses", "_kind", "_preview", "_pair"):
+    same(pdf_legal, doc_legal, name, ("md_html.is_", "is_"))
+
+def legal_styles_match():
+  # the same fields and defaults on both sides, so a legal script switches by its import
+  import dataclasses
+  from pdfmarq.legal import LegalStyle as PdfLegal, LANG_PRESETS as pdf_presets
+  from docmarq.legal import LegalStyle as DocLegal, LANG_PRESETS as doc_presets
+  from pdfmarq.md import MarkdownStyle as PdfEngine
+  from docmarq.md import MarkdownStyle as DocEngine
+  def own(style, engine) -> dict:
+    base = {f.name for f in dataclasses.fields(engine)}
+    return {f.name: getattr(style(), f.name) for f in dataclasses.fields(style)
+      if f.name not in base}
+  assert own(PdfLegal, PdfEngine) == own(DocLegal, DocEngine)
+  for name in ("justify", "h1_size", "h2_size", "h1_underline", "h2_underline",
+      "head_gap_top", "head_gap_bot", "para_gap", "keep_together"):
+    assert getattr(PdfLegal(), name) == getattr(DocLegal(), name), name
+  assert pdf_presets == doc_presets
+
+def legal_entries_share_their_signatures():
+  # page sizes are two classes alike, so defaults compare by their text
+  import inspect
+  from pdfmarq.legal import md_to_pdf as pdf_one, md_parallel_to_pdf as pdf_many
+  from docmarq.legal import md_to_docx as doc_one, md_parallel_to_docx as doc_many
+  def params(f) -> list[tuple]:
+    return [(name, repr(p.default)) for name, p in inspect.signature(f).parameters.items()]
+  assert params(pdf_one) == params(doc_one)
+  assert params(pdf_many) == params(doc_many)
 
 def column_solver_is_identical():
   # the same markdown table lays its columns out alike in both packages
@@ -263,3 +302,87 @@ def column_solver_is_identical():
   for name in ("_fit_columns", "_cap_widths"):
     pdf_src = inspect.getsource(getattr(pdf_mod, name))
     assert pdf_src == inspect.getsource(getattr(doc_mod, name)), f"{name} drifted"
+
+def round_two_helpers_are_identical():
+  # the reading, dating, checking and warning helpers both packages carry
+  import inspect
+  import pdfmarq.md.md_frontmatter as pdf_fm, docmarq.md.frontmatter as doc_fm
+  import pdfmarq.utils as pdf_utils, docmarq.utils as doc_utils
+  import pdfmarq._warn as pdf_warn, docmarq._warn as doc_warn
+  import pdfmarq.legal.render as pdf_legal, docmarq.legal.render as doc_legal
+  def same(a, b, name:str, *words:tuple[str, str]):
+    left, right = inspect.getsource(getattr(a, name)), inspect.getsource(getattr(b, name))
+    for pdf_word, docx_word in words:
+      left = left.replace(pdf_word, docx_word)
+    assert left == right, f"{name} drifted"
+  same(pdf_fm, doc_fm, "_plain")
+  same(pdf_utils, doc_utils, "format_date")
+  same(pdf_warn, doc_warn, "caller_level", ("pdfmarq", "docmarq"))
+  same(pdf_legal, doc_legal, "_checked", ("pdfmarq", "docmarq"),
+    ("anything is drawn", "a word is written"))
+
+#------------------------------------------------------------------------------------- Style fields
+
+def engine_defaults_differ_only_where_documented():
+  # each difference has a row in docmarq/md/readme.md; a new one needs a row there too
+  import dataclasses
+  from pdfmarq.md import MarkdownStyle as PdfEngine
+  from docmarq.md import MarkdownStyle as DocEngine
+  def names(cls) -> set[str]:
+    return {f.name for f in dataclasses.fields(cls)}
+  shared = names(PdfEngine) & names(DocEngine)
+  differ = {n for n in shared if getattr(PdfEngine(), n) != getattr(DocEngine(), n)}
+  assert differ == {"font_body", "font_head", "font_mono", "line_height", "keep_together",
+    "math_fontset", "head_gap_top", "head_gap_bot", "hr_thick"}
+  assert not names(DocEngine) - names(PdfEngine) # docmarq reads no field pdfmarq lacks
+
+def paper_styles_match():
+  # past the engine, the paper fields agree; pdfmarq alone draws the banner itself
+  import dataclasses
+  from pdfmarq.md import MarkdownStyle as PdfEngine
+  from docmarq.md import MarkdownStyle as DocEngine
+  from pdfmarq.paper import LANG_PRESETS as pdf_presets
+  from docmarq.paper import LANG_PRESETS as doc_presets
+  import pdfmarq.paper.style as pdf_style, docmarq.paper.style as doc_style
+  def own(cls, engine) -> set[str]:
+    return {f.name for f in dataclasses.fields(cls)} - {f.name for f in dataclasses.fields(engine)}
+  pdf_own, doc_own = own(PdfStyle, PdfEngine), own(DocxStyle, DocEngine)
+  assert not doc_own - pdf_own
+  assert {n for n in pdf_own - doc_own if not n.startswith("banner_")} == set()
+  for name in pdf_own & doc_own:
+    assert getattr(PdfStyle(), name) == getattr(DocxStyle(), name), name
+  assert pdf_presets == doc_presets
+  assert pdf_style._default_status_colors() == doc_style._default_status_colors()
+  assert pdf_style.UNKNOWN_STATUS == doc_style.UNKNOWN_STATUS
+
+def paper_entries_share_their_signatures():
+  # `md_into` takes the target first and docmarq a font root for diagrams, nothing else differs
+  import inspect
+  from pdfmarq.paper import md_into as pdf_into
+  from docmarq.paper import md_into as doc_into
+  def params(f) -> list[tuple]:
+    return [(name, repr(p.default)) for name, p in inspect.signature(f).parameters.items()]
+  assert params(md_to_pdf) == params(md_to_docx)
+  assert params(pdf_into)[1:] == [p for p in params(doc_into)[1:] if p[0] != "font_dir"]
+
+#-------------------------------------------------------------------------------------- Same output
+
+def repeated_headings_number_alike():
+  from markdown_it import MarkdownIt
+  from pdfmarq.md.markdown import MarkdownRenderer as PdfRenderer
+  from docmarq.md.slug import collect_heading_slugs
+  src = "# Setup\n\n## Setup\n\n## `Setup` zażółć\n\n### Setup\n\n## Setup-1\n"
+  tokens = MarkdownIt("commonmark").parse(src)
+  assert PdfRenderer._collect_heading_slugs(tokens) == collect_heading_slugs(tokens)
+
+def page_number_reads_alike(tmp_path):
+  # pdfmarq prints the numbers, Word shows its fields: the same label, digits and slash
+  fitz = pytest.importorskip("fitz")
+  import re, zipfile
+  md_to_pdf("Body.", str(tmp_path / "n.pdf"))
+  md_to_docx("Body.", str(tmp_path / "n.docx"))
+  page = fitz.open(str(tmp_path / "n.pdf"))[0].get_text()
+  footer = zipfile.ZipFile(tmp_path / "n.docx").read("word/footer1.xml").decode("utf-8")
+  docx_text = "".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", footer))
+  assert "Page 1/1" in page
+  assert re.sub(r"\d+", "N", docx_text) == "Page N/N"

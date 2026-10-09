@@ -23,7 +23,7 @@ from pdfmarq.inline import (
 from pdfmarq.text import TextMetrics, FIT_EPS_PT, READABLE_MIN_PT, split_word
 from pdfmarq.md.md_table import _cap_widths
 
-LONG = "opis ktory jest na tyle dlugi ze musi sie zawinac w komorce tabeli " * 2
+LONG = "a description long enough to wrap inside its table cell " * 2
 CODE_BG = (0.9, 0.9, 0.9)
 
 @pytest.fixture
@@ -64,9 +64,9 @@ def joined():
 #-------------------------------------------------------------------------------------------- Words
 
 def word_spanning_segments_moves_whole(measure, wrap):
-  # `**PP**-1`: "PP" fits after "slowo", "-1" would not - the line must not break between them
-  segs = [RichSegment("slowo "), RichSegment("PP", bold=True), RichSegment("-1")]
-  assert wrap(segs, measure("slowo PP")) == ["slowo", "PP-1"]
+  # `**PP**-1`: "PP" fits after "word", "-1" would not - the line must not break between them
+  segs = [RichSegment("word "), RichSegment("PP", bold=True), RichSegment("-1")]
+  assert wrap(segs, measure("word PP")) == ["word", "PP-1"]
 
 def extent_min_covers_word_across_segments(pdf, measure, wrap):
   segs = [RichSegment("PP", bold=True), RichSegment("-1"), RichSegment(" x")]
@@ -111,8 +111,8 @@ def token_too_wide_after_indent_drops_the_indent(pdf, wrap):
 def inline_code_padding_counts_toward_line(pdf):
   segs = []
   for i in range(40):
-    code = RichSegment(f"kod{i}", family="Courier", bg_color=CODE_BG)
-    segs += [RichSegment("slowo "), code, RichSegment(" ")]
+    code = RichSegment(f"code{i}", family="Courier", bg_color=CODE_BG)
+    segs += [RichSegment("word "), code, RichSegment(" ")]
   width = 120 * MM_TO_PT
   for line in _wrap(_tokenize(segs, pdf._metrics), width, pdf._metrics).lines:
     assert _line_width_pt(line) <= width + FIT_EPS_PT
@@ -120,7 +120,7 @@ def inline_code_padding_counts_toward_line(pdf):
 @needs_fitz
 def paragraph_with_inline_code_stays_in_margin(tmp_path):
   path = str(tmp_path / "code.pdf")
-  pdf = render_md(path, " ".join(f"slowo `kod{i}`" for i in range(60)))
+  pdf = render_md(path, " ".join(f"word `code{i}`" for i in range(60)))
   right = (pdf._page.width - pdf._page.margin_right) * MM_TO_PT
   assert pdf_glyphs_past(path, right) == []
 
@@ -128,13 +128,13 @@ def paragraph_with_inline_code_stays_in_margin(tmp_path):
 def right_aligned_code_column_stays_in_table(tmp_path):
   path = str(tmp_path / "right.pdf")
   cells = " ".join(f"`0x{i:04X}`" for i in range(8))
-  pdf = render_md(path, f"| Nazwa | Wartosc |\n|---|---:|\n| param | {cells} |\n")
+  pdf = render_md(path, f"| Name | Value |\n|---|---:|\n| param | {cells} |\n")
   right = (pdf._page.width - pdf._page.margin_right) * MM_TO_PT
   assert pdf_glyphs_past(path, right) == []
 
 def aligned_line_counts_run_padding(pdf):
   # centre and right alignment offset the line by this width
-  seg = RichSegment("kod", family="Courier", bg_color=CODE_BG)
+  seg = RichSegment("code", family="Courier", bg_color=CODE_BG)
   line = _wrap(_tokenize([seg], pdf._metrics), 500, pdf._metrics).lines[0]
   assert _line_width_pt(line) > line[0].width_pt
 
@@ -151,7 +151,8 @@ def repeated_drawing_is_its_own_run(pdf):
 @pytest.mark.parametrize("cell", ["PP-1", "**PP**-1", "`PP`-1", "[PP](https://x.pl)-1"])
 def short_code_cell_stays_whole(tmp_path, joined, cell):
   path = tmp_path / "cell.pdf"
-  render_md(str(path), f"| Kod | Opis |\n|---|---|\n| {cell} | {LONG} |\n| {cell} | {LONG} |\n")
+  row = f"| {cell} | {LONG} |\n"
+  render_md(str(path), "| Code | Description |\n|---|---|\n" + row * 2)
   assert joined(path, "PP", "-1")
 
 @needs_fitz

@@ -36,10 +36,8 @@ class TableData:
 #------------------------------------------------------------------------------------- TableBuilder
 
 class TableBuilder:
-  """Fluent builder that turns row/column inputs into a `TableData` ready
-  for `PDF._draw_table`. Each setter returns `self` for chaining; call
-  `build()` to finalize."""
-
+  """Fluent builder that turns row/column inputs into a `TableData` ready for `PDF._draw_table`.
+  Each setter returns `self` for chaining; call `build()` to finalize."""
   def __init__(self, metrics:TextMetrics, style:TableStyle|None=None):
     self.metrics = metrics
     self.style = style or TableStyle()
@@ -128,8 +126,8 @@ class TableBuilder:
       data.body_fitted.append(fit["text"])
       h = _max_height(fit["height"], fallback_h)
       data.body_heights.append((h / MM_TO_PT) + v_extra)
-    # `header_gap` sits between the header row and the body - part of the
-    # drawn height, and counted as such by `core._draw_table`.
+    # `header_gap` sits between the header row and the body.
+    # It is part of the drawn height, and counted as such by `core._draw_table`.
     header_gap = s.header_gap if self._header else 0
     data.total_height = (data.header_height + header_gap
       + sum(data.body_heights))

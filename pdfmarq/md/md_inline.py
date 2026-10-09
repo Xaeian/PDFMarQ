@@ -3,16 +3,19 @@
 """
 Inline token → RichSegment conversion for MarkdownRenderer.
 
-Walks children of a `markdown_it` inline token and produces a flat list of
-styled `RichSegment`s, handling: bold/italic/strike, sub/sup/mark, inline
-code (with heading-size scaling), links, inline math, emoji, inline
-images, footnote refs, task-list checkboxes, soft/hard breaks, and the
-small whitelist of inline HTML tags defined in `md_html`.
+Walks children of a `markdown_it` inline token and produces a flat list of styled `RichSegment`s,
+handling: bold/italic/strike, sub/sup/mark, inline code (with heading-size scaling), links,
+inline math, emoji, inline images, footnote refs, task-list checkboxes, soft/hard breaks,
+and the small whitelist of inline HTML tags defined in `md_html`.
 """
 
+import urllib.parse
 from markdown_it.token import Token
+from reportlab.graphics.shapes import Drawing, Rect, PolyLine
+from reportlab.lib.colors import Color
 from ..inline import RichSegment
 from . import md_html
+from .openmoji import get_emoji_drawing, split_text_by_emoji
 
 #------------------------------------------------------------------------------------------ Helpers
 
@@ -23,9 +26,9 @@ def _mono_inline_size(s, base_size:float) -> float:
   if base_size >= 14: return base_size * 0.95
   return base_size * (s.mono_size / s.body_size)
 
-# Named highlight colors matching Word's `WD_COLOR_INDEX` palette, so a name
-# like `mark_bg="yellow"` means the same thing everywhere. These RGB values
-# fill the rounded background rect drawn behind `==marked==` text.
+# Named highlight colors matching Word's `WD_COLOR_INDEX` palette,
+# so a name like `mark_bg="yellow"` means the same thing everywhere.
+# These RGB values fill the rounded background rect drawn behind `==marked==` text.
 _NAMED_HIGHLIGHTS = {
   "yellow": (1.0, 0.93, 0.3),
   "green": (0.65, 0.95, 0.50),
@@ -39,8 +42,8 @@ _NAMED_HIGHLIGHTS = {
 }
 
 def _resolve_highlight(color) -> tuple:
-  """Map a named highlight string to an RGB tuple. Pass-through for
-  tuples; unknown names fall back to yellow."""
+  """Map a named highlight string to an RGB tuple.
+  Pass-through for tuples; unknown names fall back to yellow."""
   if isinstance(color, str):
     return _NAMED_HIGHLIGHTS.get(color.lower(), _NAMED_HIGHLIGHTS["yellow"])
   return color
@@ -49,11 +52,10 @@ def _resolve_highlight(color) -> tuple:
 
 class InlineMixin:
   """
-  Conversion from markdown-it inline tokens to a list of `RichSegment`
-  for rendering. Handles bold / italic / code / links / math / emoji /
-  images. Mixed into `MarkdownRenderer`.
+  Conversion from markdown-it inline tokens to a list of `RichSegment` for rendering.
+  Handles bold / italic / code / links / math / emoji / images.
+  Mixed into `MarkdownRenderer`.
   """
-
   def _inline_to_segments(
     self, inline_token:Token, base:RichSegment,
   ) -> list[RichSegment]:
@@ -61,18 +63,21 @@ class InlineMixin:
     segments: list[RichSegment] = []
     is_bold = is_italic = is_strike = False
     is_sub = is_sup = is_mark = False
-    is_html_code = False  # `<code>...</code>` HTML tag, distinct from md backtick `code_inline`
+    is_html_code = False # `<code>...</code>` HTML tag, distinct from md backtick `code_inline`
     link_url = None
     link_target = None
     # Visual link state is tracked separately from the actionable target:
-    # a local link without `style.link_root` has no URL but still renders
-    # with link color + underline.
+    # a local link without `style.link_root` has no URL
+    # but still renders with link color + underline.
     in_link = False
     def resolve_mode():
       if is_bold and is_italic: return s.bold_italic_mode
       if is_bold:
-        # Escalate inside bold base (heading); fallback drops to Bold.
-        if base.mode in (s.head_mode, s.bold_mode): return s.heavy_mode
+        # Escalate inside a base already bolder than body text (a bold heading);
+        # fallback drops to Bold. A Regular `head_mode` equals `body_mode`,
+        # so without the second test every `**bold**` in body text would turn Black.
+        if base.mode in (s.head_mode, s.bold_mode) and base.mode != s.body_mode:
+          return s.heavy_mode
         return s.bold_mode
       if is_italic: return s.italic_mode
       return base.mode
@@ -106,14 +111,11 @@ class InlineMixin:
         link_target=link_target,
         superscript=is_sup,
         subscript=is_sub,
+        hyphenate=base.hyphenate,
       )
     def make_emoji(ch):
       """OpenMoji drawing for an emoji char, fallback to raw glyph."""
-      try:
-        from .openmoji import get_emoji_drawing
-        d = get_emoji_drawing(ord(ch), fontsize_pt=base.size)
-      except ImportError:
-        d = None
+      d = get_emoji_drawing(ord(ch), fontsize_pt=base.size)
       if d is None:
         return make(ch)
       return RichSegment(
@@ -127,12 +129,7 @@ class InlineMixin:
       )
     def make_text_with_emoji(text):
       """Split text on emoji boundaries → text + emoji segments."""
-      try:
-        from .openmoji import split_text_by_emoji
-        runs = split_text_by_emoji(text)
-      except ImportError:
-        segments.append(make(text))
-        return
+      runs = split_text_by_emoji(text)
       for frag, is_emo in runs:
         if is_emo:
           segments.append(make_emoji(frag))
@@ -169,24 +166,20 @@ class InlineMixin:
         link_target = None
         in_link = False
       elif ct == "math_inline":
-        # Render formula to a vector Drawing embedded via math_drawing slot.
-        # Size/color come from `base`, not from the body style: the same
-        # markdown appears in table cells (smaller `cell_size`) and in
-        # headings (much larger), and the drawing is rasterized at this
-        # size - it cannot be rescaled afterwards. Mirrors `make()`.
+        # Render formula to a vector Drawing embedded via `math_drawing` slot.
+        # Size/color come from `base`, not from the body style:
+        # the same markdown appears in table cells (smaller `cell_size`)
+        # and in headings (much larger),
+        # and the drawing is rasterized at this size - it cannot be rescaled afterwards.
+        # Mirrors `make()`.
         math_size = base.size
         math_color = s.link_color if in_link else base.color
-        try:
-          from .math import render_math_svg_with_baseline
-          drawing, baseline_pt = render_math_svg_with_baseline(
-            child.content, fontsize=math_size, color=math_color,
-            config=getattr(self, "_math_config", None),
-            engine=s.math_engine, font=s.math_font,
-          )
-        except ImportError:
-          from .._warn import warn_missing
-          warn_missing("matplotlib", "matplotlib", "inline math formulas")
-          drawing, baseline_pt = None, 0
+        from .math import render_math_svg_with_baseline # loads matplotlib, so not on import
+        drawing, baseline_pt = render_math_svg_with_baseline(
+          child.content, fontsize=math_size, color=math_color,
+          config=getattr(self, "_math_config", None),
+          engine=s.math_engine, font=s.math_font,
+        )
         if drawing is not None:
           segments.append(RichSegment(
             text="",
@@ -240,7 +233,7 @@ class InlineMixin:
           family=base.family, mode=base.mode,
           size=base.size, color=s.link_color,
           underline=True,
-          link_target=f"fn_{label}",
+          link_target=f"{self._anchors}fn_{label}",
           superscript=True,
         ))
       elif ct == "html_inline":
@@ -281,8 +274,8 @@ class InlineMixin:
       if k == name: return v
     return None
 
-  # Any of these schema prefixes marks an href as external. Anything else
-  # without a `#` prefix is treated as a local (file-path-like) link.
+  # Any of these scheme prefixes marks an href as external.
+  # Anything else without a `#` prefix is treated as a local (file-path-like) link.
   _EXTERNAL_SCHEMAS = (
     "http://", "https://", "mailto:", "tel:", "ftp://", "ftps://",
     "file://", "data:", "sms:",
@@ -291,21 +284,21 @@ class InlineMixin:
   def _resolve_link(self, href:str) -> tuple[str|None, str|None]:
     """Resolve a link href into `(link_url, link_target)` for `RichSegment`.
     - `#anchor` → internal target if slug is a known heading, else neither
-    - schema url → external url
-    - local path → external url under `style.link_root` (if set), else
-      neither (renders as styled-but-dead link)
-    Local hrefs without `link_root` intentionally get NO action - a PDF
-    cannot follow a relative filesystem link, so leaving it un-clickable
-    avoids broken behavior. The link STYLE (blue, underline) still applies.
+    - URL with a scheme → external URL
+    - local path → external url under `style.link_root` (if set),
+      else neither (renders as styled-but-dead link)
+    Local hrefs without `link_root` intentionally get NO action:
+    a PDF cannot follow a relative filesystem link,
+    so leaving it un-clickable avoids broken behavior.
+    The link STYLE (blue, underline) still applies.
     """
     if not href:
       return None, None
     if href.startswith("#"):
-      import urllib.parse
       target = urllib.parse.unquote(href[1:])
       # Unknown anchors would crash reportlab at save() time
       if target in getattr(self, "_known_slugs", set()):
-        return None, target
+        return None, self._anchors + target
       return None, None
     if href.startswith(self._EXTERNAL_SCHEMAS):
       return href, None
@@ -327,14 +320,13 @@ class InlineMixin:
 def _make_checkbox(fontsize_pt:float, checked:bool, fg:tuple, accent:tuple):
   """Draw a GitHub-style task-list checkbox as a vector reportlab `Drawing`.
 
-  Font-independent - uses primitive shapes only (no glyph lookup). Box size
-  is roughly cap-height; checked state shows a filled accent-colored square
-  with a white checkmark inside (two strokes forming a `√`).
+  Font-independent - uses primitive shapes only (no glyph lookup).
+  Box size is roughly cap-height.
+  Checked state shows a filled accent-colored square with a white checkmark inside.
+  The checkmark is two strokes forming a `√`.
   """
-  from reportlab.graphics.shapes import Drawing, Rect, PolyLine
-  from reportlab.lib.colors import Color
-  s = fontsize_pt * 0.85  # box edge length, slightly under cap-height
-  pad_right = fontsize_pt * 0.15  # trailing breathing room before next glyph
+  s = fontsize_pt * 0.85 # box edge length, slightly under cap-height
+  pad_right = fontsize_pt * 0.15 # trailing breathing room before next glyph
   w = s + pad_right
   d = Drawing(w, s)
   if checked:

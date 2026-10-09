@@ -7,11 +7,11 @@ import pytest
 from conftest import assert_valid_pdf, assert_valid_docx, needs_twin
 from pdfmarq.md.md_images import (parse_image_dsl as pdf_parse, ImageDSL as PdfDSL,
   ImageInfo as PdfInfo, size_block as pdf_size_block)
-from pdfmarq.md import md_to_pdf
+from pdfmarq.paper import md_to_pdf
 try:
   from docmarq.md.image_utils import parse_image_dsl as doc_parse, ImageDSL as DocDSL
-  from docmarq.md import md_to_docx
-except ImportError:  # the twin ships separately; `needs_twin` skips what needs it
+  from docmarq.paper import md_to_docx
+except ImportError: # the twin ships separately; `needs_twin` skips what needs it
   doc_parse = DocDSL = md_to_docx = None
 
 # both parsers when the twin is here, ours alone when it is not
@@ -22,7 +22,6 @@ PARSERS = [pdf_parse] + ([doc_parse] if doc_parse else [])
 @pytest.mark.parametrize("parser", PARSERS)
 class TestParser:
   """Each parser must accept identical input and produce equivalent output."""
-
   def empty_title_returns_no_dsl(self, parser):
     assert parser("").is_dsl is False
 
@@ -183,7 +182,7 @@ def dsl_align_applied_in_docx(tmp_path, make_img):
   assert image_paras[0].alignment == 2
 
 def caption_only_title_renders_without_warnings(tmp_path, make_img):
-  # legacy plain-text title (caption) keeps working silently - no parser warnings
+  # a plain-text title is a caption: no parser warning
   make_img()
   src = '![a](img.png "An informative caption")'
   path = tmp_path / "caption.pdf"

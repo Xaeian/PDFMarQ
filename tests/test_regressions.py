@@ -3,9 +3,9 @@
 """
 Guards for rendering invariants that are cheap to break.
 
-Every check here answers one question: does the document that comes out hold
-everything that went in, at the size and place it belongs? Stdlib `unittest`
-only. Text-extraction checks need PyMuPDF (`fitz`) and skip without it.
+Every check here answers one question:
+does the document that comes out hold everything that went in, at the size and place it belongs?
+Stdlib `unittest` only. Text-extraction checks need PyMuPDF (`fitz`) and skip without it.
 
   >>> python -m pytest tests/test_regressions.py
 """
@@ -13,7 +13,8 @@ only. Text-extraction checks need PyMuPDF (`fitz`) and skip without it.
 import os, re, math, tempfile, unittest, warnings
 
 from pdfmarq import PDF, TextMetrics, FontManager, TableBuilder, TableStyle, smaller_size
-from pdfmarq.md import MarkdownRenderer, MarkdownStyle
+from pdfmarq.md import MarkdownRenderer, MarkdownStyle, split_frontmatter
+from pdfmarq.paper import md_to_pdf
 from conftest import (render_md, pdf_text, pdf_pages, pdf_offpage_words,
   has_mathjax)
 
@@ -41,9 +42,8 @@ class TempPDFCase(unittest.TestCase):
 #------------------------------------------------------------------------------------ Text fidelity
 
 class TestMiddleDot(TempPDFCase):
-  """`·` is ordinary text - Polish typography, unit and list separators. Text
-  measurement and table fitting have to hand it back unchanged."""
-
+  """`·` is ordinary text - Polish typography, unit and list separators.
+  Text measurement and table fitting have to hand it back unchanged."""
   def test_box_fit_keeps_middle_dot(self):
     result = TextMetrics(FontManager()).box_fit(f"a {MIDDLE_DOT} b", 300)
     self.assertIn(MIDDLE_DOT, result.text)
@@ -60,9 +60,8 @@ class TestMiddleDot(TempPDFCase):
 #------------------------------------------------------------------------------------------- Saving
 
 class TestIdempotentSave(TempPDFCase):
-  """`save()` is the documented way to finish a document and `with` calls it on
-  exit, so calling it twice has to be harmless."""
-
+  """`save()` is the documented way to finish a document and `with` calls it on exit,
+  so calling it twice has to be harmless."""
   def test_with_block_plus_explicit_save(self):
     p = self.path()
     with PDF(p) as pdf:
@@ -79,9 +78,8 @@ class TestIdempotentSave(TempPDFCase):
 #------------------------------------------------------------------------ Blocks across page breaks
 
 class TestBlockSplitting(TempPDFCase):
-  """A block longer than the page belongs on several pages. Anything drawn
-  below the page bottom sits outside the MediaBox and no reader ever sees it."""
-
+  """A block longer than the page belongs on several pages.
+  Anything drawn below the page bottom sits outside the MediaBox and no reader ever sees it."""
   LINES = 200
 
   @NEEDS_FITZ
@@ -119,9 +117,8 @@ class TestBlockSplitting(TempPDFCase):
 #---------------------------------------------------------------------------------------- Footnotes
 
 class TestMultiBlockFootnote(TempPDFCase):
-  """A footnote definition can hold several blocks. All of them belong in the
-  rendered note, and the smaller bibliography style stays inside it."""
-
+  """A footnote definition can hold several blocks.
+  All of them belong in the rendered note, and the smaller bibliography style stays inside it."""
   MD = (
     "Body ref[^1] here.\n\n"
     "[^1]: FIRSTBLOCK of the note.\n\n"
@@ -149,9 +146,8 @@ class TestMultiBlockFootnote(TempPDFCase):
 #-------------------------------------------------------------------------------------- Inline math
 
 class TestInlineMathSize(TempPDFCase):
-  """A formula is rasterized at the size it is asked for and cannot be rescaled
-  afterwards, so it has to be rendered at the size of its surroundings."""
-
+  """A formula is rasterized at the size it is asked for and cannot be rescaled afterwards,
+  so it has to be rendered at the size of its surroundings."""
   def test_math_font_size_follows_context(self):
     import pdfmarq.md.math as math_mod
     sizes = []
@@ -179,52 +175,41 @@ class TestInlineMathSize(TempPDFCase):
 
 #-------------------------------------------------------------------------------------- Page chrome
 
-class TestRepeatedRender(TempPDFCase):
-  """Header and footer callbacks belong to the renderer, not to a single
-  `render_md()` call, so repeated calls draw one set of page chrome."""
-
-  def test_callbacks_registered_once(self):
+class TestPageChrome(TempPDFCase):
+  """Page chrome belongs to the document package: the engine registers none,
+  even rendering twice into one `PDF`, and each page carries one footer."""
+  def test_engine_registers_no_chrome(self):
     pdf = PDF(self.path())
     renderer = MarkdownRenderer(pdf, MarkdownStyle())
     renderer.render("# One\n\nAlpha.\n")
     renderer.render("# Two\n\nBeta.\n")
     pdf.save()
-    self.assertEqual(1, len(pdf._page_callbacks))
-    self.assertEqual(1, len(pdf._new_page_callbacks))
+    self.assertEqual([], pdf._page_callbacks)
+    self.assertEqual([], pdf._new_page_callbacks)
+    self.assertEqual([], pdf._canvas._final_page_callbacks)
 
   @NEEDS_FITZ
   def test_single_footer_per_page(self):
     p = self.path()
-    pdf = PDF(p)
-    renderer = MarkdownRenderer(pdf, MarkdownStyle())
-    renderer.render("# One\n\nAlpha.\n")
-    renderer.render("# Two\n\nBeta.\n")
-    pdf.save()
+    md_to_pdf("# One\n\nAlpha.\n\n# Two\n\nBeta.\n", p)
     self.assertEqual(1, pdf_text(p).count("Page 1/"))
 
 #-------------------------------------------------------------------------------------- Frontmatter
 
-class TestFrontmatterWarning(TempPDFCase):
-  """Frontmatter carries the title and author. A block that cannot be parsed is
-  dropped, and dropping it silently loses that metadata without a trace."""
-
-  def renderer(self) -> MarkdownRenderer:
-    return MarkdownRenderer(PDF(self.path()), MarkdownStyle())
-
+class TestFrontmatterWarning(unittest.TestCase):
+  """Frontmatter carries the title and author.
+  A block that cannot be parsed is dropped,
+  and dropping it silently loses that metadata without a trace."""
   def test_leading_rule_keeps_its_content(self):
-    """A document may open with a horizontal rule. Only a YAML mapping is
-    frontmatter; everything down to the next `---` is ordinary content."""
-    renderer = self.renderer()
-    data, rest = renderer._extract_frontmatter(
-      "---\n# Intro\nBODYTEXT here\n---\n# Section 2\n")
-    self.assertIsNone(data)
+    """A document may open with a horizontal rule.
+    Only a YAML mapping is frontmatter; everything down to the next `---` is ordinary content."""
+    data, rest = split_frontmatter("---\n# Intro\nBODYTEXT here\n---\n# Section 2\n")
+    self.assertEqual({}, data)
     for marker in ("Intro", "BODYTEXT", "Section 2"):
       self.assertIn(marker, rest)
 
   def test_real_frontmatter_is_still_consumed(self):
-    renderer = self.renderer()
-    data, rest = renderer._extract_frontmatter(
-      "---\ntitle: Doc\nauthor: sara\n---\n\nBODYTEXT.\n")
+    data, rest = split_frontmatter("---\ntitle: Doc\nauthor: sara\n---\n\nBODYTEXT.\n")
     self.assertEqual("Doc", data["title"])
     self.assertIn("BODYTEXT", rest)
     self.assertNotIn("author: sara", rest)
@@ -232,25 +217,22 @@ class TestFrontmatterWarning(TempPDFCase):
   def test_broken_yaml_warns(self):
     with warnings.catch_warnings(record=True) as caught:
       warnings.simplefilter("always")
-      data, _ = self.renderer()._extract_frontmatter(
-        "---\ntitle: Test\n  bad: [unclosed\n---\n\nBody.\n")
-    self.assertIsNone(data)
+      data, _ = split_frontmatter("---\ntitle: Test\n  bad: [unclosed\n---\n\nBody.\n")
+    self.assertEqual({}, data)
     self.assertTrue(any("frontmatter" in str(w.message) for w in caught))
 
   def test_valid_yaml_is_quiet(self):
     with warnings.catch_warnings(record=True) as caught:
       warnings.simplefilter("always")
-      data, _ = self.renderer()._extract_frontmatter(
-        "---\ntitle: Test\nauthor: sara\n---\n\nBody.\n")
+      data, _ = split_frontmatter("---\ntitle: Test\nauthor: sara\n---\n\nBody.\n")
     self.assertEqual("Test", data["title"])
     self.assertEqual([], [w for w in caught if "frontmatter" in str(w.message)])
 
 #------------------------------------------------------------------------------------------ Anchors
 
 class TestAnchors(TempPDFCase):
-  """A destination names a place in the document. Fitting the whole page
-  instead drops the one thing the reader followed the link for."""
-
+  """A destination names a place in the document.
+  Fitting the whole page instead drops the one thing the reader followed the link for."""
   MD = ("## Ustawienia\n\nPierwsza.\n\n## Ustawienia\n\nDruga.\n\n"
     "[pierwsza](#ustawienia) [druga](#ustawienia-1) [brak](#nie-ma-takiego)\n")
 
@@ -292,9 +274,8 @@ class TestAnchors(TempPDFCase):
 #------------------------------------------------------------------------------------- Highlighting
 
 class TestMarkdownHighlighting(unittest.TestCase):
-  """Inside a fence the language is no longer markdown: `# x` is a comment
-  there and `- x` a flag, so neither takes markdown colouring."""
-
+  """Inside a fence the language is no longer markdown:
+  `# x` is a comment there and `- x` a flag, so neither takes markdown colouring."""
   SRC = "# Heading\n\n```python\n# comment\n- not a list\n```\n\n- real list\n"
 
   def colors(self):
@@ -319,9 +300,8 @@ class TestMarkdownHighlighting(unittest.TestCase):
 #---------------------------------------------------------------------------------------- Autoscale
 
 class TestAutoscaleFloor(unittest.TestCase):
-  """Autoscale keeps shrinking until the text fits, and past a point the
-  result is unreadable. The size is what it is; saying so is the fix."""
-
+  """Autoscale keeps shrinking until the text fits, and past a point the result is unreadable.
+  The size is what it is; saying so is the fix."""
   def test_unreadable_shrink_warns_and_reports_overflow(self):
     metrics = TextMetrics(FontManager())
     with warnings.catch_warnings(record=True) as caught:
@@ -346,7 +326,6 @@ class TestAutoscaleFloor(unittest.TestCase):
 class TestMathLineBox(TempPDFCase):
   """A formula taller than its font size still has to fit the line it sits on,
   or it crosses into the next one - in a table, past the row border."""
-
   TALL = (r"\sum_{k=1}^{n} k", r"\sqrt{\frac{1}{n}\sum_i (x_i-\mu)^2}",
     r"\int_0^\infty e^{-x^2} dx")
 
@@ -376,10 +355,9 @@ class TestMathLineBox(TempPDFCase):
 #----------------------------------------------------------------------------------- SVG flattening
 
 class TestSvgFlatten(unittest.TestCase):
-  """MathJax builds a stretchy brace inside nested `<svg>` viewports and svglib
-  does not reproduce that coordinate system, so the geometry is resolved to
-  absolute coordinates before svglib sees it."""
-
+  """MathJax builds a stretchy brace inside nested `<svg>` viewports
+  and svglib does not reproduce that coordinate system,
+  so the geometry is resolved to absolute coordinates before svglib sees it."""
   def flat(self, svg:str):
     from pdfmarq.md.svgflat import flatten
     return flatten(svg)
@@ -407,8 +385,8 @@ class TestSvgFlatten(unittest.TestCase):
     self.assertIn("M 10 0 L 60 0", out.replace("  ", " "))
 
   def test_unknown_construct_is_refused(self):
-    """A shape outside the supported set returns None, so the caller keeps
-    the original rather than getting a silently wrong drawing."""
+    """A shape outside the supported set returns `None`,
+    so the caller keeps the original rather than getting a silently wrong drawing."""
     svg = self.HEAD + '<circle cx="10" cy="10" r="5"/></svg>'
     self.assertIsNone(self.flat(svg))
 
@@ -419,8 +397,8 @@ class TestSvgFlatten(unittest.TestCase):
   def test_substitute_glyph_keeps_its_place(self):
     """A character its font lacks arrives as `text` rather than a path.
 
-    Refusing it would put the whole formula back on svglib, which is how one
-    missing symbol turns into a scrambled line.
+    Refusing it would put the whole formula back on svglib,
+    which is how one missing symbol turns into a scrambled line.
     """
     svg = (self.HEAD + '<g transform="translate(20,30) scale(2,2)">'
       '<text font-size="10" font-family="serif">x</text></g></svg>')
@@ -576,13 +554,12 @@ class TestSvgMarkers(TempPDFCase):
 
 @NEEDS_MATHJAX
 class TestMathJaxFonts(unittest.TestCase):
-  """Every font the library offers has to carry a formula all the way to a
-  drawing. A font package that is not installed is not offered, and one that
-  is must survive both MathJax and the flattener.
+  """Every font the library offers has to carry a formula all the way to a drawing.
+  A font package that is not installed is not offered,
+  and one that is must survive both MathJax and the flattener.
   """
-
-  # `<` is the interesting character: MathJax repeats the source TeX in a
-  # `data-latex` attribute, where a raw `<` is not XML and costs the parse.
+  # `<` is the interesting character: MathJax repeats the source TeX in a `data-latex` attribute,
+  # where a raw `<` is not XML and costs the parse.
   CASES = r"\begin{cases} a & x < 0 \\ b & x \ge 0 \end{cases}"
 
   def test_offered_fonts_are_installed(self):
@@ -601,9 +578,9 @@ class TestMathJaxFonts(unittest.TestCase):
         self.assertIsNotNone(flatten(svg), "fell back to svglib")
 
   def test_no_font_leaves_an_empty_box(self):
-    """A character the font lacks would reach the page as a system-face
-    substitute, which reportlab has no font for either. The formula moves to
-    the default typeface instead.
+    """A character the font lacks would reach the page as a system-face substitute,
+    which reportlab has no font for either.
+    The formula moves to the default typeface instead.
     """
     from pdfmarq.md.mathjax import installed_fonts, render
     for font in installed_fonts():
@@ -624,9 +601,8 @@ class TestMathJaxFonts(unittest.TestCase):
 #----------------------------------------------------------------------------------- Math preparing
 
 class TestMathPreprocess(unittest.TestCase):
-  """mathtext accepts a subset of LaTeX and renders what it cannot parse as the
-  source text itself, which is why what reaches it gets normalised first."""
-
+  """mathtext accepts a subset of LaTeX and renders what it cannot parse as literal source,
+  which is why what reaches it gets normalised first."""
   def prep(self, formula:str) -> str:
     from pdfmarq.md.math import _preprocess_formula
     return _preprocess_formula(formula)
@@ -646,7 +622,7 @@ class TestMathPreprocess(unittest.TestCase):
     for keep in (r"\leq x", r"\left| x \right|", r"\leftarrow", r"\ell"):
       self.assertEqual(keep, self.prep(keep))
 
-  def test_shapes_that_used_to_come_out_as_source(self):
+  def test_rewritten_shapes_render_as_formulas(self):
     from pdfmarq.md.math import render_math_svg
     cases = (
       r"\le 3\mathrm{mA}",
@@ -663,11 +639,10 @@ class TestMathPreprocess(unittest.TestCase):
 #--------------------------------------------------------------------------------- Math block width
 
 class TestMathBlockWidth(TempPDFCase):
-  """A block formula is centred in the column. One wider than the column would
-  centre to a negative offset and hang off both edges of the page."""
-
-  # No line break, no unsupported command - just longer than the column, which
-  # for A4 with default margins is a bit under 482pt.
+  """A block formula is centred in the column.
+  One wider than the column would centre to a negative offset and hang off both page edges."""
+  # No line break, no unsupported command - just longer than the column,
+  # which for A4 with default margins is a bit under 482pt.
   WIDE = "$$\n" + " + ".join(r"\frac{V_{%d}}{R_{%d}}" % (i, i) for i in range(22)) + "\n$$\n"
 
   def ink_outside_page(self, path:str) -> int:
@@ -695,8 +670,8 @@ class TestMathBlockWidth(TempPDFCase):
 
   @NEEDS_FITZ
   def test_multiline_block_needs_no_scaling(self):
-    """A `$$` block written across source lines is an ordinary formula once the
-    breaks collapse, so it fits like any other."""
+    """A `$$` block written across source lines is an ordinary formula once the breaks collapse,
+    so it fits like any other."""
     p = self.path()
     md = ("$$\n"
       r"V_{\mathrm{TIA}} = \underbrace{\frac{V_{\mathrm{bias}}}{|Z|} R_{\mathrm{TIA}}}"
@@ -719,9 +694,8 @@ class TestMathBlockWidth(TempPDFCase):
 #-------------------------------------------------------------------------------------------- Emoji
 
 class TestEmojiSplit(unittest.TestCase):
-  """Modifier codepoints have no glyph of their own. They tune the emoji before
-  them and must not become a second drawing next to it."""
-
+  """Modifier codepoints have no glyph of their own.
+  They tune the emoji before them and must not become a second drawing next to it."""
   def test_skin_tone_modifier_is_skipped(self):
     from pdfmarq.md.openmoji import split_text_by_emoji
     runs = split_text_by_emoji("ok \U0001F44D\U0001F3FE end")
@@ -734,9 +708,8 @@ class TestEmojiSplit(unittest.TestCase):
 #------------------------------------------------------------------------------------------- Tables
 
 class TestTableTotalHeight(unittest.TestCase):
-  """`TableData.total_height` is what a caller reserves for the table, so it has
-  to match every band `core._draw_table` puts on the page."""
-
+  """`TableData.total_height` is what a caller reserves for the table,
+  so it has to match every band `core._draw_table` puts on the page."""
   def test_total_height_includes_header_gap(self):
     style = TableStyle()
     builder = TableBuilder(TextMetrics(FontManager()), style)

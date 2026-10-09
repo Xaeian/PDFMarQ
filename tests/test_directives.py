@@ -5,18 +5,18 @@
 import warnings
 import pytest
 from conftest import assert_valid_pdf, assert_valid_docx, needs_twin
-from pdfmarq.md import md_to_pdf
+from pdfmarq.paper import md_to_pdf
 from pdfmarq.md.md_html import (
   is_pagebreak_directive, is_group_open_directive, is_group_close_directive,
 )
 try:
-  from docmarq.md import md_to_docx
+  from docmarq.paper import md_to_docx
   from docmarq.md.tokens import (
     is_pagebreak_directive as docx_is_pb,
     is_group_open_directive as docx_is_go,
     is_group_close_directive as docx_is_gc,
   )
-except ImportError:  # the twin ships separately; `needs_twin` skips what needs it
+except ImportError: # the twin ships separately; `needs_twin` skips what needs it
   md_to_docx = docx_is_pb = docx_is_go = docx_is_gc = None
 
 #------------------------------------------------------------------------------ Directive detectors

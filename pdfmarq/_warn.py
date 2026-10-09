@@ -22,6 +22,16 @@ def warn_missing(key:str, package:str, feature:str) -> None:
     file=sys.stderr,
   )
 
+def caller_level() -> int:
+  """
+  `stacklevel` of the first frame outside `pdfmarq`, seen from the function that warns,
+  so the warning points at the user's line however deep the library called.
+  """
+  frame, level = sys._getframe(2), 2
+  while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == "pdfmarq":
+    frame, level = frame.f_back, level + 1
+  return level
+
 def reset_warnings() -> None:
   """Clear the seen-warnings registry. Used in tests."""
   _seen.clear()

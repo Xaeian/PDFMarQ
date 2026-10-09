@@ -2,12 +2,13 @@
 
 """Block height estimation for heading keep-with-next lookahead.
 
-`_estimate_next_block` returns an approximate minimum height (mm) for the
-block after a heading so `_render_heading` can reserve enough space to keep
-them on the same page."""
+`_estimate_next_block` returns an approximate minimum height (mm) for the block after a heading,
+so `_render_heading` can reserve enough space to keep them on the same page."""
 
 from markdown_it.token import Token
 from ..constants import MM_TO_PT
+from ..inline import measure_rich
+from .md_images import parse_image_dsl
 
 #------------------------------------------------------------------------------------ EstimateMixin
 
@@ -16,7 +17,6 @@ class EstimateMixin:
   Block height estimation used by the heading-lookahead page-break logic
   to avoid widowed headings. Mixed into `MarkdownRenderer`.
   """
-
   def _estimate_next_block(self, tokens:list[Token], start:int) -> float:
     """Estimate minimum height (mm) of next block - used by heading lookahead."""
     if start >= len(tokens):
@@ -28,17 +28,13 @@ class EstimateMixin:
     if ttype == "paragraph_open":
       # Measure actual wrapped height so long paragraphs don't under-reserve.
       if start + 1 < len(tokens) and tokens[start+1].type == "inline":
-        from ..inline import RichSegment, measure_rich
         inline = tokens[start+1]
-        base = RichSegment(
-          text="", family=s.font_body, mode=s.body_mode,
-          size=s.body_size, color=s.body_color,
-        )
         try:
-          segs = self._inline_to_segments(inline, base)
+          segs = self._inline_to_segments(inline, self._body_base())
           width = self.pdf.content_width - self._indent_mm
           page_avail = self.pdf.content_height
-          h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
+          h = measure_rich(self.pdf, segs, width, line_gap=s.line_height,
+            align=self._para_align())
           # Capped: a paragraph that splits anyway must not force a heading break.
           return max(min(h, page_avail * 0.9), body_line_mm * 2)
         except Exception:
@@ -62,8 +58,7 @@ class EstimateMixin:
       lang = parts[0] if parts else ""
       info_rest = parts[1] if len(parts) > 1 else ""
       if lang == "mermaid":
-        if info_rest:  # DSL `h` / `max_h` override; falls back to `image_max_h`
-          from .md_images import parse_image_dsl
+        if info_rest: # DSL `h` / `max_h` override; falls back to `image_max_h`
           dsl = parse_image_dsl(info_rest)
           if dsl.is_dsl:
             if dsl.exact_h_mm is not None: return dsl.exact_h_mm
@@ -78,34 +73,31 @@ class EstimateMixin:
       n_inline = sum(
         1 for j in range(start, end + 1) if tokens[j].type == "inline"
       )
-      return max(body_line_mm * (n_inline + 1) * 1.1, body_line_mm * 3)  # +1 for callout title
+      return max(body_line_mm * (n_inline + 1) * 1.1, body_line_mm * 3) # +1 for callout title
     if ttype == "dl_open": return body_line_mm * 2
     if ttype == "hr": return 3
     return body_line_mm * 2
 
   def _estimate_list_height(self, tokens:list[Token], start:int, end:int) -> float:
     """Sum estimated height of each list item for heading-lookahead break planning.
-    First paragraph per item is measured via `measure_rich`; nested blocks
-    fall back to a 2-line approximation.
+    First paragraph per item is measured via `measure_rich`;
+    nested blocks fall back to a 2-line approximation.
     """
-    from ..inline import RichSegment, measure_rich
     s = self.style
     body_line_mm = s.body_size * s.line_height / MM_TO_PT
     width = self.pdf.content_width - self._indent_mm - s.list_indent
-    base = RichSegment(
-      text="", family=s.font_body, mode=s.body_mode,
-      size=s.body_size, color=s.body_color,
-    )
+    base = self._body_base()
     total = 0.0
     j = start + 1
     while j < end:
       if tokens[j].type == "list_item_open":
-        item_h = body_line_mm  # first inline drives the estimate; fallback = 1 line
+        item_h = body_line_mm # first inline drives the estimate; fallback = 1 line
         for k in range(j + 1, min(j + 6, end)):
           if tokens[k].type == "inline":
             try:
               segs = self._inline_to_segments(tokens[k], base)
-              h = measure_rich(self.pdf, segs, width, line_gap=s.line_height)
+              h = measure_rich(self.pdf, segs, width, line_gap=s.line_height,
+                align=self._para_align())
               item_h = max(h, body_line_mm)
             except Exception:
               pass

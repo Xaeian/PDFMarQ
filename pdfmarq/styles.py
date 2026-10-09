@@ -9,13 +9,13 @@ from .constants import Defaults, Align
 def _as_rgba(color:tuple) -> tuple[float, float, float, float]:
   """Normalize RGB 3-tuple to RGBA 4-tuple (alpha=1). Pass-through for 4-tuples.
 
-  `Style.color` is canonically 4-tuple - `PDF.color()` writes 4-tuples, so
-  normalizing here keeps the shape consistent throughout the pipeline.
+  `Style.color` is canonically 4-tuple - `PDF.color()` writes 4-tuples,
+  so normalizing here keeps the shape consistent throughout the pipeline.
   """
   if len(color) == 3:
     return (color[0], color[1], color[2], 1.0)
   if len(color) == 4:
-    return tuple(color)  # type: ignore[return-value]
+    return tuple(color) # type: ignore[return-value]
   raise ValueError(f"Color must be 3- or 4-tuple, got {len(color)}: {color}")
 
 #-------------------------------------------------------------------------------------------- Style
@@ -27,11 +27,10 @@ class Style:
   `None` values inherit from parent style when merged.
 
   Face weight/slant can be expressed two ways:
-    - `font_mode` (`"Regular"`/`"Bold"`/`"Italic"`/`"BoldItalic"`): direct
-      TTF lookup, matches reportlab font registration.
-    - `bold` / `italic` / `underline` / `strike` flags: symmetric with
-      `with_defaults()` derives
-      `font_mode` from the flags when both are present.
+    - `font_mode` (`"Regular"`/`"Bold"`/`"Italic"`/`"BoldItalic"`): direct TTF lookup,
+      matches reportlab font registration.
+    - `bold` / `italic` / `underline` / `strike` flags:
+      `with_defaults()` derives `font_mode` from them when `font_mode` is not set.
   """
   font_family: str|None = None
   font_mode: str|None = None
@@ -55,8 +54,9 @@ class Style:
     return result
 
   def with_defaults(self) -> "Style":
-    """Fill `None` values with defaults. If `bold`/`italic` flags are set and
-    `font_mode` was not explicitly given, derive `font_mode` from the flags."""
+    """Fill `None` values with defaults.
+    If `bold`/`italic` flags are set and `font_mode` was not explicitly given,
+    derive `font_mode` from the flags."""
     mode = self.font_mode
     if mode is None and (self.bold or self.italic):
       if self.bold and self.italic: mode = "BoldItalic"
@@ -87,13 +87,13 @@ class Style:
 class TableStyle:
   """Table styling.
 
-  Colors accept either `(r, g, b)` 0-1 floats or `#hex` strings. Default
-  palette matches GitHub-light - subtle grey header, near-imperceptible
-  zebra, light grey borders.
+  Colors accept either `(r, g, b)` 0-1 floats or `#hex` strings.
+  Default palette matches GitHub-light:
+  subtle grey header, near-imperceptible zebra, light grey borders.
 
-  Some fields are PDF-specific (`border_size_header`, `border_size_outer`,
-  `header_gap`) and have no DOCX equivalent - they tune line thickness
-  variations and inter-row gaps unique to canvas drawing.
+  Some fields are PDF-specific (`border_size_header`, `border_size_outer`, `header_gap`)
+  and have no DOCX equivalent.
+  They tune line thickness variations and inter-row gaps unique to canvas drawing.
   """
   # Backgrounds
   header_bg: tuple|str = (0.96, 0.97, 0.98)
@@ -113,10 +113,10 @@ class TableStyle:
   # Layout
   header_gap: float = 0.2
   font_size: float|None = None
-  # Inert. `PDF.table()` draws a table in one piece, so there is no
-  # continuation page for a header to repeat on, and cell text always sits
-  # centred in a full-width table. The markdown renderer splits tables and
-  # repeats their headers on its own, without reading these.
+  # Inert. `PDF.table()` draws a table in one piece,
+  # so there is no continuation page for a header to repeat on,
+  # and cell text always sits centred in a full-width table.
+  # The markdown renderer splits tables and repeats their headers itself, without reading these.
   header_repeat: bool = True
   vertical_align: str = "center"
   table_align: str|None = None
@@ -134,9 +134,8 @@ class _Preset:
 class Styles:
   """Predefined style presets. Each access returns a fresh `Style` instance.
 
-  Sizes are a typographic ladder so a heading
-  comes out the same. Use `font_mode` or the `bold`/`italic` flags
-  interchangeably.
+  Heading sizes step down the ladder of the markdown headings: 20, 16, 13 and 11pt.
+  Use `font_mode` or the `bold`/`italic` flags interchangeably.
   """
   DEFAULT = _Preset()
   BOLD = _Preset(bold=True)

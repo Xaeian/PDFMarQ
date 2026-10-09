@@ -2,11 +2,11 @@
 
 """Syntax highlighting for code blocks via `pygments`.
 
-Converts a source string + language hint into a list of lines, where each
-line is a list of `RichSegment` with colors/weights from a pygments style.
+Converts a source string + language hint into a list of lines,
+where each line is a list of `RichSegment` with colors/weights from a pygments style.
 
-Falls back to `None` (caller renders plain monospace) when pygments is
-missing, the language is unknown, or any other error occurs.
+Falls back to `None` (caller renders plain monospace) when pygments is missing,
+the language is unknown, or any other error occurs.
 
 Example:
   >>> from pdfmarq.md.highlight import highlight_code
@@ -17,7 +17,9 @@ Example:
 
 __extras__ = ("highlight", ["Pygments"])
 
+import re
 from ..inline import RichSegment
+from .._warn import warn_missing
 
 try:
   from pygments import lex
@@ -42,8 +44,8 @@ def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
 
 #---------------------------------------------------------------------- Markdown custom highlighter
 
-# Pygments' markdown lexer has known bugs (e.g. only tags `1.` and `2.` as
-# Keyword but not `3.`+). Simple regex-based highlighter instead.
+# Pygments' markdown lexer has known bugs (e.g. only tags `1.` and `2.` as Keyword but not `3.`+).
+# Simple regex-based highlighter instead.
 _MD_COLORS = {
   "heading": (0.035, 0.368, 0.855),
   "list_marker": (0.0, 0.502, 0.0),
@@ -54,21 +56,19 @@ _MD_COLORS = {
   "default": (0.13, 0.13, 0.13),
 }
 
-import re as _re
+# Checked before `_MD_BLOCKS`: a fence delimiter flips in and out of a nested code block
+# rather than styling one line among markdown.
+_FENCE_RE = re.compile(r"^(?:```+|~~~+)")
 
 # Block-level markers: (regex, color_key, marker_mode)
 #   marker_sep_content - 3 groups: bold marker + neutral sep + content
 #   full_line          - full line in one color, no inline tokenization
 #   quote              - 2 groups: marker+ws + content (content is quoted)
-# Checked before `_MD_BLOCKS`: a fence delimiter flips in and out of a
-# nested code block rather than styling one line among markdown.
-_FENCE_RE = _re.compile(r"^(?:```+|~~~+)")
-
 _MD_BLOCKS = [
-  (_re.compile(r"^(#{1,6})(\s+)(.*)$"), "heading", "marker_sep_content"),
-  (_re.compile(r"^([-*+])(\s+)(.*)$"), "list_marker", "marker_sep_content"),
-  (_re.compile(r"^(\d+\.)(\s+)(.*)$"), "list_marker", "marker_sep_content"),
-  (_re.compile(r"^(>+\s*)(.*)$"), "quote", "quote"),
+  (re.compile(r"^(#{1,6})(\s+)(.*)$"), "heading", "marker_sep_content"),
+  (re.compile(r"^([-*+])(\s+)(.*)$"), "list_marker", "marker_sep_content"),
+  (re.compile(r"^(\d+\.)(\s+)(.*)$"), "list_marker", "marker_sep_content"),
+  (re.compile(r"^(>+\s*)(.*)$"), "quote", "quote"),
 ]
 
 def _highlight_md(
@@ -85,7 +85,7 @@ def _highlight_md(
   in_fence = False
   for src in code.split("\n"):
     line_segs: list[RichSegment] = []
-    m_indent = _re.match(r"^(\s*)", src)
+    m_indent = re.match(r"^(\s*)", src)
     indent = m_indent.group(1) if m_indent else ""
     rest = src[len(indent):]
     if indent:
@@ -131,16 +131,16 @@ def _highlight_md(
   return lines_out
 
 # Inline tokens: `code`, **bold**, *italic*, ~~strike~~, [text](url)
-# Each alternative's group index → (color_key, bold). `code`/`link` use
-# their own colors; others use the surrounding base_color.
-_MD_INLINE_PAT = _re.compile(
-  r"(`+)([^`]*?)\1"  # 1: code
-  r"|(\*\*)([^*]+?)\*\*"  # 3: **bold**
+# Each alternative's group index → (color_key, bold).
+# `code`/`link` use their own colors; others use the surrounding `base_color`.
+_MD_INLINE_PAT = re.compile(
+  r"(`+)([^`]*?)\1" # 1: code
+  r"|(\*\*)([^*]+?)\*\*" # 3: **bold**
   r"|(__)([^_]+?)__"  # 5: __bold__
   r"|(\*)([^*]+?)\*"  # 7: *italic*
-  r"|(_)([^_]+?)_"  # 9: _italic_
-  r"|(~~)([^~]+?)~~"  # 11: ~~strike~~
-  r"|(\[)([^\]]+?)(\])(\()([^)]+?)(\))" # 13: [text](url)
+  r"|(_)([^_]+?)_" # 9: _italic_
+  r"|(~~)([^~]+?)~~" # 11: ~~strike~~
+  r"|(\[)([^\]]+?)(\])(\()([^)]+?)(\))", # 13: [text](url)
 )
 _MD_INLINE_GROUPS = [
   (1, "code", False),
@@ -213,7 +213,6 @@ def highlight_code(
       default_color=default_color,
     )
   if not _HAS_PYGMENTS:
-    from .._warn import warn_missing
     warn_missing("pygments", "pygments", "syntax highlighting in code blocks")
     return None
   try:

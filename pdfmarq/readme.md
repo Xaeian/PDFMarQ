@@ -1,6 +1,7 @@
 # `pdfmarq`
 
-Fluent PDF generation. Built on reportlab with a cursor-based flow model.
+Fluent PDF generation.
+Built on reportlab with a cursor-based flow model.
 Sibling library: [`docmarq`](https://github.com/Xaeian/DocMarQ) - same API shape for DOCX.
 
 ## `PDF` context
@@ -12,6 +13,8 @@ with PDF("out.pdf") as pdf:
 # Custom page size + margins (CSS-style: scalar / (v,h) / (t,h,b) / (t,r,b,l))
 with PDF("out.pdf", width=A4.width, height=A4.height, margin=20) as pdf:
   pdf.margin(20, 25, 15) # lr, top, bot in mm
+# Binding margin, added to the left one (PDF has no native gutter)
+PDF("out.pdf", margin=20, gutter=8)
 # Units (default mm)
 PDF("out.pdf", unit="pt") # or "cm", "in", "px"
 ```
@@ -45,12 +48,36 @@ pdf.enter()            # newline: reset x, advance y by line height
 pdf.enter(10)          # newline with explicit 10mm gap
 pdf.move(5, 3)         # relative shift dx=5, dy=3
 pdf.new_page()         # page break, cursor reset
+pdf.next_frame()       # next column, or a new page after the last one
 # Read current position
 pdf.x, pdf.y           # cursor mm
-pdf.content_width, pdf.content_height # page area minus margins
+pdf.content_width, pdf.content_height # frame area: the page minus margins, or the open column
 pdf.page_num           # current page number
 pdf.output_path        # destination file path
 ```
+
+## Columns
+
+A column is a narrower page: content width, margins, `y` and centring all refer to it, so anything that draws relative to the margins lands inside the column.
+
+```py
+pdf.columns(2, gap=8)            # two columns from the current height
+pdf.next_frame()                 # move on: column 2, then a new page
+pdf.columns(2, gap=8, height=90) # columns capped at 90mm on this page, for balancing
+pdf.columns(2, height=[None, 90]) # capped page by page: here the second page only
+pdf.columns(1)                   # close: full width again, below the lowest column
+# Parallel columns: the caller places content and breaks pages itself
+pdf.columns(2, gap=8, flow=False)
+pdf.column(1)                    # the second column (index from 0), same height
+# One narrower frame, for text set beside a logo or a photo
+pdf.inset(right=30)              # 30mm given way on the right, from the current height
+pdf.inset()                      # close: full width again, below what was drawn
+# Keep a block together
+pdf.keep(40)                     # 40mm of room here, or on to the next frame
+```
+
+`new_page()` always starts a new page; an open region carries on there from its first column.
+Header and footer callbacks always see the whole page.
 
 ## Text
 
@@ -62,6 +89,37 @@ pdf.text("Right", width=40, align="R", padding=1) # right-aligned with padding
 ```
 
 When both `width` and `height` are given, font auto-scales down by `0.1pt` steps to fit.
+
+Mixed-style text goes through `render_rich`, which also justifies:
+
+```py
+from pdfmarq import RichSegment, render_rich, Align
+segs = [RichSegment("Plain, "), RichSegment("bold", bold=True), RichSegment(" and more.")]
+render_rich(pdf, segs, 80, 0, pdf.y, Align.JUSTIFY) # width, x, y in mm
+```
+
+A justified line resizes its spaces to meet the edge.
+It may tighten them to three quarters of their width to take one more word, as page layout programs do.
+Measure justified text with the same `align`: `pdfmarq.inline.wrap_line_heights(..., align=Align.JUSTIFY)`.
+The last line and a line a hard break ends stay left.
+`RichSegment(char_space=1)` spaces letters out by 1pt each, as capitals want.
+`RichSegment(hyphenate="pl")` lets a word split at a line end, at a hyphenation point of the Polish patterns from `pyphen`, which the `[md]` extra installs.
+Code, links, numbers and words in capitals stay whole.
+
+## Signing lines and page number
+
+`pdfmarq.parts` draws the pieces both document packages share, from plain values, the face of their text as a `RichSegment`:
+
+```py
+from pdfmarq import RichSegment
+from pdfmarq.parts import signatures, page_number
+label = RichSegment("", family="Helvetica", mode="Oblique", size=9, color=(0.4, 0.4, 0.4))
+signatures(pdf, ["Client", "Contractor"], label, gap=20, width=70, thick=0.3)
+number = RichSegment("", family="Helvetica", size=9, color=(0.4, 0.4, 0.4))
+pdf.on_final_page(lambda p, n, total: page_number(p, "Page", n, total, number, show_total=True))
+```
+
+Their labels and the date format in each language are in `pdfmarq.parts.LANG_LABELS`, which the presets of both packages build on.
 
 ## Tables
 
@@ -156,8 +214,7 @@ pdf.bookmark("Section 1.1", level=1)
 pdf.link("https://github.com/Xaeian/PDFMarQ", width=40, height=5)
 ```
 
-Bookmarks are resolved to their actual page at save time, so outline
-entries point to the correct page even when content reflows across pages.
+Bookmarks are resolved to their actual page at save time, so outline entries point to the correct page even when content reflows across pages.
 
 ## Page sizes
 
@@ -185,9 +242,16 @@ Styles.CODE      # font_family="Courier", font_size=10
 
 ## Markdown
 
+Markdown needs the `[md]` extra.
+The engine draws content, a document package lays out the page:
+
+- [`pdfmarq.md`](md/readme.md): the engine, markdown into the current frame
+- [`pdfmarq.paper`](paper/readme.md): documentation with a frontmatter banner
+- [`pdfmarq.legal`](legal/readme.md): letters, statements, contracts, parallel versions
+
 ```py
-from pdfmarq.md import md_to_pdf, MarkdownStyle, lang_style
 from pdfmarq import A4
+from pdfmarq.paper import md_to_pdf, lang_style
 
 md_to_pdf(open("doc.md").read(), "doc.pdf")
 # With localization preset
@@ -199,17 +263,11 @@ md_to_pdf(text, "doc.pdf", base_dir="./assets")
 md_to_pdf(text, "doc.pdf", page=A4.landscape())
 ```
 
-Supported markdown: headings, paragraphs, lists, tables, code blocks
-(with syntax highlighting via Pygments), blockquotes, GitHub callouts
-(`> [!NOTE]`), footnotes, math (`$x^2$` via MathJax, matplotlib mathtext
-as fallback), mermaid diagrams (via local `mmdc` or the mermaid.ink
-fallback), images, YAML frontmatter with banner rendering.
+Supported markdown: headings, paragraphs, lists, tables, code blocks (with syntax highlighting via Pygments), blockquotes, GitHub callouts (`> [!NOTE]`), footnotes, math (`$x^2$` via MathJax, matplotlib mathtext as fallback), mermaid diagrams (via local `mmdc` or the mermaid.ink fallback), images.
 
-Blocks taller than a page split across pages, headings and footnotes get
-position-anchored PDF destinations, and repeated heading text gets numbered
-slugs the GitHub way. See [`md/readme.md`](md/readme.md).
+Blocks taller than a page split across pages, headings and footnotes get position-anchored PDF destinations, and repeated heading text gets numbered slugs the GitHub way.
 
 ## Compression
 
-Not this library's job. Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Python)
-on the saved file.
+Not this library's job.
+Use [`xaeian.media.pdf.pdf_compress`](https://github.com/Xaeian/Python) on the saved file.
