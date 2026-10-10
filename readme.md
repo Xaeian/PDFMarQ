@@ -18,6 +18,7 @@ Markdown rendering lives in a separate subpackage so core stays installable with
 - **Engine and documents apart**: `pdfmarq.md` draws markdown content, a document package lays out the page around it
 - **Banner as contract**: in `pdfmarq.paper` YAML frontmatter becomes a styled banner with logo, status badge, version, dates
 - **Letters and contracts**: `pdfmarq.legal` sets a letter header from frontmatter and signing lines from the style, in one or two columns, or with language versions side by side
+- **Templates and series**: `pdfmarq.merge` fills a markdown template with one record, or with each record of a table, a document per record
 - **Lean output**: no headless Chrome, no web stack, no React SSR.
   Pure Python + native PDF primitives.
   Files stay small, rendering stays fast, fonts are embedded properly, and output opens clean in every PDF reader
@@ -88,6 +89,7 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 - GitHub-flavored markdown _(tables, fenced code, lists, strikethrough)_
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, dates)_ by `pdfmarq.paper`
 - Letters, statements and contracts by `pdfmarq.legal`: letter header from frontmatter, justified text that flows, two balanced columns, language versions side by side _(see [`legal/guide`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/legal/guide.md))_
+- Mail merge by `pdfmarq.merge`: placeholders, conditions, loops and included clauses, every record checked before the first document _(see [`merge/readme`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/merge/readme.md))_
 - Columns in the core API: `pdf.columns(2)`, and everything markdown draws flows through them
 - Page geometry, fonts, banner toggles and locale come from caller's `style=`, never from the document _(see [`md/guide`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/md/guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
@@ -112,6 +114,7 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 - [`pdfmarq.md`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/md/readme.md): markdown engine _(optional `[md]` extra)_
 - [`pdfmarq.paper`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/paper/readme.md): documentation with a frontmatter banner
 - [`pdfmarq.legal`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/legal/readme.md): letters, statements, contracts, parallel versions
+- [`pdfmarq.merge`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/merge/readme.md): mail merge, one record or a document per record of a table
 
 ## See also
 

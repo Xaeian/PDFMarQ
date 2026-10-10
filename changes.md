@@ -1,16 +1,20 @@
 # Changes `pdfmarq`
 
+## `0.6.1` Mail merge
+
+- `pdfmarq.merge`: templates filled from one record or a table
+- `PDF` margins, `column_index` and `fonts.register_file`
+- Messages only through `warnings`
+- Fixes across Polish letters, frontmatter and titles
+
 ## `0.6.0` Legal documents
 
-- Breaking: `md_to_pdf` and the banner moved to `pdfmarq.paper`, their fields to `PaperStyle`
+- Breaking: `md_to_pdf` and the banner moved to `pdfmarq.paper`
 - Breaking: the markdown engine works in mm only
-- `pdfmarq.legal`: letters, contracts and language versions side by side
+- `pdfmarq.legal`: letters, contracts, language versions side by side
 - `pdfmarq.paper.md_into` writes after a cover
-- Core: `pdf.columns()`, `pdf.next_frame()`, `pdf.inset()`, `pdf.keep()`
-- Text: `justify`, `hyphenate`, `keep_together`, small capitals
-- Fix: `1)` printed as `1.`, a title list garbled in metadata, image over `===` drew a rule
-- Fix: line broken at a no-break space, `pdf.link()` ignored margins, `**` in Black headings
-- Fix: SVG logo without a size laid out square, no word when no engine could set a formula
+- Columns, justified and hyphenated text, small capitals
+- Fixes across lists, links, metadata and SVG
 
 ## `0.5.4` Wrapping and arrows
 

@@ -127,10 +127,9 @@ class ListMixin:
     y_item = self.pdf.y
     if bullet:
       # Solid disc via canvas.circle - cleaner than glyph `•`
-      page = self.pdf._page
-      cx_mm = page.margin_left + x_prefix + 1.5
-      cy_mm = page.height - page.margin_top - (y_item + s.body_size * 0.55 / MM_TO_PT)
-      canvas = self.pdf._canvas
+      cx_mm = self.pdf.margin_left + x_prefix + 1.5
+      cy_mm = self.pdf.page_height - self.pdf.margin_top - (y_item + s.body_size * 0.55 / MM_TO_PT)
+      canvas = self.pdf.c
       canvas.setFillColor(Color(*s.body_color[:3]))
       canvas.circle(cx_mm * _mm, cy_mm * _mm, s.bullet_radius * _mm, stroke=0, fill=1)
       canvas.setFillColor(Color(0, 0, 0))

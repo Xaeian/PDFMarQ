@@ -23,6 +23,19 @@ _MODE_FALLBACK = {
   "BoldOblique": ["BoldItalic", "Bold", "Italic", "Regular"],
 }
 
+# TrueType files read so far, by reportlab name and path.
+_TTF: dict[tuple[str, str], TTFont] = {}
+
+def load_ttf(key:str, path:str) -> None:
+  """
+  Register the TrueType file `path` with reportlab as `key`, reading it once per process.
+  reportlab keeps the state of each document apart, so every `PDF` shares the parsed font:
+  a series of a hundred documents would otherwise parse each face a hundred times.
+  """
+  font = _TTF.get((key, path))
+  if font is None: font = _TTF[(key, path)] = TTFont(key, path)
+  pdfmetrics.registerFont(font)
+
 #-------------------------------------------------------------------------------------- FontManager
 
 class FontManager:
@@ -80,13 +93,23 @@ class FontManager:
         path = self._resolve_path(family, try_mode)
       except FileNotFoundError:
         continue
-      pdfmetrics.registerFont(TTFont(key, str(path)))
-      self._registered.add(key)
-      self._paths[key] = str(path)
-      return key
+      return self.register_file(family, try_mode, str(path))
     raise FileNotFoundError(
       f"Font not found: {family}-{mode} in {self.font_dir} (no fallback worked)",
     )
+
+  def register_file(self, family:str, mode:str, path:str) -> str:
+    """
+    Register the TrueType file `path` as the `mode` face of `family`, from any folder.
+    Returns the reportlab name.
+    A face already registered stays as it is.
+    """
+    key = self._font_key(family, mode)
+    if key not in self._registered:
+      load_ttf(key, path)
+      self._registered.add(key)
+      self._paths[key] = path
+    return key
 
   def _publish_svg(self, family:str) -> None:
     """Hand `family` to `svgfonts`, resolving each mode the way the page does.

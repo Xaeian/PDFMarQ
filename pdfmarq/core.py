@@ -200,9 +200,34 @@ class PDF:
     return self._page.content_height
 
   @property
+  def margin_left(self) -> float:
+    """Left margin of the frame in mm: the page's, or the open column's."""
+    return self._page.margin_left
+
+  @property
+  def margin_right(self) -> float:
+    """Right margin of the frame in mm: the page's, or the open column's."""
+    return self._page.margin_right
+
+  @property
+  def margin_top(self) -> float:
+    """Top margin of the frame in mm: the page's, or the open column's."""
+    return self._page.margin_top
+
+  @property
+  def margin_bot(self) -> float:
+    """Bottom margin of the frame in mm: the page's, or the open column's."""
+    return self._page.margin_bot
+
+  @property
   def page_num(self) -> int:
     """1-based index of the current page (incremented by `new_page`)."""
     return self._page_num
+
+  @property
+  def column_index(self) -> int:
+    """Column of the open region the cursor is in, counted from 0, or 0 without one."""
+    return self._columns.index if self._columns else 0
 
   @property
   def c(self):

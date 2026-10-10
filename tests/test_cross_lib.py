@@ -211,7 +211,7 @@ def lang_presets_do_not_set_footnote_label():
     assert "footnote_label" not in preset, f"docmarq lang={lang!r} sets footnote_label"
 
 def font_body_intentionally_different():
-  # INTENTIONAL: pdfmarq → Vera (bundled, has Polish glyphs), docmarq → Calibri (Word native).
+  # INTENTIONAL: pdfmarq → Vera (DejaVu Sans when found), docmarq → Calibri (Word native).
   # regression guard against well-meaning "consistency" cleanup
   assert PdfStyle().font_body != DocxStyle().font_body
   assert PdfStyle().font_body == "Vera"
@@ -234,6 +234,7 @@ def md_to_signatures_share_arg_names():
   ("broken yaml", "---\ntitle: [\n---\n\n# B"),
   ("unterminated", "---\ntitle: T\n\n# B"),
   ("crlf", "---\r\ntitle: T\r\n---\r\n\r\n# B"),
+  ("values as written", "---\nid: 0012\nversion: 1.10\ndraft: false\nref:\n---\n\n# B"),
 ])
 @pytest.mark.filterwarnings("ignore:invalid YAML frontmatter")
 def frontmatter_readers_agree(name, src):
@@ -316,6 +317,8 @@ def round_two_helpers_are_identical():
       left = left.replace(pdf_word, docx_word)
     assert left == right, f"{name} drifted"
   same(pdf_fm, doc_fm, "_plain")
+  same(pdf_fm, doc_fm, "read_yaml")
+  same(pdf_fm, doc_fm, "_text_loader")
   same(pdf_utils, doc_utils, "format_date")
   same(pdf_warn, doc_warn, "caller_level", ("pdfmarq", "docmarq"))
   same(pdf_legal, doc_legal, "_checked", ("pdfmarq", "docmarq"),
@@ -386,3 +389,23 @@ def page_number_reads_alike(tmp_path):
   docx_text = "".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", footer))
   assert "Page 1/1" in page
   assert re.sub(r"\d+", "N", docx_text) == "Page N/N"
+
+#--------------------------------------------------------------------------------------- Mail merge
+
+def merge_is_one_module_in_two_packages():
+  # vendored twice on purpose: only the package name may differ
+  pytest.importorskip("jinja2")
+  import pdfmarq.merge, docmarq.merge
+  pdf_dir, doc_dir = Path(pdfmarq.merge.__file__).parent, Path(docmarq.merge.__file__).parent
+  for name in ("__init__.py", "template.py"):
+    pdf_source = (pdf_dir / name).read_text(encoding="utf-8").replace("pdfmarq", "docmarq")
+    assert pdf_source == (doc_dir / name).read_text(encoding="utf-8"), f"merge/{name} drifted"
+
+def merge_fills_alike():
+  pytest.importorskip("jinja2")
+  from pdfmarq.merge import fill as pdf_fill
+  from docmarq.merge import fill as doc_fill
+  template = ('---\ntitle: "{{ t }}"\n---\n'
+    "{% for v in vs %}\n- {{ v }} {{ k | number }}\n{% endfor %}\n")
+  data = {"t": "Contract: A", "vs": ["(a)", "[b]", "1) c", ":d:"], "k": "1234,5"}
+  assert pdf_fill(template, data, lang="pl") == doc_fill(template, data, lang="pl")

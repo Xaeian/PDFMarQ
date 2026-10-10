@@ -577,12 +577,11 @@ class BlocksMixin:
       self.pdf.cursor(self._indent_mm, self.pdf.y - lead_mm)
     self.pdf.keep(h_mm + s.math_block_gap)
     x_center_offset_pt = (content_w_pt - w_pt) / 2
-    page = self.pdf._page
-    x_abs_mm = page.margin_left + self._indent_mm
-    y_abs_mm = page.height - page.margin_top - self.pdf.y - h_mm
+    x_abs_mm = self.pdf.margin_left + self._indent_mm
+    y_abs_mm = self.pdf.page_height - self.pdf.margin_top - self.pdf.y - h_mm
     x_pt = x_abs_mm * MM_TO_PT + x_center_offset_pt
     y_pt = y_abs_mm * MM_TO_PT
-    renderPDF.draw(drawing, self.pdf._canvas, x_pt, y_pt)
+    renderPDF.draw(drawing, self.pdf.c, x_pt, y_pt)
     if tag or s.math_numbering:
       if tag is None:
         self._eq_counter += 1

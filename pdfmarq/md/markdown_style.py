@@ -23,10 +23,10 @@ def _default_callout_colors() -> dict:
 class MarkdownStyle:
   """Visual style for markdown rendering, matching GitHub light theme.
 
-  Default fonts use **Vera Sans** (Bitstream Vera) bundled with reportlab.
-  Vera covers most of Latin Extended-A but is missing some Polish glyphs (ą, ę, ń, ś, ź, ż).
-  For full Polish coverage register a TTF via `pdf.fonts.register()`
-  and set `font_body` to that family.
+  The renderer swaps default families for DejaVu Sans and DejaVu Sans Mono,
+  found in the system or in matplotlib, which the `[md]` extra installs.
+  DejaVu covers Polish and the rest of Latin Extended-A.
+  Without either, `Vera` stays: Bitstream Vera bundled with reportlab, which has no ą ę ś ź ż ń.
   """
   # Font families
   font_body: str = "Vera"

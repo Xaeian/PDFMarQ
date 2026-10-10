@@ -154,3 +154,24 @@ def title_given_as_a_list_is_one_line():
 
 def status_given_as_a_number_is_a_badge(tmp_path):
   md_to_pdf("---\ntitle: T\nstatus: 1\n---\n\nBody.\n", str(tmp_path / "s.pdf"))
+
+#-------------------------------------------------------------------------------------- Frontmatter
+
+@needs_fitz
+def banner_prints_id_and_version_as_written(tmp_path):
+  path = str(tmp_path / "v.pdf")
+  md_to_pdf("---\ntitle: T\nid: 0012\nversion: 1.10\n---\n\nBody.\n", path)
+  words = [w[4] for w in pdf_words(path)]
+  assert "0012" in words and "1.10" in words
+
+@pytest.mark.parametrize("heading, title, dropped", [
+  ("# Sp\\. z o\\.o\\.", "Sp. z o.o.", True), ("# **Sp. z o.o.**", "Sp. z o.o.", True),
+  ("# `pdfmarq` guide", "`pdfmarq` guide", True), ("# `pdfmarq` guide", "pdfmarq guide", True),
+  ("# Report $x^2$", "Report", False), ("# Report[^1]\n\n[^1]: Note.", "Report", False),
+  ("# Report ![logo](x.png)", "Report", False),
+])
+def repeated_title_drops_only_when_nothing_else_goes_with_it(tmp_path, heading, title, dropped):
+  # parsed by the engine, with its math and footnote plugins
+  from pdfmarq.paper.render import _skip_matching_h1
+  tokens = MarkdownRenderer(PDF(str(tmp_path / "t.pdf"))).parse(heading + "\n\nBody.\n")
+  assert (len(_skip_matching_h1(tokens, title)) < len(tokens)) == dropped

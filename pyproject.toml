@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmarq"
-version = "0.6.0"
+version = "0.6.1"
 description = "PDF generation library with fluent API and optional markdown support"
 readme = "readme.md"
 license = "MIT"
@@ -20,9 +20,9 @@ highlight = ["Pygments"]
 markdown = ["markdown-it-py"]
 math = ["matplotlib"]
 mathjax = []
-md = ["PyYAML", "Pygments", "emoji", "fonttools", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pyphen"]
+md = ["Jinja2>=3.1.6", "PyYAML", "Pygments", "emoji", "fonttools", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pyphen"]
 mermaid = []
-all = ["PyYAML", "Pygments", "emoji", "fonttools", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pyphen"]
+all = ["Jinja2>=3.1.6", "PyYAML", "Pygments", "emoji", "fonttools", "markdown-it-py", "matplotlib", "mdit-py-emoji", "mdit-py-plugins", "pyphen"]
 
 [project.urls]
 Repository = "https://github.com/Xaeian/PDFMarQ"

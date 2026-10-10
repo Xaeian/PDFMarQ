@@ -143,16 +143,9 @@ def _mmdc_css_with_font(ttf_path:Path, family:str) -> str:
   )
 
 def _puppeteer_config() -> str|None:
-  """Path to a puppeteer config for mmdc, from the environment.
-
-  `PDFMARQ_MMDC_PUPPETEER_CONFIG` is the documented name;
-  the `XAEIAN_*` spelling is accepted as an alias.
-  """
-  for name in ("PDFMARQ_MMDC_PUPPETEER_CONFIG", "XAEIAN_MMDC_PUPPETEER_CONFIG"):
-    val = os.environ.get(name)
-    if val and Path(val).exists():
-      return val
-  return None
+  """Path to a puppeteer config for mmdc, from `PDFMARQ_MMDC_PUPPETEER_CONFIG`."""
+  val = os.environ.get("PDFMARQ_MMDC_PUPPETEER_CONFIG")
+  return val if val and Path(val).exists() else None
 
 #----------------------------------------------------------------------------- Backend: mermaid-cli
 

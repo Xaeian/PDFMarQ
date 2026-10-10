@@ -50,7 +50,7 @@ __extras__ = ("md", [
 from .markdown_style import MarkdownStyle
 from .markdown import MarkdownRenderer, top_blocks
 from .md_frontmatter import (split_frontmatter, peek_frontmatter, metadata_from_frontmatter,
-  pdf_metadata)
+  pdf_metadata, read_yaml)
 from .presets import lang_style, LANG_PRESETS
 from .md_html import is_pagebreak_directive, is_group_open_directive
 
@@ -60,6 +60,7 @@ __all__ = [
   "top_blocks",
   "split_frontmatter",
   "peek_frontmatter",
+  "read_yaml",
   "metadata_from_frontmatter",
   "pdf_metadata",
   "lang_style",

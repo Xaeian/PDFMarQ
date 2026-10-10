@@ -31,6 +31,8 @@ pdf = PDF("out.pdf", font_dir="./fonts")
 pdf.add_font("Barlow").add_font("Barlow", "Bold")
 pdf.add_font("Barlow", "Italic")
 pdf.font("Barlow", 14, "Bold").text("Custom font")
+# A face from any folder, under a family name of your choice
+pdf.fonts.register_file("DejaVuSans", "Bold", "assets/DejaVuSans-Bold.ttf")
 # Partial updates - only change what you need
 pdf.font("Helvetica", 16, "Bold").text("Title")
 pdf.font(size=11, mode="Regular").text("Body")
@@ -52,6 +54,8 @@ pdf.next_frame()       # next column, or a new page after the last one
 # Read current position
 pdf.x, pdf.y           # cursor mm
 pdf.content_width, pdf.content_height # frame area: the page minus margins, or the open column
+pdf.margin_left        # and margin_right, margin_top, margin_bot: the frame's, mm
+pdf.column_index       # column the cursor is in, from 0
 pdf.page_num           # current page number
 pdf.output_path        # destination file path
 ```
@@ -248,6 +252,7 @@ The engine draws content, a document package lays out the page:
 - [`pdfmarq.md`](md/readme.md): the engine, markdown into the current frame
 - [`pdfmarq.paper`](paper/readme.md): documentation with a frontmatter banner
 - [`pdfmarq.legal`](legal/readme.md): letters, statements, contracts, parallel versions
+- [`pdfmarq.merge`](merge/readme.md): a markdown template filled with one record, or one per record of a table
 
 ```py
 from pdfmarq import A4

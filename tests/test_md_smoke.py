@@ -2,6 +2,7 @@
 
 """Markdown rendering smoke: feed small samples through `md_to_pdf`, verify valid PDF."""
 
+from pathlib import Path
 import pytest
 from conftest import assert_valid_pdf
 from pdfmarq.paper import md_to_pdf, PaperStyle
@@ -146,14 +147,40 @@ def tagged_block_renders_with_its_own_label(tmp_path):
   assert "(X1.1)" in text, f"tag label missing from page: {text!r}"
   assert "(1)" not in text, "auto number printed alongside an explicit tag"
 
-def math_with_no_engine_says_so(tmp_path, monkeypatch, capsys):
-  # no MathJax and no matplotlib: formulas stay as code, and stderr names the package
+def math_with_no_engine_says_so(tmp_path, monkeypatch):
+  # no MathJax and no matplotlib: formulas stay as code, and a warning names the package
   import pdfmarq.md.math as math, pdfmarq.md.mathjax as mathjax
   from pdfmarq._warn import reset_warnings
   monkeypatch.setattr(math, "_HAS_MATPLOTLIB", False)
   monkeypatch.setattr(mathjax, "available", lambda: False)
   reset_warnings()
   path = tmp_path / "plain.pdf"
-  md_to_pdf("$$\nE = mc^2\n$$\n\nInline $x^2$ too.\n", str(path))
+  with pytest.warns(RuntimeWarning, match="pip install matplotlib") as caught:
+    md_to_pdf("$$\nE = mc^2\n$$\n\nInline $x^2$ too.\n", str(path))
   assert_valid_pdf(path)
-  assert "pip install matplotlib" in capsys.readouterr().err
+  # the warning points at the line that asked for the document, not into the library
+  assert {Path(w.filename).name for w in caught if "matplotlib" in str(w.message)} == {
+    Path(__file__).name}
+
+def default_fonts_draw_polish(tmp_path):
+  # DejaVu comes from the system or from matplotlib.
+  # Vera and Courier would draw ą ę ś ź ż ń as boxes.
+  pytest.importorskip("matplotlib")
+  fitz = pytest.importorskip("fitz")
+  path = tmp_path / "pl.pdf"
+  md_to_pdf("Letters ą ę ś ź ż ń, `code: ą ę ś`\n\n```\nblock: ź ż ń\n```\n", str(path))
+  page = fitz.open(str(path))[0]
+  text = page.get_text()
+  assert "Letters ą ę ś ź ż ń" in text and "block: ź ż ń" in text and "\x00" not in text
+  assert {font[3].split("+")[-1] for font in page.get_fonts()} >= {"DejaVuSans", "DejaVuSansMono"}
+
+def fonts_are_read_once_per_process(tmp_path, monkeypatch):
+  # a series of documents would otherwise parse every face again for each one
+  import pdfmarq.fonts as fonts
+  read = []
+  real = fonts.TTFont
+  monkeypatch.setattr(fonts, "TTFont", lambda name, path: read.append(path) or real(name, path))
+  monkeypatch.setattr(fonts, "_TTF", {})
+  for i in range(3):
+    md_to_pdf("Letters ą ę `code`.\n", str(tmp_path / f"{i}.pdf"))
+  assert read and len(read) == len(set(read))

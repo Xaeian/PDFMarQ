@@ -247,7 +247,7 @@ def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
 
 _hyphenators: dict[str, object] = {}
 
-def _hyphenator(lang:str):
+def hyphenator(lang:str):
   """
   `pyphen` patterns of `lang`, or `None` without `pyphen`, which warns once per language.
   A language with no patterns raises: the style named it, so that is a mistake.
@@ -278,7 +278,7 @@ def _hyphen_split(
   if not seg.hyphenate or seg.bg_color is not None or seg.link_url or seg.link_target: return None
   match = _SPLITTABLE.fullmatch(word.text)
   if not match or len(match[2]) < _HYPHEN_MIN or match[2].isupper(): return None
-  patterns = _hyphenator(seg.hyphenate)
+  patterns = hyphenator(seg.hyphenate)
   if patterns is None: return None
   lead, letters, trail = match.groups()
   size = _effective_size(seg)

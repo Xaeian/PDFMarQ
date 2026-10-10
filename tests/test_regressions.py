@@ -228,6 +228,42 @@ class TestFrontmatterWarning(unittest.TestCase):
     self.assertEqual("Test", data["title"])
     self.assertEqual([], [w for w in caught if "frontmatter" in str(w.message)])
 
+  def test_values_stay_as_written(self):
+    """YAML 1.1 types would print `id: 0012` as 10 and `version: 1.10` as 1.1."""
+    data, _ = split_frontmatter("---\nid: 0012\nversion: 1.10\ntime: 12:30\ncountry: NO\n"
+      "draft: false\nref:\n---\n\nBody.\n")
+    self.assertEqual({"id": "0012", "version": "1.10", "time": "12:30", "country": "NO",
+      "draft": False, "ref": None}, data)
+
+  def test_strict_raises(self):
+    with self.assertRaises(ValueError):
+      split_frontmatter("---\ndate: {{ day }}\n---\n\nBody.\n", strict=True)
+
+  def test_strict_without_pyyaml_raises(self):
+    from unittest import mock
+    missing = ModuleNotFoundError("No module named 'yaml'")
+    with mock.patch("pdfmarq.md.md_frontmatter.read_yaml", side_effect=missing):
+      with self.assertRaises(ModuleNotFoundError):
+        split_frontmatter("---\ntitle: T\n---\n\nBody.\n", strict=True)
+
+  def test_dates_stay_dates_and_nothing_is_none(self):
+    """Dates and times stay typed, and `null` and `~` mean no value."""
+    from datetime import date, datetime
+    data, _ = split_frontmatter("---\nat: 2026-10-07T10:00:00\nday: 2026-10-07\n"
+      "a: null\nb: ~\n---\n\nBody.\n")
+    self.assertEqual({"at": datetime(2026, 10, 7, 10, 0), "day": date(2026, 10, 7),
+      "a": None, "b": None}, data)
+
+  def test_aliases_are_refused(self):
+    """A few lines of aliases can stand for gigabytes of text."""
+    with self.assertRaises(ValueError):
+      split_frontmatter("---\na: &x [1]\nb: *x\n---\n\nBody.\n", strict=True)
+
+  def test_byte_order_mark_leads_frontmatter(self):
+    data, rest = split_frontmatter("\ufeff---\ntitle: T\n---\n\nBody.\n")
+    self.assertEqual({"title": "T"}, data)
+    self.assertEqual("Body.\n", rest)
+
 #------------------------------------------------------------------------------------------ Anchors
 
 class TestAnchors(TempPDFCase):

@@ -3,14 +3,13 @@
 """Font auto-registration for `MarkdownRenderer`.
 
 Tries DejaVu Sans/Mono from common system paths (Linux, Homebrew, Windows),
-falls back to Vera bundled with reportlab. Updates `MarkdownStyle` defaults
-only when the user has not overridden the family.
+then the copy matplotlib ships, which the `[md]` extra installs.
+Falls back to Vera bundled with reportlab, which has no ą ę ś ź ż ń.
+Updates `MarkdownStyle` defaults only when the user has not overridden the family.
 """
 
 import os
 import reportlab
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from .markdown_style import MarkdownStyle
 
 #---------------------------------------------------------------------------------------- Constants
@@ -27,6 +26,14 @@ _FONT_DIRS = [
   "C:/Windows/Fonts",
 ]
 
+def _font_dirs() -> list[str]:
+  """`_FONT_DIRS`, then matplotlib's DejaVu: a system without DejaVu, as Windows, still gets it."""
+  try:
+    import matplotlib # optional, and the math setup loads it anyway
+  except ImportError:
+    return _FONT_DIRS
+  return [*_FONT_DIRS, os.path.join(matplotlib.get_data_path(), "fonts", "ttf")]
+
 #--------------------------------------------------------------------------------------- FontsMixin
 
 class FontsMixin:
@@ -42,12 +49,13 @@ class FontsMixin:
         mode: os.path.join(base, tmpl.format(family=family))
         for mode, tmpl in _FONT_FILES.items()
       }
+    dirs = _font_dirs()
     sans_candidates = [
-      ("DejaVuSans", family_paths("DejaVuSans", d)) for d in _FONT_DIRS
+      ("DejaVuSans", family_paths("DejaVuSans", d)) for d in dirs
     ]
     sans_candidates.append(("Vera", self._vera_paths()))
     mono_candidates = [
-      ("DejaVuSansMono", family_paths("DejaVuSansMono", d)) for d in _FONT_DIRS
+      ("DejaVuSansMono", family_paths("DejaVuSansMono", d)) for d in dirs
     ]
     sans_name = self._try_register_family(sans_candidates)
     mono_name = self._try_register_family(mono_candidates)
@@ -81,16 +89,8 @@ class FontsMixin:
         continue
       registered_any = False
       for mode, path in mode_paths.items():
-        key = f"{family_name}-{mode}"
-        if key in fm._registered:
-          registered_any = True
-          continue
-        if not path or not os.path.exists(path):
-          continue
         try:
-          pdfmetrics.registerFont(TTFont(key, path))
-          fm._registered.add(key)
-          fm._paths[key] = path
+          fm.register_file(family_name, mode, path) # a missing file raises, as a broken one does
           registered_any = True
         except Exception:
           pass

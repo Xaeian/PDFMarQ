@@ -47,7 +47,7 @@ from .md_footnotes import FootnotesMixin
 from .md_frontmatter import split_frontmatter
 from .md_plugins import sup_plugin, mark_plugin
 from .._warn import caller_level, warn_missing
-from ..inline import _hyphenator
+from ..inline import hyphenator
 from . import md_html
 
 #--------------------------------------------------------------------------------- MarkdownRenderer
@@ -66,7 +66,7 @@ class MarkdownRenderer(
         f"not {pdf.unit!r}")
     self.pdf = pdf
     self.style = style or MarkdownStyle()
-    if self.style.hyphenate: _hyphenator(self.style.hyphenate) # an unknown language fails here
+    if self.style.hyphenate: hyphenator(self.style.hyphenate) # an unknown language fails here
     # Root for resolving relative image paths.
     self.base_dir = base_dir or os.getcwd()
     # Auto-register default fonts before the first draw.
@@ -301,7 +301,7 @@ class MarkdownRenderer(
   def _reset_stroke(self):
     """Reset canvas stroke and fill to black.
     Prevents color leaks from link underlines and coloured rects bleeding into later elements."""
-    c = self.pdf._canvas
+    c = self.pdf.c
     c.setStrokeColor(Color(0, 0, 0))
     c.setFillColor(Color(0, 0, 0))
     c.setLineWidth(1)

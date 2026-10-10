@@ -32,10 +32,10 @@ def in_mm():
 def frame_is_a_narrower_page(pdf):
   pdf.columns(2, gap=10)
   assert pdf.content_width == pytest.approx(80)
-  assert pdf._page.margin_left == pytest.approx(20)
+  assert pdf.margin_left == pytest.approx(20)
   pdf.column(1)
   assert pdf.content_width == pytest.approx(80)
-  assert pdf._page.margin_left == pytest.approx(110)
+  assert pdf.margin_left == pytest.approx(110)
 
 def region_starts_at_current_height(pdf):
   pdf.cursor(0, 40)
@@ -71,8 +71,8 @@ def columns_without_width_are_refused(pdf):
 def margin_keeps_the_gutter(tmp_path):
   pdf = PDF(str(tmp_path / "gutter.pdf"), margin=20, gutter=8)
   pdf.margin(15)
-  assert pdf._page.margin_left == pytest.approx(23)
-  assert pdf._page.margin_right == pytest.approx(15)
+  assert pdf.margin_left == pytest.approx(23)
+  assert pdf.margin_right == pytest.approx(15)
 
 def column_keeps_height(pdf):
   pdf.columns(2, gap=10, flow=False)
@@ -101,9 +101,9 @@ def center_is_the_page_axis_without_columns(pdf):
 def next_frame_moves_to_next_column_then_page(pdf):
   pdf.columns(2, gap=10)
   pdf.next_frame()
-  assert (pdf._columns.index, pdf.page_num) == (1, 1)
+  assert (pdf.column_index, pdf.page_num) == (1, 1)
   pdf.next_frame()
-  assert (pdf._columns.index, pdf.page_num) == (0, 2)
+  assert (pdf.column_index, pdf.page_num) == (0, 2)
 
 def next_frame_without_columns_is_new_page(pdf):
   pdf.next_frame()
@@ -112,7 +112,7 @@ def next_frame_without_columns_is_new_page(pdf):
 def parallel_next_frame_does_nothing(pdf):
   pdf.columns(2, gap=10, flow=False)
   pdf.cursor(0, 30).next_frame()
-  assert (pdf._columns.index, pdf.page_num, pdf.y) == (0, 1, 30)
+  assert (pdf.column_index, pdf.page_num, pdf.y) == (0, 1, 30)
 
 def new_page_drops_the_height_cap(pdf):
   pdf.columns(2, gap=10, height=50)
@@ -155,7 +155,7 @@ def markdown_flows_through_both_columns(tmp_path, in_mm):
 def inset_narrows_the_frame(pdf):
   pdf.cursor(0, 30).inset(left=10, right=25)
   assert pdf.content_width == pytest.approx(135)
-  assert pdf._page.margin_left == pytest.approx(30)
+  assert pdf.margin_left == pytest.approx(30)
   assert pdf.y == 0
 
 def inset_closes_below_what_was_drawn(pdf):

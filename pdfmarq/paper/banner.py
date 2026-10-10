@@ -218,8 +218,8 @@ class Banner:
     s = self.style
     c = pdf.c
     y = pdf.y
-    x_left_pt = (pdf._page.margin_left + x_offset) * MM_TO_PT
-    badge_baseline_y_pt = (pdf.page_height - pdf._page.margin_top - y - s.banner_id_size
+    x_left_pt = (pdf.margin_left + x_offset) * MM_TO_PT
+    badge_baseline_y_pt = (pdf.page_height - pdf.margin_top - y - s.banner_id_size
       / MM_TO_PT * 0.7) * MM_TO_PT
     code_baseline_y_pt = badge_baseline_y_pt + 0.5 * MM_TO_PT
     badge_w_pt = 0
@@ -231,7 +231,7 @@ class Banner:
       self._draw_code_inline(c, str(doc_id), font, s.banner_id_size, x_left_pt + badge_w_pt + gap,
         code_baseline_y_pt, anchor="left")
     if version:
-      x_right_pt = (pdf._page.margin_left + x_offset + width) * MM_TO_PT
+      x_right_pt = (pdf.margin_left + x_offset + width) * MM_TO_PT
       font = pdf.fonts.register(s.font_mono, s.mono_mode)
       self._draw_code_inline(c, str(version), font, s.banner_version_size, x_right_pt,
         code_baseline_y_pt, anchor="right")
@@ -301,8 +301,8 @@ class Banner:
     line_h_pt = s.banner_compact_size * 1.25
     line1_y_pt = (pdf.page_height - y_top_mm - s.banner_compact_size / MM_TO_PT * 0.7) * MM_TO_PT
     line2_y_pt = line1_y_pt - line_h_pt
-    x_left_pt = pdf._page.margin_left * MM_TO_PT
-    x_right_pt = (pdf.page_width - pdf._page.margin_right) * MM_TO_PT
+    x_left_pt = pdf.margin_left * MM_TO_PT
+    x_right_pt = (pdf.page_width - pdf.margin_right) * MM_TO_PT
     sep_y_pt = line2_y_pt - 4
     # ---- LEFT: logo + (id top, title bottom) ----
     cursor_x = x_left_pt

@@ -73,9 +73,8 @@ class Probe:
     pdf.cursor(0, start)
     pdf.columns(region.count, gap=region.gap, height=height)
     renderer.render_tokens(region.part)
-    columns = pdf._columns # `None` for a single column
     # the columns filled before this one, then what this one holds
-    filled = (columns.index if columns else 0) * pdf.content_height + pdf.y
+    filled = pdf.column_index * pdf.content_height + pdf.y
     pdf.columns(1)
     return pdf.page_num, pdf.y, filled
 
