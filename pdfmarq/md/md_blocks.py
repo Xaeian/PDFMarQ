@@ -15,6 +15,7 @@ from ..inline import RichSegment, render_rich, measure_rich, wrap_line_heights
 from ..constants import Align, MM_TO_PT
 from .md_images import (ImageDSL, ImageInfo, apply_dsl, load_image_info,
   size_block, size_inline, parse_image_dsl)
+from .mermaid import render_mermaid
 from ..graphics import load_svg
 
 #---------------------------------------------------------------------------------- Image paragraph

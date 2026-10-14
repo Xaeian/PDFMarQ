@@ -162,6 +162,13 @@ def math_with_no_engine_says_so(tmp_path, monkeypatch):
   assert {Path(w.filename).name for w in caught if "matplotlib" in str(w.message)} == {
     Path(__file__).name}
 
+def mermaid_block_reaches_its_renderer(tmp_path):
+  # with no mmdc and the network off the diagram stays a code block, which still has to draw
+  path = tmp_path / "mermaid.pdf"
+  md_to_pdf("```mermaid\nflowchart LR\n  A --> B\n```\n", str(path),
+    style=PaperStyle(mermaid_remote=False))
+  assert_valid_pdf(path)
+
 def default_fonts_draw_polish(tmp_path):
   # DejaVu comes from the system or from matplotlib.
   # Vera and Courier would draw ą ę ś ź ż ń as boxes.

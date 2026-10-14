@@ -25,7 +25,7 @@ Example:
 
 __extras__ = ("markdown", ["markdown-it-py"])
 
-import os, warnings
+import io, os, warnings
 try:
   from markdown_it import MarkdownIt
   from markdown_it.token import Token
@@ -49,6 +49,9 @@ from .md_plugins import sup_plugin, mark_plugin
 from .._warn import caller_level, warn_missing
 from ..inline import hyphenator
 from . import md_html
+
+_OFF_PAGE_SIDE_MM = 10 # margin of an off-page sheet, which heights do not depend on
+_OFF_PAGE_TALL_MM = 5000 # an off-page sheet taller than any part it measures
 
 #--------------------------------------------------------------------------------- MarkdownRenderer
 
@@ -151,6 +154,24 @@ class MarkdownRenderer(
     md_text = self._emojize_outside_code(md_text)
     md_text = normalize_math_delimiters(md_text)
     return self._md.parse(md_text)
+
+  @classmethod
+  def off_page(
+    cls,
+    width:float,
+    style:MarkdownStyle,
+    base_dir:str|None,
+    font_dir:str,
+    height:float|None = None,
+  ) -> "MarkdownRenderer":
+    """
+    The engine on an off-page sheet whose content area is `width` × `height` mm,
+    taller than any part it measures without `height`.
+    What it draws there takes the room it takes on the page, so a layout measures with it.
+    """
+    pdf = PDF(io.BytesIO(), width=width + 2 * _OFF_PAGE_SIDE_MM,
+      height=height or _OFF_PAGE_TALL_MM, margin=(0, _OFF_PAGE_SIDE_MM), font_dir=font_dir)
+    return cls(pdf, style, base_dir)
 
   def index(self, tokens:list[Token], prefix:str=""):
     """
@@ -345,43 +366,28 @@ class MarkdownRenderer(
     )
     return len(tokens)
 
-  def _estimate_group_height(self, tokens:list[Token]) -> float:
-    """Sum estimated heights of top-level blocks in a group.
-    Approximate (tighter or looser than real layout);
-    sufficient for a binary fits-remaining-space decision."""
-    s = self.style
-    total = 0.0
-    paired = {
-      "paragraph_open": "paragraph_close",
-      "heading_open": "heading_close",
-      "bullet_list_open": "bullet_list_close",
-      "ordered_list_open": "ordered_list_close",
-      "blockquote_open": "blockquote_close",
-      "table_open": "table_close",
-      "footnote_block_open": "footnote_block_close",
-      "dl_open": "dl_close",
-    }
-    leaf = {"fence", "code_block", "math_block", "hr"}
-    i = 0
-    while i < len(tokens):
-      t = tokens[i]
-      ttype = t.type
-      if ttype in paired:
-        close_i = self._find_close(tokens, i, ttype, paired[ttype])
-        total += self._estimate_next_block(tokens, i) + s.para_gap
-        i = close_i + 1
-      elif ttype in leaf:
-        total += self._estimate_next_block(tokens, i) + s.para_gap
-        i += 1
-      else:
-        i += 1
-    return total
+  def _group_height(self, tokens:list[Token]) -> float:
+    """
+    Height (mm) `tokens` take from the cursor, drawn off the page in a frame as wide as this one.
+    A long table or listing counts in full, as it will draw.
+    """
+    probe = self.off_page(self.pdf.content_width - self._indent_mm, self.style, self.base_dir,
+      str(self.pdf.fonts.font_dir))
+    probe._in_group = True # inner blocks skip their own pre-break, as on the page
+    # links and formula numbers as the page has them, so they take the same width
+    probe._known_slugs, probe._anchors = self._known_slugs, self._anchors
+    probe._eq_counter = self._eq_counter
+    probe.pdf.cursor(0, self.pdf.y)
+    probe._render_tokens(tokens)
+    return probe.pdf.y - self.pdf.y
 
   def _render_group(self, tokens:list[Token]):
-    """Render group content; pre-break if it doesn't fit but a fresh page would.
-    Sets `_in_group` so inner blocks skip their own pre-break."""
+    """
+    Render a group, on the next page when it misses the rest of this one but fits a whole page.
+    `_in_group` makes the blocks inside skip their own pre-break.
+    """
     if not tokens: return
-    total_h = self._estimate_group_height(tokens)
+    total_h = self._group_height(tokens)
     remaining = self.pdf.content_height - self.pdf.y
     page_avail = self.pdf.content_height
     if total_h > remaining and total_h <= page_avail and self.pdf.y > 0.5:

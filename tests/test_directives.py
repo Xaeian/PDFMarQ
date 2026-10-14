@@ -4,7 +4,7 @@
 
 import warnings
 import pytest
-from conftest import assert_valid_pdf, assert_valid_docx, needs_twin
+from conftest import assert_valid_pdf, assert_valid_docx, needs_twin, needs_fitz
 from pdfmarq.paper import md_to_pdf
 from pdfmarq.md.md_html import (
   is_pagebreak_directive, is_group_open_directive, is_group_close_directive,
@@ -109,6 +109,27 @@ def group_oversized_renders_without_break(tmp_path):
   pdf = md_to_pdf(src, str(path))
   assert pdf.page_num >= 2
   assert_valid_pdf(path)
+
+@needs_fitz
+@pytest.mark.parametrize("block", ["table", "code"])
+def group_keeps_a_long_block_with_its_caption(tmp_path, block):
+  # measured whole, not by its first rows: the caption never stays behind, nor moves for nothing
+  import fitz
+  if block == "table":
+    lines, last = ["| A | B |", "|---|---|", *(f"| row {i} | x |" for i in range(1, 16))], "row 15"
+  else:
+    lines, last = ["```", *(f"line_{i} = {i}" for i in range(1, 21)), "```"], "line_20"
+  body = "\n".join(lines)
+  for count in (14, 18, 22, 26):
+    text = "\n\n".join(f"Paragraph {i} of filler text that takes a line or two."
+      for i in range(count))
+    path = str(tmp_path / f"{block}-{count}.pdf")
+    md_to_pdf(f"{text}\n\n<!-- group -->\nCaption.\n\n{body}\n<!-- /group -->\n", path)
+    pages = [page.get_text() for page in fitz.open(path)]
+    caption = next(n for n, text in enumerate(pages) if "Caption." in text)
+    end = next(n for n, text in enumerate(pages) if last in text)
+    assert caption == end, f"{block} after {count} paragraphs: caption on {caption}, end on {end}"
+    if count == 14: assert caption == 0, f"{block} moved to a new page though it fits"
 
 @needs_twin
 def group_docx_sets_keep_with_next(tmp_path):

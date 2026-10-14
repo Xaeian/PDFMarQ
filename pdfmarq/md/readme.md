@@ -29,6 +29,7 @@ A package that lays out the page itself works in steps:
   `index(tokens, prefix="v2-")` keeps the anchors of one of several documents in a file apart from those of the others
 - `renderer.render_tokens(tokens[a:b])` draws any slice into the current frame
 - `renderer.render_tokens(part, style)` sets that part in a style of its own; heading slugs and equation numbers run on across parts
+- `MarkdownRenderer.off_page(width, style, base_dir, font_dir)` is the engine on an off-page sheet, measuring a part before it is drawn
 - `renderer.resolve_path(src)` resolves a path against `base_dir`
 - `renderer.frontmatter_file(fm, key)` gives the file a frontmatter key names, warning when it is missing
 

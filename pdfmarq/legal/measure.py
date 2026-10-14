@@ -7,15 +7,11 @@ A probe draws with the same engine, style and fonts as the real document, from t
 in a frame of the same width, so what it measures is what gets drawn.
 Column balancing and the parallel layout both decide their page breaks from it.
 """
-import io
 from dataclasses import dataclass
 from markdown_it.token import Token
 from ..core import PDF
 from ..layout import Columns
 from ..md import MarkdownRenderer, MarkdownStyle
-
-_SIDE_MM = 10 # margin of an off-page sheet; heights do not depend on it
-_TALL_MM = 5000 # an off-page sheet taller than any part it measures
 
 @dataclass
 class Region:
@@ -43,7 +39,7 @@ class Probe:
     """
     renderer = self._tall.get(width)
     if renderer is None:
-      renderer = self._tall[width] = self._renderer(width, _TALL_MM)
+      renderer = self._tall[width] = self._renderer(width)
     renderer.pdf.cursor(0, y)
     renderer.render_tokens(part)
     return renderer.pdf.y - y
@@ -78,11 +74,9 @@ class Probe:
     pdf.columns(1)
     return pdf.page_num, pdf.y, filled
 
-  def _renderer(self, width:float, height:float) -> MarkdownRenderer:
-    """Engine on a fresh off-page sheet whose content area is `width` × `height` mm."""
-    pdf = PDF(io.BytesIO(), width=width + 2 * _SIDE_MM, height=height,
-      margin=(0, _SIDE_MM), font_dir=self.font_dir)
-    renderer = MarkdownRenderer(pdf, self.style, self.base_dir)
+  def _renderer(self, width:float, height:float|None=None) -> MarkdownRenderer:
+    """The engine off the page, `width` mm wide, knowing the headings of the whole document."""
+    renderer = MarkdownRenderer.off_page(width, self.style, self.base_dir, self.font_dir, height)
     renderer.index(self.tokens)
     return renderer
 

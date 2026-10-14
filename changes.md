@@ -5,7 +5,9 @@
 - `pdfmarq.merge`: templates filled from one record or a table
 - `PDF` margins, `column_index` and `fonts.register_file`
 - Messages only through `warnings`
-- Fixes across Polish letters, frontmatter and titles
+- Fix: mermaid diagrams failed to render
+- Fix: long tables and listings split from their group
+- Fix: Polish letters, frontmatter and titles
 
 ## `0.6.0` Legal documents
 
