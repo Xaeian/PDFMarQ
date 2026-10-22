@@ -19,6 +19,11 @@ FIT_EPS_PT = 0.01
 # The break falls after one, so the delimiter stays with the chunk it closes.
 BREAK_CHARS = "/?&=._-:,;"
 
+# A word that fits once squeezed to this share of its width is never cut.
+# Whole, it runs a few percent past its box or shrinks that much where the box autoscales,
+# while a cut strands its last glyphs on a line of their own.
+WORD_SQUEEZE = 0.9
+
 def split_word(word:str, width_pt:float, measure:Callable[[str], float]) -> list[str]:
   """
   Cut `word` into chunks that each fit `width_pt`, as `measure` sizes them in pt.
@@ -173,7 +178,8 @@ class TextMetrics:
     the text is placed, but at that size nobody reads it.
 
     A word wider than the box shrinks the font only while it stays readable.
-    Past that, `split_word` cuts it, and `overflow` still reports it.
+    Past that, `split_word` cuts it, unless it fits squeezed to `WORD_SQUEEZE`.
+    Either way `overflow` reports it.
     """
     if text is None: text = ""
     current_size = size
@@ -199,11 +205,12 @@ class TextMetrics:
           if word_w > limit:
             word_overflow = True
             if shrink_word: break # a smaller size is tried before any word is cut
-            *chunks, word = split_word(word, width, measure)
-            if line.strip(): output.append(line.strip())
-            output.extend(chunks)
-            line, line_w = "", 0.0
-            word_w = measure(word)
+            if word_w * WORD_SQUEEZE > limit:
+              *chunks, word = split_word(word, width, measure)
+              if line.strip(): output.append(line.strip())
+              output.extend(chunks)
+              line, line_w = "", 0.0
+              word_w = measure(word)
           if line and line_w + word_w > limit:
             output.append(line.strip())
             line, line_w = "", 0.0

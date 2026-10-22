@@ -6,7 +6,7 @@ Line wrapping keeps text inside its box.
 Words spanning styled segments stay whole, and code keeps its indent.
 Inline-code padding counts toward the line.
 Table columns never squeeze short codes.
-`box_fit` cuts a long word rather than shrink it past legibility.
+`box_fit` cuts a long word rather than shrink it past legibility, and keeps one that nearly fits.
 """
 
 import re, warnings
@@ -179,6 +179,13 @@ def box_fit_breaks_oversized_word_and_wraps_the_rest():
   for line in lines:
     assert metrics.text_width(line, "Helvetica", "Regular", 12) <= 60 + FIT_EPS_PT
   assert "".join(lines).replace(" ", "") == text.replace(" ", "")
+
+def box_fit_keeps_a_word_that_nearly_fits():
+  # a column a hair narrower than its header must not strand the last letter on a line of its own
+  metrics = TextMetrics(FontManager())
+  width = metrics.text_width("Quantity", "Helvetica", "Bold", 11) * 0.98
+  fit = metrics.box_fit("Quantity", width, mode="Bold", size=11)
+  assert fit.text == "Quantity" and fit.overflow
 
 def box_fit_survives_a_box_narrower_than_its_padding():
   # a column narrower than its cell padding leaves a negative width, and a cell may be empty
