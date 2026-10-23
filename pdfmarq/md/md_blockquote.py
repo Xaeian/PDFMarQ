@@ -69,7 +69,7 @@ class BlockquoteMixin:
     last = len(quote) - 1
     # Pre-measure so the left bar (drawn post-factum) isn't split across a page break.
     content_w_mm = self.pdf.content_width - self._indent_mm - s.quote_pad
-    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    body_line_mm = s.line_mm(s.body_size)
     total_h = 0.0
     for tk in quote[1:last]:
       if tk.type == "inline":

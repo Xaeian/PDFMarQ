@@ -22,7 +22,7 @@ class EstimateMixin:
     if start >= len(tokens):
       return 0
     s = self.style
-    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    body_line_mm = s.line_mm(s.body_size)
     t = tokens[start]
     ttype = t.type
     if ttype == "paragraph_open":
@@ -66,7 +66,7 @@ class EstimateMixin:
         return s.image_max_h
       lines = (t.content or "").count("\n") + 1
       pad = s.code_block_pad * 2
-      return min(lines, 6) * (s.code_block_size * s.line_height / MM_TO_PT) + pad
+      return min(lines, 6) * s.line_mm(s.code_block_size) + pad
     if ttype == "math_block": return s.body_size * 2 / MM_TO_PT
     if ttype == "blockquote_open":
       end = self._find_close(tokens, start, "blockquote_open", "blockquote_close")
@@ -84,7 +84,7 @@ class EstimateMixin:
     nested blocks fall back to a 2-line approximation.
     """
     s = self.style
-    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    body_line_mm = s.line_mm(s.body_size)
     width = self.pdf.content_width - self._indent_mm - s.list_indent
     base = self._body_base()
     total = 0.0

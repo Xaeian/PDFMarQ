@@ -11,9 +11,10 @@ Minimums wider than the page cap the widest columns, so short cells stay whole.
 A table longer than a page splits, repeating the header on each continuation page.
 The header needs at least 2 body rows beside it, or it moves to a new page first.
 """
+from typing import NamedTuple
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
-from ..constants import Align, MM_TO_PT
+from ..constants import Align
 from ..utils import smaller_size
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
@@ -59,6 +60,144 @@ def _cap_widths(widths:list[float], total:float) -> list[float]:
     remaining -= w
     left -= 1
   return list(widths)
+
+#------------------------------------------------------------------------------------ Column layout
+
+class _Cell(NamedTuple):
+  """
+  What one cell asks of its column, in mm of content:
+  `low` the narrowest it fits in, `high` the widest it would use.
+  An image cell sets `image`, and `aspect`, its height over width, where it is known.
+  """
+  low: float
+  high: float
+  image: bool = False
+  aspect: float|None = None
+
+def _layout_columns(
+  rows:list[list[_Cell]], ncols:int, total:float, pad:float,
+  line_h:float, bias:float,
+) -> tuple[list[float], list[float]]:
+  """
+  HTML-style auto layout of the cells of `rows`, `pad` a side: `(col_widths, text_widths)` in mm.
+
+  Text and image contributions are tracked separately per column,
+  so an image-only row cannot pin the column max below what the text rows need.
+  Spare room goes to text columns only: growing an image column inflates its images.
+  A squeeze shrinks image columns too, and their `low` floors them at icon scale.
+  `_balance_image_cols` then trades width between a pure image column and a text one,
+  `line_h` being a text line's height and `bias` how much smaller than the text an image stays.
+  """
+  col_min_text = [0.0] * ncols
+  col_max_text = [0.0] * ncols
+  col_min_img = [0.0] * ncols
+  col_max_img = [0.0] * ncols
+  has_text = [False] * ncols
+  has_image = [False] * ncols
+  for cells in rows:
+    for i, cell in enumerate(cells[:ncols]):
+      if cell.image:
+        if cell.low > col_min_img[i]: col_min_img[i] = cell.low
+        if cell.high > col_max_img[i]: col_max_img[i] = cell.high
+        has_image[i] = True
+      else:
+        if cell.low > col_min_text[i]: col_min_text[i] = cell.low
+        if cell.high > col_max_text[i]: col_max_text[i] = cell.high
+        has_text[i] = True
+  col_min: list[float] = []
+  col_max: list[float] = []
+  for i in range(ncols):
+    cmin = max(col_min_img[i], col_min_text[i])
+    if has_text[i]:
+      cmax = max(col_max_text[i], col_min_img[i]) # text width, floored at image min
+    else:
+      cmax = col_max_img[i]
+    col_min.append(cmin)
+    col_max.append(cmax)
+  col_min = [m + 2 * pad for m in col_min]
+  col_max = [m + 2 * pad for m in col_max]
+  text_cols = [i for i in range(ncols) if not has_image[i]]
+  col_widths = _fit_columns(col_min, col_max, total, text_cols)
+  text_widths = [max(1.0, cw - 2 * pad) for cw in col_widths]
+  return _balance_image_cols(col_widths, text_widths, rows, has_image, has_text,
+    ncols, pad, col_min, line_h, bias)
+
+def _balance_image_cols(
+  col_widths:list[float],
+  text_width_mm:list[float],
+  rows:list[list[_Cell]],
+  is_image_col:list[bool],
+  has_text:list[bool],
+  ncols:int,
+  h_pad:float,
+  col_min:list[float],
+  line_h_mm:float,
+  bias:float,
+) -> tuple[list[float], list[float]]:
+  """Reflow widths so a pure-image col's height matches its widest text-col partner.
+  Mixed cols (both image and text rows) are skipped -
+  they need full text width and balancing would truncate text.
+
+  Per image col `i` paired with text col `j`:
+    image_h(w_i) = w_text_i × aspect_mean
+    text_h(w_j)  ≈ K / w_text_j  (K = total_text_w × line_h)
+  Budget constraint: w_i + w_j = const.
+  Equating heights yields a quadratic in w_i.
+  """
+  if not any(is_image_col) or ncols < 2:
+    return col_widths, text_width_mm
+  for ic in range(ncols):
+    if not is_image_col[ic]:
+      continue
+    if has_text[ic]:
+      continue # mixed col: text rows need full width
+    aspects = [row[ic].aspect for row in rows
+      if ic < len(row) and row[ic].image and row[ic].aspect is not None]
+    if not aspects: continue
+    aspect = sum(aspects) / len(aspects)
+    # Partner: widest non-image col (donor for width redistribution)
+    partners = [j for j in range(ncols) if j != ic and not is_image_col[j]]
+    if not partners: continue
+    tc = max(partners, key=lambda j: col_widths[j])
+    # K = text char-area of the widest row (total_text_w × line_h)
+    K = 0.0
+    for row in rows:
+      if tc >= len(row) or row[tc].image: continue
+      k = row[tc].high * line_h_mm
+      if k > K: K = k
+    if K <= 0: continue
+    # bias < 1 targets image_h = text_h × bias (smaller image for short text);
+    # equivalent to inflating K by 1/bias².
+    K = K / (bias ** 2)
+    budget = col_widths[ic] + col_widths[tc]
+    pad2 = 2 * h_pad
+    # Work in text widths directly: budget_text = (w_i + w_j) − 4·h_pad
+    budget_text = budget - 2 * pad2
+    if budget_text <= 0: continue
+    # quadratic: aspect·w_i² − aspect·budget_text·w_i + K = 0
+    a = aspect
+    b = -aspect * budget_text
+    c = K
+    disc = b*b - 4*a*c
+    if disc < 0:
+      # Text dominates, so the image takes its minimum width.
+      w_i_text = max(col_min[ic] - pad2, 1.0)
+    else:
+      w_i_text = (-b - disc**0.5) / (2 * a) # smaller root keeps image narrower
+    img_min_text = col_min[ic] - pad2
+    img_max_text = col_widths[ic] - pad2 # don't exceed linear-solver result
+    img_max_text = max(img_max_text, budget_text * 0.45) # allow growth for heavy text
+    w_i_text = max(img_min_text, min(w_i_text, img_max_text))
+    w_j_text = budget_text - w_i_text
+    partner_min_text = col_min[tc] - pad2 # partner must not shrink below its min
+    if w_j_text < partner_min_text:
+      w_j_text = partner_min_text
+      w_i_text = budget_text - w_j_text
+    col_widths[ic] = w_i_text + pad2
+    col_widths[tc] = w_j_text + pad2
+    text_width_mm[ic] = max(1.0, w_i_text)
+    text_width_mm[tc] = max(1.0, w_j_text)
+  return col_widths, text_width_mm
 
 #--------------------------------------------------------------------------------------- TableMixin
 class TableMixin:
@@ -192,7 +331,7 @@ class TableMixin:
     col_widths, text_width_mm = self._compute_col_widths(
       header_data, body_data, ncols, total_w, h_pad)
 
-    min_row_h = cell_size * s.line_height / MM_TO_PT + v_pad * 2
+    min_row_h = s.line_mm(cell_size) + v_pad * 2
     inline_cap_mm = s.inline_image_max_h
 
     def cell_height(cd:dict, text_w_mm:float) -> float:
@@ -296,150 +435,20 @@ class TableMixin:
     total_w:float,
     h_pad:float,
   ) -> tuple[list[float], list[float]]:
-    """HTML-style auto layout. Returns `(col_widths, text_width_mm)`.
-
-    Text and image contributions are tracked separately per column,
-    so an image-only row cannot pin the column max below what the text rows need.
-    """
-    pdf = self.pdf
+    """HTML-style auto layout by `_layout_columns`. Returns `(col_widths, text_width_mm)`."""
     s = self.style
-    col_min_text = [0.0] * ncols
-    col_max_text = [0.0] * ncols
-    col_min_img = [0.0] * ncols
-    col_max_img = [0.0] * ncols
-    has_text = [False] * ncols
-    has_image = [False] * ncols
-    all_rows: list[list[dict]] = []
-    if header_data:
-      all_rows.append(header_data)
-    all_rows.extend(body_data)
-    for cells in all_rows:
-      for i, cd in enumerate(cells):
-        if i >= ncols:
-          break
-        if cd["type"] == "image":
-          mw, tw = cell_intrinsic_w_mm(
-            cd["info"], s.inline_image_max_h, s.cell_image_max_w,
-            cell_image_scale=s.cell_image_scale,
-          )
-          if mw > col_min_img[i]: col_min_img[i] = mw
-          if tw > col_max_img[i]: col_max_img[i] = tw
-          has_image[i] = True
-        else:
-          mw, tw = measure_extent(pdf, cd["segs"])
-          if mw > col_min_text[i]: col_min_text[i] = mw
-          if tw > col_max_text[i]: col_max_text[i] = tw
-          has_text[i] = True
-    col_min: list[float] = []
-    col_max: list[float] = []
-    for i in range(ncols):
-      cmin = max(col_min_img[i], col_min_text[i])
-      if has_text[i]:
-        cmax = max(col_max_text[i], col_min_img[i]) # text width, floored at image min
-      else:
-        cmax = col_max_img[i]
-      col_min.append(cmin)
-      col_max.append(cmax)
-    col_min = [m + 2 * h_pad for m in col_min]
-    col_max = [m + 2 * h_pad for m in col_max]
-    is_image_col = has_image
-    # Spare room goes to text cols only: growing an image col inflates its images.
-    # A squeeze shrinks image cols too, and `col_min` floors them at icon scale.
-    text_cols = [i for i in range(ncols) if not is_image_col[i]]
-    col_widths = _fit_columns(col_min, col_max, total_w, text_cols)
-    text_width_mm = [max(1.0, cw - 2 * h_pad) for cw in col_widths]
-    # Redistribute width between image and text cols to equalise row heights.
-    col_widths, text_width_mm = self._balance_image_cols(
-      col_widths, text_width_mm, all_rows, is_image_col, has_text,
-      ncols, total_w, h_pad, col_min,
-    )
-    return col_widths, text_width_mm
-
-  def _balance_image_cols(
-    self,
-    col_widths:list[float],
-    text_width_mm:list[float],
-    all_rows:list[list[dict]],
-    is_image_col:list[bool],
-    has_text:list[bool],
-    ncols:int,
-    total_w:float,
-    h_pad:float,
-    col_min:list[float],
-  ) -> tuple[list[float], list[float]]:
-    """Reflow widths so a pure-image col's height matches its widest text-col partner.
-    Mixed cols (both image and text rows) are skipped -
-    they need full text width and balancing would truncate text.
-
-    Per image col `i` paired with text col `j`:
-      image_h(w_i) = w_text_i × aspect_mean
-      text_h(w_j)  ≈ K / w_text_j  (K = total_text_w × line_h)
-    Budget constraint: w_i + w_j = const.
-    Equating heights yields a quadratic in w_i.
-    """
-    if not any(is_image_col) or ncols < 2:
-      return col_widths, text_width_mm
-    pdf = self.pdf
-    s = self.style
+    def ask(cd:dict) -> _Cell:
+      """What one cell asks of its column: the extent of its text, or the range of its image."""
+      if cd["type"] != "image": return _Cell(*measure_extent(self.pdf, cd["segs"]))
+      info = cd["info"]
+      low, high = cell_intrinsic_w_mm(info, s.inline_image_max_h, s.cell_image_max_w,
+        cell_image_scale=s.cell_image_scale)
+      return _Cell(low, high, True, info.nat_h_mm / info.nat_w_mm if info.nat_w_mm > 0 else None)
+    every = ([header_data] if header_data else []) + body_data
+    rows = [[ask(cd) for cd in cells] for cells in every]
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
-    line_h_mm = cell_size * s.line_height / MM_TO_PT
-    for ic in range(ncols):
-      if not is_image_col[ic]:
-        continue
-      if has_text[ic]:
-        continue # mixed col: text rows need full width
-      aspects = []
-      for row in all_rows:
-        if ic < len(row) and row[ic]["type"] == "image":
-          info = row[ic]["info"]
-          if info.nat_w_mm > 0:
-            aspects.append(info.nat_h_mm / info.nat_w_mm)
-      if not aspects: continue
-      aspect = sum(aspects) / len(aspects)
-      # Partner: widest non-image col (donor for width redistribution)
-      partners = [j for j in range(ncols) if j != ic and not is_image_col[j]]
-      if not partners: continue
-      tc = max(partners, key=lambda j: col_widths[j])
-      # K = text char-area of the widest row (total_text_w × line_h)
-      K = 0.0
-      for row in all_rows:
-        if tc >= len(row) or row[tc]["type"] != "text": continue
-        _, text_w_mm = measure_extent(pdf, row[tc]["segs"])
-        k = text_w_mm * line_h_mm
-        if k > K: K = k
-      if K <= 0: continue
-      # bias < 1 targets image_h = text_h × bias (smaller image for short text);
-      # equivalent to inflating K by 1/bias².
-      K = K / (s.cell_image_balance_bias ** 2)
-      budget = col_widths[ic] + col_widths[tc]
-      pad2 = 2 * h_pad
-      # Work in text widths directly: budget_text = (w_i + w_j) − 4·h_pad
-      budget_text = budget - 2 * pad2
-      if budget_text <= 0: continue
-      # quadratic: aspect·w_i² − aspect·budget_text·w_i + K = 0
-      a = aspect
-      b = -aspect * budget_text
-      c = K
-      disc = b*b - 4*a*c
-      if disc < 0:
-        # Text dominates; give image its minimum width.
-        w_i_text = max(col_min[ic] - pad2, 1.0)
-      else:
-        w_i_text = (-b - disc**0.5) / (2 * a) # smaller root keeps image narrower
-      img_min_text = col_min[ic] - pad2
-      img_max_text = col_widths[ic] - pad2 # don't exceed linear-solver result
-      img_max_text = max(img_max_text, budget_text * 0.45) # allow growth for heavy text
-      w_i_text = max(img_min_text, min(w_i_text, img_max_text))
-      w_j_text = budget_text - w_i_text
-      partner_min_text = col_min[tc] - pad2 # partner must not shrink below its min
-      if w_j_text < partner_min_text:
-        w_j_text = partner_min_text
-        w_i_text = budget_text - w_j_text
-      col_widths[ic] = w_i_text + pad2
-      col_widths[tc] = w_j_text + pad2
-      text_width_mm[ic] = max(1.0, w_i_text)
-      text_width_mm[tc] = max(1.0, w_j_text)
-    return col_widths, text_width_mm
+    line_h = s.line_mm(cell_size)
+    return _layout_columns(rows, ncols, total_w, h_pad, line_h, s.cell_image_balance_bias)
 
   #--------------------------------------------------------------------------------- Chunk renderer
 

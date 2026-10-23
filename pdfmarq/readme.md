@@ -124,6 +124,7 @@ render_rich(pdf, segs, 80, 0, pdf.y, Align.JUSTIFY) # width, x, y in mm
 
 `render_rich` takes mm whatever `unit` the PDF was made with, as `pdf.x`, `pdf.y` and `content_width` give them, and so does the markdown engine.
 Each line is `line_gap` times its size tall, its letters in the middle: from the top of the capitals to the bottom of the descenders, as the font records them.
+Text placed by hand beside such a line finds its baseline with `centred_baseline(height, *pdf.metrics.letter_span(family, mode, size))`, in pt.
 A justified line resizes its spaces to meet the edge.
 It may tighten them to three quarters of their width to take one more word, as page layout programs do.
 Measure justified text with the same `align`: `pdfmarq.inline.wrap_line_heights(..., align=Align.JUSTIFY)`.
@@ -173,7 +174,7 @@ style = TableStyle(
   cell_pad_bot=0.6,
   font_size=10,
 )
-builder = TableBuilder(pdf._metrics, style)
+builder = TableBuilder(pdf.metrics, style)
 builder.header(["A", "B"]).rows([["a1", "b1"]]).columns([3, 2], ["L", "R"])
 data = builder.build(180, "Helvetica", "Regular", 11)
 ```

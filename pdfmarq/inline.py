@@ -287,9 +287,11 @@ def _units(words:list[_Word]) -> list[list[_Word]]:
   units: list[list[_Word]] = []
   for w in words:
     last = units[-1][-1] if units else None
+    # the space after a bound one-letter word, waiting for the word it joins
+    bound_space = len(units) > 1 and units[-1][0].is_space and _ends_bound(units[-2])
     if last and not (w.is_break or last.is_break) and w.is_space == last.is_space:
       units[-1].append(w)
-    elif len(units) > 1 and units[-1][0].is_space and not w.is_break and _ends_bound(units[-2]):
+    elif bound_space and not w.is_break:
       space = units.pop()
       units[-1] += space + [w] # the next word, joined to the one-letter word before it
     else:

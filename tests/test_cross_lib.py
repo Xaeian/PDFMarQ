@@ -192,6 +192,28 @@ def image_grid_parity(tmp_path, monkeypatch, count, rows):
   docx_w = [int(e.get("cx")) / 36000 for row in paras for e in row]
   assert pdf_w == pytest.approx(docx_w, abs=0.05), f"pdf={pdf_w} docx={docx_w}"
 
+@pytest.mark.parametrize("size", [(200, 100), (1200, 800)], ids=["half natural", "fills column"])
+def image_cell_parity(tmp_path, monkeypatch, size):
+  # a picture alone in a table cell takes the same size in both packages:
+  # half its natural one, or all a column holds inside the same padding
+  from PIL import Image
+  from docx import Document
+  from pdfmarq import PDF
+  Image.new("RGB", size, (100, 150, 200)).save(tmp_path / "pic.png")
+  md = "| A | B | C |\n|---|---|---|\n| ![](pic.png) | ![](pic.png) | ![](pic.png) |\n"
+  pdf_w = []
+  orig = PDF.image
+  def spy(self, src, w=None, h=None, *a, **k):
+    pdf_w.append(w)
+    return orig(self, src, w, h, *a, **k)
+  monkeypatch.setattr(PDF, "image", spy)
+  md_to_pdf(md, str(tmp_path / "cells.pdf"), base_dir=str(tmp_path))
+  md_to_docx(md, str(tmp_path / "cells.docx"), base_dir=str(tmp_path))
+  ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}ext"
+  table = Document(str(tmp_path / "cells.docx")).tables[0]._tbl
+  docx_w = [int(e.get("cx")) / 36000 for e in table.iter(ns)]
+  assert len(pdf_w) == 3 and pdf_w == pytest.approx(docx_w, abs=0.05), f"pdf={pdf_w} docx={docx_w}"
+
 def image_min_dpi_parity():
   assert PdfStyle().image_min_dpi == DocxStyle().image_min_dpi
 
@@ -300,9 +322,27 @@ def column_solver_is_identical():
   import inspect
   import pdfmarq.md.md_table as pdf_mod
   import docmarq.tables as doc_mod
-  for name in ("_fit_columns", "_cap_widths"):
+  for name in ("_fit_columns", "_cap_widths", "_Cell", "_layout_columns", "_balance_image_cols"):
     pdf_src = inspect.getsource(getattr(pdf_mod, name))
     assert pdf_src == inspect.getsource(getattr(doc_mod, name)), f"{name} drifted"
+
+def image_sizing_is_identical():
+  # an image in a line of text or in a table cell takes the same size in both packages
+  import inspect
+  import pdfmarq.md.md_images as pdf_mod
+  import docmarq.md.image_utils as doc_mod
+  for name in ("ImageInfo", "load_image_info", "_load_svg_dims", "_load_raster_dims",
+      "apply_dsl", "size_inline", "cell_intrinsic_w_mm", "size_cell", "_clamp_no_upscale",
+      "_explicit"):
+    pdf_src = inspect.getsource(getattr(pdf_mod, name))
+    assert pdf_src == inspect.getsource(getattr(doc_mod, name)), f"{name} drifted"
+
+def svg_markers_are_identical():
+  # both packages expand arrowheads with one module, so an arrow ends alike in both
+  import pdfmarq.svgmarkers as pdf_markers, docmarq.svgmarkers as doc_markers
+  sources = [Path(module.__file__).read_text(encoding="utf-8").split("\n", 1)[1]
+    for module in (pdf_markers, doc_markers)] # all but the line naming the file
+  assert sources[0] == sources[1]
 
 def round_two_helpers_are_identical():
   # the reading, dating, checking and warning helpers both packages carry

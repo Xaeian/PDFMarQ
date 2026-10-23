@@ -24,6 +24,7 @@ def tall_font(tmp_path) -> str:
   """
   Font directory holding `Tall-Regular.ttf`, which keeps room above its capitals as Barlow does:
   an ascender of 1000 units over capitals 700 tall and descenders 200 deep, each glyph a box.
+  `Capless-Regular.ttf` is the same font recording a cap height of 0, as some fonts do.
   """
   pytest.importorskip("fontTools")
   from fontTools.fontBuilder import FontBuilder
@@ -35,18 +36,22 @@ def tall_font(tmp_path) -> str:
       for point in ((50, top), (550, top), (550, bottom)): pen.lineTo(point)
       pen.closePath()
     return pen.glyph()
-  glyphs = {".notdef": box(0, 0), "H": box(0, 700), "p": box(-200, 500)}
-  build = FontBuilder(1000, isTTF=True)
-  build.setupGlyphOrder(list(glyphs))
-  build.setupCharacterMap({ord("H"): "H", ord("p"): "p"})
-  build.setupGlyf(glyphs)
-  build.setupHorizontalMetrics({name: (600, 50) for name in glyphs})
-  build.setupHorizontalHeader(ascent=1000, descent=-200)
-  build.setupNameTable({"familyName": "Tall", "styleName": "Regular", "psName": "Tall-Regular"})
-  build.setupOS2(sTypoAscender=1000, sTypoDescender=-200, sCapHeight=700, sxHeight=500,
-    usWinAscent=1000, usWinDescent=200)
-  build.setupPost()
-  build.save(str(tmp_path / "Tall-Regular.ttf"))
+  def save(family:str, cap:int):
+    glyphs = {".notdef": box(0, 0), "H": box(0, 700), "p": box(-200, 500)}
+    build = FontBuilder(1000, isTTF=True)
+    build.setupGlyphOrder(list(glyphs))
+    build.setupCharacterMap({ord("H"): "H", ord("p"): "p"})
+    build.setupGlyf(glyphs)
+    build.setupHorizontalMetrics({name: (600, 50) for name in glyphs})
+    build.setupHorizontalHeader(ascent=1000, descent=-200)
+    build.setupNameTable({"familyName": family, "styleName": "Regular",
+      "psName": f"{family}-Regular"})
+    build.setupOS2(sTypoAscender=1000, sTypoDescender=-200, sCapHeight=cap, sxHeight=500,
+      usWinAscent=1000, usWinDescent=200)
+    build.setupPost()
+    build.save(str(tmp_path / f"{family}-Regular.ttf"))
+  save("Tall", 700)
+  save("Capless", 0)
   return str(tmp_path)
 
 #--------------------------------------------------------------------------------------------- Line
@@ -71,6 +76,12 @@ def text_box_holds_its_lines_in_the_middle(tmp_path, tall_font, family):
     pdf.font(family, 20).text("Hp\nHp\nHp", width=100, height=50)
   box = (TOP_PT, TOP_PT + 50 * MM_TO_PT)
   assert sum(pdf_ink(path, (0, 0, 595, PAGE_H))) / 2 == pytest.approx(sum(box) / 2, abs=0.5)
+
+def zero_cap_height_falls_back_to_the_ascender(tall_font):
+  # a cap height of 0 would set the letters up off their line
+  metrics = PDF(io.BytesIO(), font_dir=tall_font).metrics
+  assert metrics.letter_span("Capless", "Regular", 1000) == pytest.approx((1000, 200))
+  assert metrics.letter_span("Tall", "Regular", 1000) == pytest.approx((700, 200))
 
 def empty_line_is_as_tall_as_its_text():
   # two hard breaks in a row leave a line with no words, still a line of the text around it

@@ -7,7 +7,7 @@ from markdown_it.token import Token
 from reportlab.lib.colors import Color
 from reportlab.lib.units import mm as _mm
 from ..inline import RichSegment, render_rich, measure_extent, wrap_line_heights
-from ..constants import Align, MM_TO_PT
+from ..constants import Align
 from .md_blocks import LIST_LEAD_MM, flow_head
 
 #----------------------------------------------------------------------------------- Item numbering
@@ -74,7 +74,7 @@ class ListMixin:
     # Keep-together: top-level list, if it fits an empty frame but not here → next frame.
     # Flowing text goes item by item instead, each item keeping its own marker.
     if self._list_depth == 0 and s.keep_together:
-      body_line_mm = s.body_size * s.line_height / MM_TO_PT
+      body_line_mm = s.line_mm(s.body_size)
       n_items = sum(
         1 for j in range(start, end + 1)
         if tokens[j].type == "list_item_open"
@@ -128,7 +128,7 @@ class ListMixin:
     if bullet:
       # Solid disc via canvas.circle - cleaner than glyph `•`,
       # in the middle of the first line, where `render_rich` centres the letters
-      line_mm = s.body_size * s.line_height / MM_TO_PT
+      line_mm = s.line_mm(s.body_size)
       cx_mm = self.pdf.margin_left + x_prefix + 1.5
       cy_mm = self.pdf.page_height - self.pdf.margin_top - (y_item + line_mm / 2)
       canvas = self.pdf.c
@@ -170,7 +170,7 @@ class ListMixin:
     s = self.style
     if column is None:
       column = s.list_indent
-    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    body_line_mm = s.line_mm(s.body_size)
     for j, t in enumerate(item_tokens):
       if t.type == "paragraph_open" and j + 1 < len(item_tokens):
         inline = item_tokens[j + 1]

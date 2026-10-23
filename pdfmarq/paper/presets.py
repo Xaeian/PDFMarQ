@@ -51,6 +51,11 @@ _LABELS: dict[str, dict] = {
     "banner_label_created": "Vytvorené",
     "banner_label_updated": "Aktualizované",
   },
+  "pt": {
+    "banner_label_author": "Autor",
+    "banner_label_created": "Criado",
+    "banner_label_updated": "Atualizado",
+  },
 }
 
 # Full preset per language: the engine's callout labels, the parts' labels, then the banner's.

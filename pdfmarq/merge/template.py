@@ -46,6 +46,7 @@ _RESERVED = {"true", "false", "none", "True", "False", "None", "and", "or", "not
 # The no-break space keeps a number on one line.
 _SEPARATORS = {
   "pl": (",", "\u00a0"), "cs": (",", "\u00a0"), "sk": (",", "\u00a0"), "fr": (",", "\u00a0"),
+  "pt": (",", "\u00a0"),
   "de": (",", "."), "es": (",", "."), "it": (",", "."),
   "en": (".", ","),
 }

@@ -84,7 +84,7 @@ Signing lines are dotted, as on a form, `hr_thick` thick and in the text colour,
 A font without them gets capitals four fifths high, spaced out.
 Write `title: Umowa zlecenie`, not in capitals.
 A document of one page never carries a page number.
-`lang_style(lang, **overrides)` layers a language preset (`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`) under the overrides.
+`lang_style(lang, **overrides)` layers a language preset (`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`) under the overrides.
 A preset also sets `hyphenate` to its language, so words split at line ends.
 `LegalStyle()` alone keeps them whole.
 

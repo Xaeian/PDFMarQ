@@ -146,7 +146,7 @@ class BlocksMixin:
     width = self.pdf.content_width - x
     ruled = (level == 1 and s.h1_underline) or (level == 2 and s.h2_underline)
     # Keep-with-next: reserve the heading and at least 3 body lines.
-    min_followup_mm = s.body_size * s.line_height / MM_TO_PT * 3
+    min_followup_mm = s.line_mm(s.body_size) * 3
     if next_kind and not s.keep_together:
       heading_block_mm = measure_rich(self.pdf, segments, width, s.line_height) \
         + (2 if ruled else 0) + s.head_gap_bot
@@ -285,7 +285,7 @@ class BlocksMixin:
     width = self.pdf.content_width - x
     spacing = s.list_gap if self._list_depth > 0 else s.para_gap
     align = self._para_align()
-    body_line_mm = s.body_size * s.line_height / MM_TO_PT
+    body_line_mm = s.line_mm(s.body_size)
     line_h = wrap_line_heights(self.pdf, segments, width, line_gap=s.line_height, align=align)
     para_h = sum(line_h) or body_line_mm
     page_h = self.pdf.content_height
@@ -357,7 +357,7 @@ class BlocksMixin:
     x = self._indent_mm
     w = self.pdf.content_width - x
     text_width_mm = w - 2 * pad - left_offset
-    min_line_h_mm = s.code_block_size * s.line_height / MM_TO_PT
+    min_line_h_mm = s.line_mm(s.code_block_size)
     line_heights_mm: list[float] = []
     for line_segs in per_line_segs:
       h = measure_rich(
@@ -457,7 +457,7 @@ class BlocksMixin:
       y = pdf.y
       render_rich(pdf, [base], pdf.content_width - x_start, x_start, y,
         Align.LEFT, s.line_height)
-      pdf.cursor(x_start, y + s.body_size * s.line_height / MM_TO_PT + s.para_gap)
+      pdf.cursor(x_start, y + s.line_mm(s.body_size) + s.para_gap)
       return
     self._draw_figure(info)
 
@@ -592,7 +592,7 @@ class BlocksMixin:
         size=s.body_size, color=s.body_color,
       )
       # its line centred on the formula, as a line centres its letters
-      num_y = self.pdf.y + (h_mm - s.body_size * s.line_height / MM_TO_PT) / 2
+      num_y = self.pdf.y + (h_mm - s.line_mm(s.body_size)) / 2
       render_rich(
         self.pdf, [num_seg], content_w_mm,
         self._indent_mm, num_y, Align.RIGHT, s.line_height,

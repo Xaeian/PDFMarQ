@@ -95,6 +95,14 @@ class PageGeometry:
     """Available height for content."""
     return self.height - self.margin_top - self.margin_bot
 
+  def box(self, left:float, top:float, width:float, height:float) -> "PageGeometry":
+    """
+    The page narrowed to a box `width` by `height` mm, `left` and `top` from the page's edges:
+    its margins move in to the box, so whatever draws relative to them lands inside it.
+    """
+    return replace(self, margin_left=left, margin_right=self.width - left - width,
+      margin_top=top, margin_bot=self.height - top - height, axis=left + width / 2)
+
   def centered_x(self, width:float) -> float:
     """Left edge of an element of `width` placed on the centre line."""
     if self.axis is None: return (self.width - width) / 2

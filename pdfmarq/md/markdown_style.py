@@ -2,6 +2,7 @@
 
 """GitHub-flavored markdown visual style."""
 from dataclasses import dataclass, field
+from ..constants import MM_TO_PT
 
 #-------------------------------------------------------------------------- Callout palette default
 
@@ -160,6 +161,8 @@ class MarkdownStyle:
   # as Polish typesetting asks. The text copies out with its plain spaces.
   bind_single_letters: bool = False
   # Kern letter pairs of TrueType text, as `AV` and `Ty` want, through `PDF.kerning`.
+  # The renderer sets it on the PDF it draws into, over what `PDF.kerning` set before,
+  # so text is measured as it is drawn.
   # Needs `uharfbuzz`, the `[kerning]` extra.
   kerning: bool = False
   # `True` moves a paragraph or list that does not fit here to the next frame, whole.
@@ -179,9 +182,11 @@ class MarkdownStyle:
   # Lowercase type → tuple `(border_rgb, text_rgb)` in 0..1 range.
   callout_colors: dict = field(default_factory=_default_callout_colors)
 
-  # `None` emits a thin HR above footnotes; the smaller font signals reference matter.
-  # Set to a string (e.g. `"References"`) to add an H2 heading above.
-  footnote_label: str|None = None
+  # Above the footnotes, the bibliography: a thin rule with `None`, which suits a note or an act,
+  # or a title the renderer writes as a level-2 heading, which suits a thesis.
+  # `True` writes `footnote_word` in the style's language, a string writes itself.
+  footnote_label: str|bool|None = None
+  footnote_word: str = "References"
 
   # Local-link handling. `[x](file.md)` has no scheme and no `#` prefix.
   # Without `link_root`, the link renders styled (blue underline) but is not clickable:
@@ -193,3 +198,7 @@ class MarkdownStyle:
   link_base: str = ""
   # h1 defaults to extra top spacing, not a hard page break.
   h1_page_break: bool = False
+
+  def line_mm(self, size:float) -> float:
+    """Height (mm) of a line of text set at `size` pt, `line_height` times its size."""
+    return size * self.line_height / MM_TO_PT

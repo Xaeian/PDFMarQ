@@ -8,7 +8,7 @@ Letters, statements and contracts: the page around the markdown content.
 from dataclasses import dataclass, replace
 from markdown_it.token import Token
 from ..core import PDF
-from ..constants import PageSize, A4, MM_TO_PT
+from ..constants import PageSize, A4
 from ..inline import RichSegment
 from ..parts import signatures, signatures_height, page_number
 from ..md import (MarkdownRenderer, split_frontmatter, pdf_metadata, top_blocks,
@@ -157,7 +157,7 @@ def _columns(
   A text that fits the page with the end of the document below it gets balanced columns.
   A longer one flows, its last page balanced when the end of the document still fits below it.
   """
-  line = style.body_size * style.line_height / MM_TO_PT
+  line = style.line_mm(style.body_size)
   if pdf.content_height - pdf.y < _MIN_REGION_LINES * line and pdf.y > 0.5:
     pdf.new_page()
   region = Region(clauses, pdf.content_width, style.columns, style.column_gap)

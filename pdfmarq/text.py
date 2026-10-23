@@ -137,12 +137,12 @@ class TextMetrics:
   def letter_span(self, family:str, mode:str, size:float) -> tuple[float, float]:
     """
     `(above, below)` in points: how far the letters of the face reach from the baseline.
-    Capitals reach the cap height of a TrueType face, its ascender where it records none,
+    Capitals reach the cap height of a TrueType face, its ascender where it records none or 0,
     and the ascender of a core-14 face, whose cap height reportlab does not read:
     the room some fonts keep above capitals for accents is left out.
     """
     face = getFont(self.font_name(family, mode)).face
-    above = getattr(face, "capHeight", face.ascent)
+    above = getattr(face, "capHeight", 0) or face.ascent
     return above * size / 1000, -face.descent * size / 1000
 
   def lines_height(self, lines:int, size:float) -> float:

@@ -298,7 +298,9 @@ _LOOK_ALIKES: dict[int, int] = {
   0x2212: 0x002D,                  # Minus sign → hyphen-minus
 }
 
-_covered: dict[tuple[str, str], bool] = {} # (font, character) → whether it draws
+# (font, character) → whether it draws, keyed on the font as registered,
+# so a face registered again under the same name is asked anew
+_covered: dict[tuple[object, str], bool] = {}
 
 def fit_glyphs(text:str, font_name:str) -> str:
   """
@@ -306,30 +308,33 @@ def fit_glyphs(text:str, font_name:str) -> str:
   A character it lacks becomes a look-alike it has, as Ω at U+2126 for Ω at U+03A9.
   One with no look-alike warns once per font, as it draws as an empty box.
   """
-  if all(_has_glyph(font_name, char) for char in text): return text
-  return "".join(_fit_glyph(char, font_name) for char in text)
+  font = pdfmetrics.getFont(font_name)
+  if all(_has_glyph(font, char) for char in text): return text
+  return "".join(_fit_glyph(char, font) for char in text)
 
-def _fit_glyph(char:str, font_name:str) -> str:
-  if _has_glyph(font_name, char): return char
+def _fit_glyph(char:str, font) -> str:
+  if _has_glyph(font, char): return char
   alike = _LOOK_ALIKES.get(ord(char))
-  if alike is not None and _has_glyph(font_name, chr(alike)): return chr(alike)
-  message = f"{font_name} has no glyph for {char!r} (U+{ord(char):04X}), drawn as an empty box"
-  warn_once(("glyph", font_name, char), message, GlyphWarning)
+  if alike is not None and _has_glyph(font, chr(alike)): return chr(alike)
+  name = font.fontName
+  message = f"{name} has no glyph for {char!r} (U+{ord(char):04X}), drawn as an empty box"
+  warn_once(("glyph", name, char), message, GlyphWarning)
   return char
 
-def _has_glyph(font_name:str, char:str) -> bool:
+def _has_glyph(font, char:str) -> bool:
   """
-  Whether `font_name` draws `char`: a TrueType face by its own cmap,
+  Whether the registered `font` draws `char`: a TrueType face by its own cmap,
   a core-14 font also through the fonts reportlab substitutes for it, as Symbol for Ω.
   """
   if char.isspace(): return True # spacing, not a glyph to miss
-  key = (font_name, char)
+  key = (font, char)
   if key not in _covered:
-    font = pdfmetrics.getFont(font_name)
     cmap = getattr(getattr(font, "face", None), "charToGlyph", None)
     if cmap is not None:
       _covered[key] = ord(char) in cmap
     else:
+      # reportlab has no public check of what a core-14 font covers:
+      # `unicode2T1` hands back the font's private `_notdef` box for a character none draws
       runs = unicode2T1(char, [font, *font.substitutionFonts])
       _covered[key] = runs != [(font._notdefFont, font._notdefChar)]
   return _covered[key]

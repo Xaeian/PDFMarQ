@@ -94,12 +94,12 @@ def _context(chain:list) -> dict:
   return props
 
 def _number(text:str|None, default:float=0.0) -> float:
-  """Leading number of an attribute; `default` when there is none."""
+  """Leading number of an attribute, `default` when there is none."""
   found = _NUM_RE.search(text or "")
   return float(found.group(0)) if found else default
 
 def _degrees(text:str) -> float:
-  """An `orient` angle; `grad` is tested before the `rad` it ends with."""
+  """An `orient` angle, `grad` tested before the `rad` it ends with."""
   value = _number(text)
   for unit, scale in (("grad", 0.9), ("rad", 180 / math.pi), ("turn", 360.0)):
     if text.endswith(unit):
@@ -188,7 +188,7 @@ class _Scan:
     return self.at >= len(self.text)
 
 def path_vertices(data:str) -> list[Vertex]:
-  """Every vertex of SVG path data, with its directions; `[]` on data it cannot read."""
+  """Every vertex of SVG path data with its directions, `[]` for data it cannot read."""
   scan = _Scan(data)
   out: list[Vertex] = []
   x = y = 0.0

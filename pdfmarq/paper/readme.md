@@ -122,7 +122,7 @@ Labels in banner, footer, and callouts are style fields.
 Defaults are English.
 Use `lang_style("pl"|"de"|...)` to apply a built-in preset, or override fields manually.
 
-Built-in presets cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`.
+Built-in presets cover `en` _(defaults)_, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`.
 Each configures `page_number_label`, `date_format`, banner labels _(author / created / updated)_, signing scenarios _(`sign_labels`)_, and the engine's callout labels.
 
 ```py

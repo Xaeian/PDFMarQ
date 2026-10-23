@@ -11,41 +11,27 @@ Definition list: `Term` (bold) above `: definition` (indented).
 
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich
-from ..constants import Align, MM_TO_PT
+from ..constants import Align
 from ..utils import smaller_size
 
 #----------------------------------------------------------------------------------- FootnotesMixin
 
 class FootnotesMixin:
   """Footnote section rendering and definition lists. Mixed into `MarkdownRenderer`."""
-  def _render_footnote_heading(self, label:str):
-    """Emit an h2-styled standalone heading above the footnote section."""
-    s = self.style
-    size = self._heading_size(2)
-    seg = RichSegment(
-      text=label, family=s.font_head, mode=s.head_mode,
-      size=size, color=s.head_color,
-    )
-    x = self._indent_mm
-    width = self.pdf.content_width - x
-    self.pdf.keep(size / MM_TO_PT * 2)
-    self.pdf.enter(s.head_gap_top)
-    y = self.pdf.y
-    h = render_rich(self.pdf, [seg], width, x, y, Align.LEFT, s.line_height)
-    self.pdf.cursor(x, y + h + s.head_gap_bot)
-
   def _render_footnote_block(self, tokens:list[Token], start:int) -> int:
     """Render footnote collection at end of document.
 
-    When `style.footnote_label` is set, emits a heading above the section
-    (e.g. `"References"`, `"Bibliografia"`).
-    When `None`, just draws a thin HR - the smaller font signals reference matter on its own.
+    `style.footnote_label` titles the section with a level-2 heading, drawn as the document's are:
+    `True` in the style's language, as `footnote_word` gives it,
+    or its own word, as `"Bibliografia"`.
+    `None` draws a thin HR instead, the smaller font signalling reference matter on its own.
     """
     s = self.style
     end = self._find_close(tokens, start, "footnote_block_open", "footnote_block_close")
     self.pdf.enter(s.para_gap)
     if s.footnote_label:
-      self._render_footnote_heading(s.footnote_label)
+      title = s.footnote_word if s.footnote_label is True else s.footnote_label
+      self._render_heading(2, self._md.parseInline(title)[0])
     else:
       # Full-width HR separator.
       x = self._indent_mm
@@ -90,7 +76,7 @@ class FootnotesMixin:
           segs.extend(self._inline_to_segments(first_inline, base))
         x = self._indent_mm
         width = self.pdf.content_width - x
-        self.pdf.keep(biblio_pt * s.line_height / MM_TO_PT)
+        self.pdf.keep(s.line_mm(biblio_pt))
         y = self.pdf.y
         self.pdf.cursor(x, y)
         self.pdf.anchor(f"{self._anchors}fn_{label}") # [^label] refs navigate here
@@ -145,7 +131,7 @@ class FootnotesMixin:
           segs = self._inline_to_segments(inline_token, base)
           x = self._indent_mm
           width = self.pdf.content_width - x
-          self.pdf.keep(s.body_size * s.line_height / MM_TO_PT)
+          self.pdf.keep(s.line_mm(s.body_size))
           y = self.pdf.y
           h = render_rich(
             self.pdf, segs, width, x, y, Align.LEFT, s.line_height,

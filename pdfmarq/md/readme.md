@@ -152,11 +152,16 @@ MarkdownStyle(
   h1_page_break=False, # True for chaptered documents
   h1_size=20, h2_size=16, h3_size=13, h4_size=11, h5_size=11, h6_size=11,
   table_zebra=True, table_zebra_bg=(0.985, 0.99, 0.995),
+  footnote_label=None, # a rule above the footnotes, True a title in the style's language
 )
 ```
 
-`lang_style("pl"|"de"|...)` builds a `MarkdownStyle` with the callout labels of a built-in preset _(`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`)_.
+`lang_style("pl"|"de"|...)` builds a `MarkdownStyle` with the callout labels and the bibliography word of a built-in preset _(`en`, `pl`, `de`, `fr`, `es`, `it`, `cs`, `sk`, `pt`)_.
 The document packages layer their own labels on top.
+
+Above the footnotes `footnote_label=None` draws a thin rule, which suits notes and short acts.
+`footnote_label=True` titles them instead, as a level-2 heading, with the word of the style's language: `Literatura` in `pl`, `References` in `en`.
+A string titles them with its own word, as `footnote_label="Bibliografia"`.
 
 ## Features
 

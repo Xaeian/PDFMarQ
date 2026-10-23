@@ -5,7 +5,6 @@ import random, warnings
 from contextlib import contextmanager
 from importlib.util import find_spec
 from typing import Callable
-from dataclasses import replace
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.colors import Color
@@ -245,6 +244,11 @@ class PDF:
     return self._fonts
 
   @property
+  def metrics(self) -> TextMetrics:
+    """Text measurement in the fonts of this document, kerned as `kerning()` sets it."""
+    return self._metrics
+
+  @property
   def output_path(self) -> str:
     """Destination file path. Symmetric with `DOCX.output_path`.
     `pdf.path()` is reserved for the polygon-draw method, so use this for filename inspection."""
@@ -398,12 +402,9 @@ class PDF:
     full = self._page_full
     width = region.column_width(full.content_width)
     left = full.margin_left + region.left + index * (width + region.gap)
-    top = full.margin_top + region.top
-    bot = full.margin_bot
-    if region.height is not None:
-      bot = max(bot, full.height - top - region.height)
-    self._page = replace(full, margin_left=left, margin_right=full.width - left - width,
-      margin_top=top, margin_bot=bot, axis=left + width / 2)
+    height = full.content_height - region.top # down to the page's bottom margin
+    if region.height is not None: height = min(height, region.height)
+    self._page = full.box(left, full.margin_top + region.top, width, height)
     region.index = index
     self._cursor.set(0, y)
 
@@ -443,11 +444,9 @@ class PDF:
     if width <= 0 or height <= 0:
       raise ValueError(f"a frame needs a size, got {width:.1f}x{height:.1f}mm")
     page = self._page_full
-    left, top = page.margin_left + x, page.margin_top + y
     self._frame = Frame(page, self._cursor)
-    self._page_full = self._page = replace(page, margin_left=left,
-      margin_right=page.width - left - width, margin_top=top,
-      margin_bot=page.height - top - height, axis=left + width / 2)
+    box = page.box(page.margin_left + x, page.margin_top + y, width, height)
+    self._page_full = self._page = box
     self._cursor = Cursor()
     try:
       yield self

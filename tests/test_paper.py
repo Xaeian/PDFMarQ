@@ -45,6 +45,21 @@ def lang_style_layers_engine_and_document_labels():
   assert isinstance(style, PaperStyle)
   assert (style.page_number_label, style.callout_label_note) == ("Seite", "Hinweis")
 
+def every_language_is_complete():
+  # each preset language brings its own words to every table, and a number format for merge
+  pytest.importorskip("jinja2")
+  from pdfmarq.md import LANG_PRESETS
+  from pdfmarq.legal import lang_style as legal_style
+  from pdfmarq.merge import fill
+  en, en_legal = lang_style("en"), legal_style("en")
+  for lang in LANG_PRESETS.keys() - {"en"}:
+    paper, legal = lang_style(lang), legal_style(lang)
+    assert paper.footnote_word != en.footnote_word, lang # the engine's words
+    assert paper.sign_labels != en.sign_labels, lang # the parts'
+    assert paper.banner_label_created != en.banner_label_created, lang # the banner's
+    assert legal.attachments_label != en_legal.attachments_label, lang # the letter's
+    fill("{{ amount | number }}", {"amount": 1}, lang=lang) # without a number format it raises
+
 def engine_style_is_refused(tmp_path):
   with pytest.raises(TypeError, match="PaperStyle"):
     md_to_pdf("# Title", str(tmp_path / "x.pdf"), style=MarkdownStyle())

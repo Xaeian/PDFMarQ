@@ -5,9 +5,9 @@
 import warnings
 from pathlib import Path
 import pytest
-from conftest import assert_valid_pdf
+from conftest import assert_valid_pdf, needs_fitz, pdf_pages, pdf_text
 from pdfmarq import GlyphWarning
-from pdfmarq.paper import md_to_pdf, PaperStyle
+from pdfmarq.paper import md_to_pdf, PaperStyle, lang_style
 from pdfmarq.constants import A4
 
 #----------------------------------------------------------------------------------------- Markdown
@@ -66,14 +66,19 @@ def md_custom_style_applies(tmp_path):
   md_to_pdf("# H\n\nbody", str(path), style=style)
   assert_valid_pdf(path)
 
-def md_footnote_label_renders_heading(tmp_path):
-  # when `footnote_label` is set, the footnote section gets an H2 heading above it
-  # instead of the HR separator
-  path = tmp_path / "fn_label.pdf"
-  src = "Body[^1].\n\n[^1]: footnote text."
-  style = PaperStyle(footnote_label="References")
-  md_to_pdf(src, str(path), style=style)
-  assert_valid_pdf(path)
+@needs_fitz
+@pytest.mark.parametrize("label, title", [
+  (None, None), ("Bibliografia", "Bibliografia"), (True, "Literatura"),
+], ids=["rule", "own word", "language word"])
+def md_footnote_label_titles_the_bibliography(tmp_path, label, title):
+  # a rule by default, or a title: the style's own word, or its language's with `True`,
+  # which starts no page of its own: a page break is the author's, put where it is wanted
+  path = str(tmp_path / "fn.pdf")
+  style = lang_style("pl", footnote_label=label)
+  md_to_pdf("Body[^1].\n\n[^1]: footnote text.", path, style=style)
+  titles = {"Literatura", "Bibliografia", "References"} & set(pdf_text(path).split())
+  assert titles == ({title} if title else set())
+  assert pdf_pages(path) == 1
 
 def md_page_landscape_flips_page(tmp_path):
   # orientation comes from `page=`, never from the document

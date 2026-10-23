@@ -18,7 +18,7 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"
@@ -39,7 +39,7 @@ from .constants import (
 )
 from .styles import Style, TableStyle, Styles
 from .layout import Cursor, PageGeometry
-from .text import TextMetrics, BoxFitResult
+from .text import TextMetrics, BoxFitResult, centred_baseline
 from .tables import TableBuilder, TableData, Cell
 from .fonts import FontManager, register_fonts, GlyphWarning
 from .structure import Metadata, Bookmark, TOCEntry, BookmarkManager, LinkManager
@@ -56,7 +56,7 @@ __all__ = [
   "A4", "A3", "A5", "LETTER", "LEGAL", "SLIDE",
   "Style", "TableStyle", "Styles",
   "Cursor", "PageGeometry",
-  "TextMetrics", "BoxFitResult",
+  "TextMetrics", "BoxFitResult", "centred_baseline",
   "TableBuilder", "TableData", "Cell",
   "FontManager", "register_fonts", "GlyphWarning",
   "Metadata", "Bookmark", "TOCEntry", "BookmarkManager", "LinkManager",

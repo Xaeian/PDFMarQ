@@ -71,6 +71,12 @@ LANG_LABELS: dict[str, dict] = {
     "sign_labels": {"signature": ["Podpis"], "approval": ["Vypracoval", "Schválil"],
       "contract": ["Objednávateľ", "Zhotoviteľ"]},
   },
+  "pt": {
+    "page_number_label": "Página",
+    "date_format": "%d/%m/%Y",
+    "sign_labels": {"signature": ["Assinatura"], "approval": ["Elaborado por", "Aprovado por"],
+      "contract": ["Contratante", "Prestador"]},
+  },
 }
 
 def sign_labels(sign:bool|str|list, scenarios:dict) -> list[str]:

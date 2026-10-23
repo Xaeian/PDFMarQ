@@ -43,7 +43,7 @@ class ImageInfo:
   nat_w_mm: float  # natural width in mm at metadata-DPI (or 96 fallback)
   nat_h_mm: float  # natural height in mm
   dimensionless: bool = False # True only when SVG has no width/height/viewBox
-  dpi: float|None = None # DPI behind `nat_*_mm`; None for vector
+  dpi: float|None = None # DPI behind `nat_*_mm`, None for vector
   generated: bool = False # rasterized here from vector source - upscaling is free
   explicit_w_mm: float|None = None # author-specified width (DSL `w=` or `scale=`)
   explicit_h_mm: float|None = None # author-specified height (DSL `h=` or `scale=`)
@@ -260,7 +260,7 @@ def size_inline(
   """Size an inline mid-paragraph image.
   Always height-capped at `inline_cap_mm` (LaTeX `height=2ex` idiom).
   Width scales proportionally.
-  DSL `max_w`/`max_h` further narrow the cap; `align` is ignored for inline (text-anchored)."""
+  DSL `max_w`/`max_h` further narrow the cap, and `align` is ignored, the image riding the text."""
   cap_w = inline_cap_mm * 6
   cap_h = inline_cap_mm
   if info.dsl_max_w_mm is not None: cap_w = min(cap_w, info.dsl_max_w_mm)
@@ -376,7 +376,7 @@ def _clamp_no_upscale(
 def _explicit(
   info:ImageInfo, max_w:float, max_h:float,
 ) -> tuple[float, float]:
-  """Resolve explicit width/height; missing dimension comes from natural aspect ratio.
+  """Resolve explicit width/height, a missing dimension from the natural aspect ratio.
   Final size still clamped to `(max_w, max_h)`."""
   ew, eh = info.explicit_w_mm, info.explicit_h_mm
   nw, nh = info.nat_w_mm, info.nat_h_mm
