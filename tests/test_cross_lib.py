@@ -368,6 +368,15 @@ def paper_entries_share_their_signatures():
   assert params(md_to_pdf) == params(md_to_docx)
   assert params(pdf_into)[1:] == [p for p in params(doc_into)[1:] if p[0] != "font_dir"]
 
+def page_presets_match():
+  # a sheet named by its preset is the same sheet in both packages, a 16:9 slide among them
+  from pdfmarq.constants import PAGE_PRESETS as pdf_pages, Unit
+  from docmarq.constants import PAGE_PRESETS as doc_pages
+  def sizes(presets:dict) -> dict:
+    return {name: (page.width, page.height) for name, page in presets.items()}
+  assert sizes(pdf_pages) == sizes(doc_pages)
+  assert sizes(pdf_pages)["SLIDE"] == pytest.approx((960 * Unit.PT, 540 * Unit.PT))
+
 #-------------------------------------------------------------------------------------- Same output
 
 def repeated_headings_number_alike():

@@ -1,13 +1,16 @@
 # pdfmarq/text.py
 
 """Text measurement and box fitting."""
-import warnings
+import functools, warnings
 from typing import Callable
 from dataclasses import dataclass
-from PIL import ImageFont
-from reportlab.pdfbase.pdfmetrics import stringWidth, getAscent, getDescent
+from reportlab.lib.abag import ABag
+from reportlab.pdfbase.pdfmetrics import stringWidth, getFont
+from reportlab.pdfbase.ttfonts import shapeFragWord
 from .fonts import FontManager, is_builtin, builtin_name
 from .constants import MM_TO_PT
+
+__extras__ = ("kerning", ["uharfbuzz"])
 
 #------------------------------------------------------------------------------------ Word breaking
 
@@ -72,87 +75,79 @@ def _warn_unreadable(text:str, size:float, width:float, height:float) -> None:
     RuntimeWarning, stacklevel=3,
   )
 
+#-------------------------------------------------------------------------------------------- Lines
+
+# Height of a line of `PDF.text` in sizes, the same for every font: reportlab's own leading.
+TEXT_LINE_GAP = 1.2
+
+def centred_baseline(height:float, above:float, below:float) -> float:
+  """
+  Distance (pt) from the top of a line `height` tall down to its baseline,
+  which puts letters reaching `above` and `below` it, as `letter_span` measures, in the middle.
+  """
+  return (height + above - below) / 2
+
+#------------------------------------------------------------------------------------------ Kerning
+
+# OpenType features kerned text is shaped with: pair kerning, and no substitution.
+# A ligature or an alternate is a glyph of its own, which copies out of the PDF as another letter,
+# as `ﬃ` for "ffi" does: search and copied text would break.
+_KERN_ONLY = {"kern": True, **dict.fromkeys(
+  ("liga", "clig", "calt", "dlig", "rlig", "rclt", "locl", "ccmp"), False)}
+
+@functools.lru_cache(maxsize=4096)
+def _kerned(text:str, font, size:float) -> tuple[str, float]:
+  """
+  `text` set in the TrueType `font` with its pairs kerned, and its width (pt).
+  Keyed on the font itself, so a face registered again under its name is shaped afresh.
+  """
+  frag = (ABag(fontName=font.fontName, fontSize=size), text)
+  width, (_, shaped) = shapeFragWord([stringWidth(text, font.fontName, size), frag],
+    features=_KERN_ONLY)
+  return shaped, width
+
 #-------------------------------------------------------------------------------------- TextMetrics
 
 class TextMetrics:
   """Text measurement with font support."""
   def __init__(self, font_manager:FontManager):
     self.fonts = font_manager
-    self._pil_cache: dict = {} # (path, int(size)) → ImageFont
+    self.kerning = False # kern TrueType text, see `shaped`
 
-  def _pil_font(self, path:str, size:float):
-    """Cached PIL font for TTF metrics.
+  def font_name(self, family:str, mode:str) -> str:
+    """reportlab name of the `mode` face of `family`, or of its stand-in for a missing file."""
+    if is_builtin(family, mode): return builtin_name(family, mode)
+    return self.fonts.register(family, mode)
 
-    `ImageFont.truetype()` re-reads and re-parses the file on every call,
-    and the autoscale loop in `box_fit` measures the same font dozens of times per cell.
-    Keyed on the integer size PIL itself rasterizes at.
+  def shaped(self, text:str, family:str, mode:str, size:float) -> tuple[str, float]:
     """
-    key = (path, int(size))
-    font = self._pil_cache.get(key)
-    if font is None:
-      font = ImageFont.truetype(path, key[1])
-      self._pil_cache[key] = font
-    return font
-
-  def _font_key(self, family:str, mode:str) -> str:
-    return f"{family}-{mode}"
+    `text` as it is drawn, with its width in points.
+    With `kerning` on, a TrueType face kerns its letter pairs and the text comes back
+    as reportlab's `ShapedStr`, drawn glyph by glyph.
+    A core-14 face, and text with no pair to kern, stay as they are.
+    """
+    font = getFont(self.font_name(family, mode))
+    if self.kerning and font.shapable: return _kerned(text, font, size)
+    return text, stringWidth(text, font.fontName, size)
 
   def text_width(self, text:str, family:str, mode:str, size:float) -> float:
-    """Get text width in points."""
-    if is_builtin(family, mode):
-      font_name = builtin_name(family, mode)
-    else:
-      font_name = self.fonts.register(family, mode)
-    return stringWidth(text, font_name, size)
+    """Width (pt) of `text` as it is drawn, kerned with `kerning` on."""
+    return self.shaped(text, family, mode, size)[1]
 
-  def line_height(self, family:str, mode:str, size:float) -> float:
-    """Leading ascent in points for multi-line layout and cell sizing.
-
-    Not the real visual ascent - use `visual_metrics()` for vertical centering.
+  def letter_span(self, family:str, mode:str, size:float) -> tuple[float, float]:
     """
-    if is_builtin(family, mode): return size * 0.8
-    try:
-      path = self.fonts.get_path(family, mode)
-      font = self._pil_font(path, size)
-      ascent, _ = font.getmetrics()
-      return float(ascent)
-    except Exception:
-      return size * 0.8
-
-  def lines_height(self, lines:int, family:str, mode:str, size:float) -> float:
-    """Get total height for N lines in points (with leading)."""
-    if lines <= 0: return self.line_height(family, mode, size)
-    if is_builtin(family, mode): return size * 1.2 * lines
-    try:
-      path = self.fonts.get_path(family, mode)
-      font = self._pil_font(path, size)
-      ascent, descent = font.getmetrics()
-      return float(lines * (ascent + descent))
-    except Exception:
-      return size * 1.2 * lines
-
-  def visual_metrics(self, family:str, mode:str, size:float) -> tuple[float, float]:
-    """Real `(ascent, descent)` in points for visual centering.
-
-    Returns line-box ascent and descent from reportlab (builtin) or PIL (TTF).
-    Used by `core.text()` for vertical positioning inside fixed-height boxes like table cells.
-    The line-box ascent includes a small amount of space above capital letters (for accent marks).
-    This is DESIRED: it makes text visually sit in the lower portion of the box
-    rather than cap-top-flush.
+    `(above, below)` in points: how far the letters of the face reach from the baseline.
+    Capitals reach the cap height of a TrueType face, its ascender where it records none,
+    and the ascender of a core-14 face, whose cap height reportlab does not read:
+    the room some fonts keep above capitals for accents is left out.
     """
-    if is_builtin(family, mode):
-      name = builtin_name(family, mode)
-      try:
-        return float(getAscent(name, size)), float(abs(getDescent(name, size)))
-      except Exception:
-        return size * 0.8, size * 0.21
-    try:
-      path = self.fonts.get_path(family, mode)
-      font = self._pil_font(path, size)
-      a, d = font.getmetrics()
-      return float(a), float(d)
-    except Exception:
-      return size * 0.72, size * 0.21
+    face = getFont(self.font_name(family, mode)).face
+    above = getattr(face, "capHeight", face.ascent)
+    return above * size / 1000, -face.descent * size / 1000
+
+  def lines_height(self, lines:int, size:float) -> float:
+    """Height (pt) of `lines` lines of `PDF.text` at `size`, one at least."""
+    return max(lines, 1) * size * TEXT_LINE_GAP
 
   def box_fit(
     self,
@@ -219,7 +214,7 @@ class TextMetrics:
         if word_overflow and shrink_word: break
         if line.strip(): output.append(line.strip())
       line_count = len(output)
-      result_height = self.lines_height(line_count, family, mode, current_size)
+      result_height = self.lines_height(line_count, current_size)
       height_overflow = height > 0 and result_height > height
       if (word_overflow and shrink_word) or (height_overflow and can_shrink):
         current_size -= autoscale

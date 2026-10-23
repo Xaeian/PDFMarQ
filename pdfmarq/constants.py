@@ -32,12 +32,13 @@ A3 = PageSize(297, 420)
 A5 = PageSize(148, 210)
 LETTER = PageSize(215.9, 279.4)
 LEGAL = PageSize(215.9, 355.6)
+SLIDE = PageSize(960 * Unit.PT, 540 * Unit.PT) # 16:9, as PowerPoint sets a slide
 
 # Named presets are the only page sizes callers can select by string.
 # Arbitrary `[w, h]` stays available through `PageSize(w, h)`,
 # where the units are explicit and a typo cannot silently produce a 5x5000mm page.
 PAGE_PRESETS: dict[str, PageSize] = {
-  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL,
+  "A4": A4, "A3": A3, "A5": A5, "LETTER": LETTER, "LEGAL": LEGAL, "SLIDE": SLIDE,
 }
 
 def page_size(name:str) -> PageSize:

@@ -79,6 +79,7 @@ class FootnotesMixin:
         base = RichSegment(
           text="", family=s.font_body, mode=s.body_mode,
           size=biblio_pt, color=s.muted_color, hyphenate=s.hyphenate,
+          bind_single_letters=s.bind_single_letters,
         )
         prefix = RichSegment(
           text=f"[{label}] ", family=s.font_body, mode=s.bold_mode,

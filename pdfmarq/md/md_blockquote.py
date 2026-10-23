@@ -83,7 +83,6 @@ class BlockquoteMixin:
     callout = self._detect_callout(quote, 0, last)
     if callout:
       total_h += body_line_mm * 1.2 # title line
-      total_h += s.body_size * (s.line_height - 1.0) / MM_TO_PT # title→content gap
     total_h += body_line_mm * 0.5 # padding
     page_avail = self.pdf.content_height
     # Inside a `<!-- group -->`, the group owns atomicity; skip own pre-break
@@ -100,11 +99,13 @@ class BlockquoteMixin:
       bar_color = s.quote_border[:3]
       text_color = bar_color
       bar_width = s.quote_border_w
-    top_offset = s.body_size * 0.25 / MM_TO_PT + 1
+    # Room inside the bar, half above the text and half below it
+    v_extra = s.body_size * 0.25 / MM_TO_PT + 1
     old_indent = self._indent_mm
     self._indent_mm = old_indent + s.quote_pad
     inner_x = self._indent_mm
     inner_w = self.pdf.content_width - inner_x
+    self.pdf.cursor(inner_x, y_start + v_extra / 2)
     if callout:
       _icon, label_field = CALLOUT_TYPES[callout[0]]
       title_text = getattr(s, label_field)
@@ -114,14 +115,11 @@ class BlockquoteMixin:
       )
       y_title = self.pdf.y
       h_title = render_rich(
-        self.pdf, [title_seg], inner_w, inner_x, y_title + top_offset,
+        self.pdf, [title_seg], inner_w, inner_x, y_title,
         Align.LEFT, s.line_height,
       )
-      # Match leading of a body paragraph; `list_gap` is too tight for multi-line callout content.
-      title_content_gap = s.body_size * (s.line_height - 1.0) / MM_TO_PT
-      self.pdf.cursor(inner_x, y_title + h_title + title_content_gap)
-    else:
-      self.pdf.cursor(inner_x, y_start + top_offset)
+      # The title is the first line, and the content follows as a paragraph's next line would
+      self.pdf.cursor(inner_x, y_title + h_title)
     # Callout interior uses list-style (tighter) spacing - fake via `_list_depth`
     # because `_render_paragraph` and `_render_list` already key off it.
     if callout:
@@ -130,7 +128,7 @@ class BlockquoteMixin:
     if callout:
       self._list_depth -= 1
     self._indent_mm = old_indent
-    y_after_content = self.pdf.y
+    y_after_content = self.pdf.y + v_extra / 2
     # Last child added `list_gap` (callout) or `para_gap` (plain); subtract it
     # so the bar ends flush with the last text line.
     trailing = s.list_gap if callout else s.para_gap

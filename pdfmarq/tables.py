@@ -88,7 +88,7 @@ class TableBuilder:
     s = self.style
     width = self._width if self._width is not None else available_width
     cell_size = s.font_size if s.font_size is not None else font_size
-    fallback_h = cell_size * 1.2
+    fallback_h = self.metrics.lines_height(1, cell_size)
     header_mode = "Bold" if s.header_bold else font_mode
     h_pad = s.cell_pad_h
     v_extra = s.cell_pad_top + s.cell_pad_bot

@@ -2,12 +2,23 @@
 
 """Graphics primitives - shapes, images, SVG."""
 import os
+from contextlib import contextmanager
 from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg, load_svg_file, SvgRenderer
 from reportlab.graphics import renderPDF
 from . import svgmarkers
 
 #------------------------------------------------------------------------------------------- Shapes
+
+@contextmanager
+def _dashed(canvas, dash:tuple|None):
+  """Strokes inside the block dashed `(on, off)` pt, or solid for `None`, and solid after it."""
+  if dash: canvas.setDash(dash[0], dash[1])
+  else: canvas.setDash()
+  try:
+    yield
+  finally:
+    if dash: canvas.setDash()
 
 def draw_line(
   canvas,
@@ -18,13 +29,8 @@ def draw_line(
 ):
   """Draw line on canvas (coordinates in pt)."""
   canvas.setLineWidth(width)
-  if dash:
-    canvas.setDash(dash[0], dash[1])
-  else:
-    canvas.setDash()
-  canvas.line(x1, y1, x2, y2)
-  if dash:
-    canvas.setDash() # restore solid stroke for subsequent calls
+  with _dashed(canvas, dash):
+    canvas.line(x1, y1, x2, y2)
 
 def draw_rect(
   canvas,
@@ -36,11 +42,8 @@ def draw_rect(
 ):
   """Draw rectangle on canvas (coordinates in pt)."""
   canvas.setLineWidth(stroke_width)
-  if dash and stroke_width > 0:
-    canvas.setDash(dash[0], dash[1])
-  else:
-    canvas.setDash()
-  canvas.rect(x, y, width, height, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
+  with _dashed(canvas, dash if stroke_width > 0 else None):
+    canvas.rect(x, y, width, height, stroke=1 if stroke_width else 0, fill=1 if fill else 0)
 
 def draw_round_rect(
   canvas,
@@ -48,16 +51,14 @@ def draw_round_rect(
   width:float, height:float,
   radius:float,
   stroke_width:float = 0,
+  dash:tuple|None = None,
   fill:bool = True,
 ):
   """Draw rectangle with rounded corners (coordinates in pt)."""
   canvas.setLineWidth(stroke_width)
-  canvas.setDash()
-  canvas.roundRect(
-    x, y, width, height, radius,
-    stroke=1 if stroke_width else 0,
-    fill=1 if fill else 0,
-  )
+  with _dashed(canvas, dash if stroke_width > 0 else None):
+    canvas.roundRect(x, y, width, height, radius,
+      stroke=1 if stroke_width else 0, fill=1 if fill else 0)
 
 def draw_circle(
   canvas,

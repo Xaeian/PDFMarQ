@@ -9,8 +9,9 @@ import functools, io, warnings
 from pathlib import Path
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase.pdfmetrics import stringWidth, unicode2T1
 from . import svgfonts
+from ._warn import warn_once
 
 # Mode fallback when a variant TTF is missing (drops styling, keeps content).
 _MODE_FALLBACK = {
@@ -278,3 +279,57 @@ def is_builtin(family:str, mode:str="Regular") -> bool:
 def builtin_name(family:str, mode:str="Regular") -> str:
   """Get reportlab built-in font name. Returns `family` unchanged when not a builtin."""
   return _BUILTIN_NAMES.get((family, mode), family)
+
+#------------------------------------------------------------------------------------------- Glyphs
+
+class GlyphWarning(RuntimeWarning):
+  """A character a font has no glyph for, which it draws as an empty box."""
+
+# Visually-equivalent codepoints.
+# Many fonts (IBM Plex, Inter, ...) ship the glyph under one of these but not the other:
+# IBM Plex Sans has Ω only at U+2126 (Ohm sign), not U+03A9 (Greek capital Omega),
+# which is what most editors emit.
+_LOOK_ALIKES: dict[int, int] = {
+  0x03A9: 0x2126, 0x2126: 0x03A9,  # Greek Omega ↔ Ohm sign
+  0x03BC: 0x00B5, 0x00B5: 0x03BC,  # Greek mu ↔ micro sign
+  0x0394: 0x2206, 0x2206: 0x0394,  # Greek Delta ↔ Increment
+  0x03A3: 0x2211, 0x2211: 0x03A3,  # Greek Sigma ↔ N-ary summation
+  0x03A0: 0x220F, 0x220F: 0x03A0,  # Greek Pi ↔ N-ary product
+  0x2212: 0x002D,                  # Minus sign → hyphen-minus
+}
+
+_covered: dict[tuple[str, str], bool] = {} # (font, character) → whether it draws
+
+def fit_glyphs(text:str, font_name:str) -> str:
+  """
+  `text` as the registered font `font_name` can draw it.
+  A character it lacks becomes a look-alike it has, as Ω at U+2126 for Ω at U+03A9.
+  One with no look-alike warns once per font, as it draws as an empty box.
+  """
+  if all(_has_glyph(font_name, char) for char in text): return text
+  return "".join(_fit_glyph(char, font_name) for char in text)
+
+def _fit_glyph(char:str, font_name:str) -> str:
+  if _has_glyph(font_name, char): return char
+  alike = _LOOK_ALIKES.get(ord(char))
+  if alike is not None and _has_glyph(font_name, chr(alike)): return chr(alike)
+  message = f"{font_name} has no glyph for {char!r} (U+{ord(char):04X}), drawn as an empty box"
+  warn_once(("glyph", font_name, char), message, GlyphWarning)
+  return char
+
+def _has_glyph(font_name:str, char:str) -> bool:
+  """
+  Whether `font_name` draws `char`: a TrueType face by its own cmap,
+  a core-14 font also through the fonts reportlab substitutes for it, as Symbol for Ω.
+  """
+  if char.isspace(): return True # spacing, not a glyph to miss
+  key = (font_name, char)
+  if key not in _covered:
+    font = pdfmetrics.getFont(font_name)
+    cmap = getattr(getattr(font, "face", None), "charToGlyph", None)
+    if cmap is not None:
+      _covered[key] = ord(char) in cmap
+    else:
+      runs = unicode2T1(char, [font, *font.substitutionFonts])
+      _covered[key] = runs != [(font._notdefFont, font._notdefChar)]
+  return _covered[key]

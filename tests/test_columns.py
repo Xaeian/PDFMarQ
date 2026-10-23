@@ -1,6 +1,9 @@
 # tests/test_columns.py
 
-"""Column regions: frames, flow between them, parallel placement and page chrome around them."""
+"""
+Column regions and fixed frames:
+flow between them, parallel placement and page chrome around them.
+"""
 
 import pytest
 from pdfmarq import PDF, MM_TO_PT
@@ -182,6 +185,49 @@ def text_wraps_inside_the_inset(tmp_path, in_mm):
   pdf.save()
   words = pdf_page_words(path)[0]
   assert words and all(in_mm((50, 140), w[0], w[2]) for w in words)
+
+#-------------------------------------------------------------------------------------- Fixed frame
+
+def frame_is_a_page_of_its_own(pdf):
+  with pdf.frame(10, 30, 120, 40):
+    assert (pdf.content_width, pdf.content_height) == pytest.approx((120, 40))
+    assert (pdf.margin_left, pdf.margin_top, pdf.x, pdf.y) == pytest.approx((30, 50, 0, 0))
+    pdf.columns(2, gap=10)
+    assert pdf.content_width == pytest.approx(55) # columns divide the frame
+  assert pdf.content_width == pytest.approx(170)
+
+def cursor_comes_back_after_a_frame(pdf):
+  pdf.cursor(5, 7, "R")
+  with pdf.frame(10, 30, 120, 40):
+    pdf.text("inside").enter()
+  assert (pdf.x, pdf.y, pdf._cursor.align) == (5, 7, "R")
+
+@needs_fitz
+def markdown_fills_a_frame(tmp_path, in_mm):
+  path = str(tmp_path / "frame.pdf")
+  with PDF(path) as pdf, pdf.frame(10, 30, 120, 60):
+    MarkdownRenderer(pdf, MarkdownStyle()).render("# Title\n\n" + "Words fill the box. " * 20)
+  words = pdf_page_words(path)[0]
+  assert all(in_mm((30, 150), w[0], w[2]) for w in words)
+  assert min(w[1] for w in words) >= 50 * MM_TO_PT # from the top of the frame
+
+@pytest.mark.parametrize("md", [
+  "Long text. " * 80,
+  "One\n\n<!-- pagebreak -->\n\nTwo\n",
+  "Text\n\n# Title on a page of its own\n",
+], ids=["too long", "page break", "heading page"])
+def content_past_a_frame_warns(pdf, md):
+  # a frame holds one page: what asks for more room, a page break too, runs on in it and warns
+  with pytest.warns(RuntimeWarning, match="more room"):
+    with pdf.frame(10, 30, 60, 20):
+      MarkdownRenderer(pdf, MarkdownStyle(h1_page_break=True)).render(md)
+  assert pdf.page_num == 1
+
+def frame_refuses_nesting(pdf):
+  with pdf.frame(10, 30, 60, 20):
+    with pytest.raises(ValueError), pdf.frame(0, 0, 10, 10): pass
+  pdf.columns(2)
+  with pytest.raises(ValueError), pdf.frame(0, 0, 10, 10): pass
 
 #-------------------------------------------------------------------------------------- Page chrome
 

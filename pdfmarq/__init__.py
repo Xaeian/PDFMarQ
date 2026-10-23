@@ -35,13 +35,13 @@ __import_names__ = {"Pillow": "PIL"}
 
 from .constants import (
   Unit, PageSize, Align, Colors, Defaults, MM_TO_PT,
-  A4, A3, A5, LETTER, LEGAL,
+  A4, A3, A5, LETTER, LEGAL, SLIDE,
 )
 from .styles import Style, TableStyle, Styles
 from .layout import Cursor, PageGeometry
 from .text import TextMetrics, BoxFitResult
 from .tables import TableBuilder, TableData, Cell
-from .fonts import FontManager, register_fonts
+from .fonts import FontManager, register_fonts, GlyphWarning
 from .structure import Metadata, Bookmark, TOCEntry, BookmarkManager, LinkManager
 from .utils import (
   to_mm, to_pt, mm_to_pt, parse_color, color_alpha, color_hex, parse_margin,
@@ -53,12 +53,12 @@ from .core import PDF
 __all__ = [
   "PDF",
   "Unit", "PageSize", "Align", "Colors", "Defaults", "MM_TO_PT",
-  "A4", "A3", "A5", "LETTER", "LEGAL",
+  "A4", "A3", "A5", "LETTER", "LEGAL", "SLIDE",
   "Style", "TableStyle", "Styles",
   "Cursor", "PageGeometry",
   "TextMetrics", "BoxFitResult",
   "TableBuilder", "TableData", "Cell",
-  "FontManager", "register_fonts",
+  "FontManager", "register_fonts", "GlyphWarning",
   "Metadata", "Bookmark", "TOCEntry", "BookmarkManager", "LinkManager",
   "to_mm", "to_pt", "mm_to_pt", "parse_color", "color_alpha", "color_hex", "parse_margin",
   "smaller_size",

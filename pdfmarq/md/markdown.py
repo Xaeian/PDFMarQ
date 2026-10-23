@@ -92,6 +92,7 @@ class MarkdownRenderer(
       font_dir=str(self.pdf.fonts.font_dir),
     )
     self.pdf.font(self.style.font_body, self.style.body_size, self.style.body_mode)
+    self.pdf.kerning(self.style.kerning)
     self._publish_style_fonts()
 
   def _publish_style_fonts(self):

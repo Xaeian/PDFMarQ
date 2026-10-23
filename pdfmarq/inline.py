@@ -6,22 +6,20 @@
 `render_rich()` draws a sequence of them with word-wrap.
 This is the low-level engine used by the markdown renderer (`pdfmarq.md`, `MarkdownRenderer`).
 `core.PDF.text()` is a simpler single-style variant."""
-import re, warnings
+import itertools, re, warnings
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
 from reportlab.lib.colors import Color
-from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics import renderPDF
 from .constants import Align, MM_TO_PT
-from .fonts import is_builtin, builtin_name
-from .text import FIT_EPS_PT, split_word
+from .fonts import fit_glyphs
+from .text import FIT_EPS_PT, split_word, centred_baseline
 
 #------------------------------------------------------------------------------------ Layout ratios
 
 # Vertical metrics relative to glyph size (`rseg.size`). Tuned to GitHub-light look.
 # Centralised here so future visual tweaks don't require code-hunting.
-_ASCENT_RATIO = 0.80        # line-box ascent: positions baseline below top edge
 _BG_DESCENT_RATIO = 0.32    # how far below baseline the inline-code bg starts
 _BG_HEIGHT_RATIO = 1.35     # inline-code bg height in glyph units
 _BG_CORNER_RATIO = 0.20     # rounded-corner radius / bg height
@@ -93,6 +91,7 @@ class RichSegment:
   strike: bool = False
   char_space: float = 0 # pt after every character: letter-spacing, as capitals want
   hyphenate: str|None = None # language whose patterns may split a word at a line end
+  bind_single_letters: bool = False # a one-letter word keeps to the next, as Polish asks of `w`
   # Soft line break BEFORE this segment.
   # Flag-based rather than a break; an alternative to embedding `\n` in `text`.
   break_line: bool = False
@@ -113,66 +112,6 @@ class RichSegment:
       self.mode = "Bold"
     elif self.italic:
       self.mode = "Italic"
-
-#----------------------------------------------------------------------------------- Glyph fallback
-
-# Visually-equivalent codepoints.
-# Many fonts (IBM Plex, Inter, ...) ship the glyph under one of these but not the other:
-# IBM Plex Sans has Ω only at U+2126 (Ohm sign), not U+03A9 (Greek capital Omega),
-# which is what most editors emit.
-# We remap to whichever codepoint the font actually has,
-# so the user sees the glyph instead of a `.notdef` box.
-_GLYPH_EQUIVALENTS: dict[int, int] = {
-  0x03A9: 0x2126, 0x2126: 0x03A9,  # Greek Omega ↔ Ohm sign
-  0x03BC: 0x00B5, 0x00B5: 0x03BC,  # Greek mu ↔ micro sign
-  0x0394: 0x2206, 0x2206: 0x0394,  # Greek Delta ↔ Increment
-  0x03A3: 0x2211, 0x2211: 0x03A3,  # Greek Sigma ↔ N-ary summation
-  0x03A0: 0x220F, 0x220F: 0x03A0,  # Greek Pi ↔ N-ary product
-  0x2212: 0x002D,                  # Minus sign → hyphen-minus
-}
-
-_cmap_cache: dict[str, dict|None] = {}
-_remap_cache: dict[tuple[str, str], str] = {}
-
-def _font_cmap(font_name:str) -> dict|None:
-  """Return the char→glyph dict for a registered TTF font, or `None` for builtins / unregistered.
-  Result cached - the dict identity is stable for the lifetime of the process."""
-  cached = _cmap_cache.get(font_name)
-  if cached is not None or font_name in _cmap_cache:
-    return cached
-  try:
-    face = pdfmetrics.getFont(font_name).face
-    cmap = getattr(face, "charToGlyph", None)
-  except Exception:
-    cmap = None
-  _cmap_cache[font_name] = cmap
-  return cmap
-
-def _remap_for_font(text:str, font_name:str) -> str:
-  """Substitute codepoints missing from `font_name` with visually-equivalent ones the font has.
-  Returns `text` unchanged when no substitution is needed (the common case)."""
-  if not text:
-    return text
-  cmap = _font_cmap(font_name)
-  if cmap is None:
-    return text
-  key = (font_name, text)
-  cached = _remap_cache.get(key)
-  if cached is not None:
-    return cached
-  out = None
-  for i, c in enumerate(text):
-    cp = ord(c)
-    if cp in cmap:
-      continue
-    alt = _GLYPH_EQUIVALENTS.get(cp)
-    if alt is not None and alt in cmap:
-      if out is None:
-        out = list(text)
-      out[i] = chr(alt)
-  result = "".join(out) if out is not None else text
-  _remap_cache[key] = result
-  return result
 
 #-------------------------------------------------------------------------------------- _Word token
 @dataclass
@@ -209,10 +148,10 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
       words.append(_Word("", seg, 0, is_space=False, is_break=True))
       continue
     eff_size = _effective_size(seg)
-    font_name = _font_name(seg, metrics.fonts)
+    font_name = metrics.font_name(seg.family, seg.mode)
     # a no-break space binds the words around it, as `w\u00a0domu` in Polish text
     for part in re.findall(r"(?:\S|\u00a0)+|[^\S\u00a0]+", seg.text):
-      part = _remap_for_font(part, font_name)
+      part = fit_glyphs(part, font_name)
       w = _text_pt(part, seg, eff_size, metrics)
       words.append(_Word(part, seg, w, is_space=part.isspace() and "\u00a0" not in part))
   return words
@@ -291,6 +230,23 @@ def _hyphen_split(
       return _Word(head, seg, width, False), rest
   return None
 
+def _hyphen_split_unit(
+  unit:list[_Word], fits:Callable[[float], bool], prev:_Word|None, metrics,
+) -> tuple[list[_Word], _Word]|None:
+  """
+  `unit` cut at a hyphenation point of its last word, as `_hyphen_split` cuts it:
+  the tokens before that word and its head, which still `fit` the line after `prev`, and the rest.
+  So a one-letter word bound to the word after it stays on its line with the head of that word.
+  A last word spanning segments stays whole.
+  """
+  *lead, last = unit
+  if lead and not lead[-1].is_space: return None
+  lead_pt = _extent_pt(lead, prev)
+  split = _hyphen_split(last, lambda width: fits(lead_pt + width), metrics)
+  if split is None: return None
+  head, rest = split
+  return [*lead, head], rest
+
 def _run_pad_pt(seg:RichSegment) -> float:
   """
   Room a visual run takes beyond its glyphs:
@@ -325,15 +281,28 @@ def _units(words:list[_Word]) -> list[list[_Word]]:
 
   A word runs to the next whitespace, so it can span segments: `**PP**-1`, `[link](url).`.
   A line never breaks inside a word that fits a line of its own.
+  A one-letter word whose segment sets `bind_single_letters` takes the space and the word after it
+  into its unit, so no line ends with it, as Polish typesetting asks of `w` or `i`.
   """
   units: list[list[_Word]] = []
   for w in words:
     last = units[-1][-1] if units else None
     if last and not (w.is_break or last.is_break) and w.is_space == last.is_space:
       units[-1].append(w)
+    elif len(units) > 1 and units[-1][0].is_space and not w.is_break and _ends_bound(units[-2]):
+      space = units.pop()
+      units[-1] += space + [w] # the next word, joined to the one-letter word before it
     else:
       units.append([w])
   return units
+
+def _ends_bound(unit:list[_Word]) -> bool:
+  """Whether `unit` ends in a one-letter word whose segment binds it to the word after it."""
+  last = unit[-1]
+  if not last.seg.bind_single_letters or last.is_space or last.is_break: return False
+  word = itertools.takewhile(lambda token: not token.is_space, reversed(unit))
+  letters = "".join(token.text for token in word)
+  return len(letters) == 1 and letters.isalpha()
 
 def _wrap(
   words:list[_Word], width_pt:float, metrics,
@@ -343,8 +312,9 @@ def _wrap(
   """
   Greedy word-wrap honoring hard breaks.
 
-  Lines break at whitespace, never inside a word from `_units`,
-  unless its segment sets `hyphenate` and the head of a hyphenated split fits: see `_hyphen_split`.
+  Lines break at whitespace, never inside a unit from `_units`,
+  unless the segment of its last word sets `hyphenate` and the head of a split fits:
+  see `_hyphen_split_unit`.
   A word wider than a whole line is the exception: it breaks between its segments first.
   So does a word too wide for the rest of an indented code line: an indent never stands alone.
   A token still too wide goes to `_break_oversized`, so long links never spill past the edge.
@@ -409,10 +379,11 @@ def _wrap(
     if fits(after):
       append(unit, after)
       continue
-    split = _hyphen_split(head, fits, metrics) if len(unit) == 1 else None
+    prev = current[-1] if current else None
+    split = _hyphen_split_unit(unit, fits, prev, metrics)
     if split:
-      first, rest = split
-      append([first], first.width_pt)
+      taken, rest = split
+      append(taken, _extent_pt(taken, prev))
       flush()
       units.appendleft([rest]) # the rest of the word opens the next line
       continue
@@ -432,12 +403,6 @@ def _wrap(
   return _WrapResult(lines, overflow, hard)
 
 #---------------------------------------------------------------------------------- Metrics helpers
-
-def _font_name(seg:RichSegment, font_manager) -> str:
-  """Resolve reportlab font name for segment."""
-  if is_builtin(seg.family, seg.mode):
-    return builtin_name(seg.family, seg.mode)
-  return font_manager.register(seg.family, seg.mode)
 
 def _line_width_pt(line:list[_Word]) -> float:
   """Total horizontal extent of rendered line in pt, run padding included."""
@@ -501,10 +466,12 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
     prev = unit[-1]
   return widest / MM_TO_PT, total / MM_TO_PT
 
-def _line_box(line:list, line_gap:float) -> tuple[float, float]:
+def _line_box(line:list[_Word], line_gap:float, metrics) -> tuple[float, float]:
   """`(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
 
-  Text sets the box from its size.
+  The line is `line_gap` times its largest size tall, with its letters in the middle:
+  from the top of the tallest capital to the bottom of the deepest descender,
+  as `TextMetrics.letter_span` measures them for each face on the line.
   A drawing - a formula, an emoji - carries its own extent,
   and a big operator with limits stands several times taller than the size it was rendered at.
 
@@ -513,9 +480,11 @@ def _line_box(line:list, line_gap:float) -> tuple[float, float]:
   One that does not fit pushes the box out: it would otherwise reach into the neighbouring line
   or, inside a table cell, across the row border.
   """
-  max_size = max(w.seg.size for w in line)
-  ascent = max_size * _ASCENT_RATIO
-  descent = max_size * line_gap - ascent
+  height = max(w.seg.size for w in line) * line_gap
+  faces = {(w.seg.family, w.seg.mode, w.seg.size) for w in line}
+  tops, bottoms = zip(*(metrics.letter_span(*face) for face in faces))
+  ascent = centred_baseline(height, max(tops), max(bottoms))
+  descent = height - ascent
   above = below = 0.0
   for w in line:
     drawing = w.seg.math_drawing
@@ -527,6 +496,13 @@ def _line_box(line:list, line_gap:float) -> tuple[float, float]:
   if above + below <= ascent + descent:
     return ascent, descent
   return max(ascent, above), max(descent, below)
+
+def _empty_line_mm(segments:list[RichSegment], line_gap:float) -> float:
+  """
+  Height (mm) of a line with no words, as two hard breaks in a row leave.
+  It takes the size of the first segment, the face the block opens in.
+  """
+  return segments[0].size * line_gap / MM_TO_PT
 
 def wrap_line_heights(
   pdf,
@@ -553,9 +529,9 @@ def wrap_line_heights(
   heights: list[float] = []
   for line in wrapped.lines:
     if not line:
-      heights.append(11 * line_gap / MM_TO_PT) # empty line from a hard break
+      heights.append(_empty_line_mm(segments, line_gap))
       continue
-    ascent, descent = _line_box(line, line_gap)
+    ascent, descent = _line_box(line, line_gap, pdf._metrics)
     heights.append((ascent + descent) / MM_TO_PT)
   return heights
 
@@ -620,7 +596,7 @@ def render_rich(
   """Render mixed-style text with word wrap. Does not modify cursor.
 
   Args:
-    pdf: `PDF` instance (uses `_canvas`, `_metrics`, `_fonts`, `_page`, `_links`).
+    pdf: `PDF` instance (uses `_canvas`, `_metrics`, `_page`).
     segments: List of `RichSegment` to render in sequence.
     width_mm: Wrap width (from left edge `x_mm`).
     x_mm: Left edge in cursor coords (from content area left margin).
@@ -667,17 +643,14 @@ def render_rich(
   current_top_mm = y_top_mm # canvas y (grows up) - top of next line
   total_used_mm = 0
   for index, line in enumerate(lines, first_line):
-    # Line metrics - use max size to determine baseline and height
     if not line:
-      # Empty line from hard break
-      gap_mm = 11 * line_gap / MM_TO_PT
+      gap_mm = _empty_line_mm(segments, line_gap)
       current_top_mm -= gap_mm
       total_used_mm += gap_mm
       continue
-    max_size = max(w.seg.size for w in line)
     # Ascent positions the baseline below the top edge.
     # Both numbers come from `_line_box`, so the drawn line matches the measured one exactly.
-    ascent_pt, descent_pt = _line_box(line, line_gap)
+    ascent_pt, descent_pt = _line_box(line, line_gap, metrics)
     line_height_mm = (ascent_pt + descent_pt) / MM_TO_PT
     # Baseline canvas y in pt (canvas coords, y grows up)
     baseline_canvas_y_pt = (current_top_mm * MM_TO_PT) - ascent_pt
@@ -738,9 +711,9 @@ def render_rich(
       canvas.setFillColor(Color(*rseg.color[:3]))
       for w in run:
         if not w.is_space:
-          font_name = _font_name(w.seg, pdf.fonts)
-          canvas.setFont(font_name, eff_size)
-          canvas.drawString(cursor_x_pt, word_baseline_pt, w.text, charSpace=w.seg.char_space)
+          text, _ = metrics.shaped(w.text, w.seg.family, w.seg.mode, eff_size)
+          canvas.setFont(metrics.font_name(w.seg.family, w.seg.mode), eff_size)
+          canvas.drawString(cursor_x_pt, word_baseline_pt, text, charSpace=w.seg.char_space)
         cursor_x_pt += _spaced_width(w, ratio)
       # Underline across whole run
       if rseg.underline:

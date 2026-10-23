@@ -155,3 +155,16 @@ class Columns:
     """Width (mm) of each column on a page whose content is `content_width` mm wide."""
     inner = content_width - self.left - self.right
     return (inner - self.gap * (self.count - 1)) / self.count
+
+#-------------------------------------------------------------------------------------------- Frame
+
+@dataclass
+class Frame:
+  """
+  Box `PDF.frame()` lays content out in, as a page of its own.
+  `page` and `cursor` are the page and the cursor it stands in for, put back when it closes.
+  `overflow` records content asking for more room than the box holds.
+  """
+  page: PageGeometry
+  cursor: Cursor
+  overflow: bool = False

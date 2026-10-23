@@ -272,7 +272,7 @@ class BlocksMixin:
     """
     s = self.style
     return RichSegment(text="", family=s.font_body, mode=s.body_mode, size=s.body_size,
-      color=s.body_color, hyphenate=s.hyphenate)
+      color=s.body_color, hyphenate=s.hyphenate, bind_single_letters=s.bind_single_letters)
 
   def _render_paragraph(self, inline_token:Token):
     s = self.style
@@ -341,7 +341,8 @@ class BlocksMixin:
     lines = content.split("\n") if content else [""]
     pad = s.code_block_pad
     left_offset = 2
-    top_offset = s.code_block_size * 0.35 / MM_TO_PT
+    # Room beyond `pad`, half above the lines and half below them
+    v_extra = s.code_block_size * 0.35 / MM_TO_PT
     per_line_segs: list[list[RichSegment]] = []
     for idx in range(len(lines)):
       if highlighted and idx < len(highlighted) and highlighted[idx]:
@@ -365,7 +366,7 @@ class BlocksMixin:
       )
       line_heights_mm.append(max(h, min_line_h_mm))
     content_h_mm = sum(line_heights_mm)
-    frame_h_mm = 2 * pad + top_offset # padding + border, per drawn chunk
+    frame_h_mm = 2 * pad + v_extra # padding + border, per drawn chunk
     block_h = content_h_mm + frame_h_mm
     radius = s.code_block_radius
     page_h = self.pdf.content_height
@@ -391,7 +392,7 @@ class BlocksMixin:
       self.pdf.stroke_color(*s.code_block_border[:3])
       self.pdf.round_rect(w, chunk_h, radius, thickness=0.4, fill=False)
       self._reset_stroke()
-      text_y = y + pad + top_offset
+      text_y = y + pad + v_extra / 2
       for idx in range(i, i + count):
         render_rich(
           self.pdf, per_line_segs[idx], text_width_mm,
@@ -590,7 +591,8 @@ class BlocksMixin:
         text=tag or f"({self._eq_counter})", family=s.font_body, mode=s.body_mode,
         size=s.body_size, color=s.body_color,
       )
-      num_y = self.pdf.y + h_mm / 2 - s.body_size * 0.35 / MM_TO_PT
+      # its line centred on the formula, as a line centres its letters
+      num_y = self.pdf.y + (h_mm - s.body_size * s.line_height / MM_TO_PT) / 2
       render_rich(
         self.pdf, [num_seg], content_w_mm,
         self._indent_mm, num_y, Align.RIGHT, s.line_height,

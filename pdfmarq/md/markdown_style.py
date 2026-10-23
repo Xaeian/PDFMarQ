@@ -156,6 +156,12 @@ class MarkdownStyle:
   # Language whose hyphenation patterns split words at the end of a paragraph line, as `pl`.
   # `None` keeps words whole. Needs `pyphen`.
   hyphenate: str|None = None
+  # A one-letter word of a paragraph keeps to the word after it, so no line ends with `w` or `i`,
+  # as Polish typesetting asks. The text copies out with its plain spaces.
+  bind_single_letters: bool = False
+  # Kern letter pairs of TrueType text, as `AV` and `Ty` want, through `PDF.kerning`.
+  # Needs `uharfbuzz`, the `[kerning]` extra.
+  kerning: bool = False
   # `True` moves a paragraph or list that does not fit here to the next frame, whole.
   # `False` lets text flow, so columns end evenly:
   # a paragraph splits with at least two lines on each side, a list goes item by item,

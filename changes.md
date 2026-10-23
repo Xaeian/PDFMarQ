@@ -1,5 +1,21 @@
 # Changes `pdfmarq`
 
+## `0.6.2` Slides
+
+- Breaking: `TextMetrics.letter_span` replaces `line_height` and `visual_metrics`
+- Breaking: `TextMetrics.lines_height(lines, size)`, one leading for every font
+- `pdf.frame()` lays content out in a box, as a slide's title or body
+- `pdf.kerning()` and `kerning` style field, the `[kerning]` extra
+- `SLIDE` page size, 16:9
+- `bind_single_letters`: no line ends with `w` or `i`
+- `GlyphWarning` for letters a font draws as boxes
+- `round_rect` takes `dash`
+- Fix: text sat high in lines, cells and callouts, so pages shift a point or two
+- Fix: several lines of `text()` sat low in their box
+- Fix: blank code lines taller than the rest
+- Fix: `text()` failed where a face falls back, as Bold to Regular
+- Fix: a dashed shape left later strokes dashed
+
 ## `0.6.1` Mail merge
 
 - `pdfmarq.merge`: templates filled from one record or a table

@@ -197,6 +197,24 @@ def pdf_chars(path:str) -> list[tuple[str, float, float]]:
   finally:
     doc.close()
 
+def pdf_ink(path:str, clip:tuple, page:int=0) -> tuple[float, float]|None:
+  """
+  Top and bottom (pt) of the dark ink inside `clip` `(x0, y0, x1, y1)`, `None` where there is none:
+  how far glyphs really reach, which no font metric tells.
+  Drawn at four pixels a point, where light greys, as borders and backgrounds are, leave no ink.
+  """
+  import fitz
+  doc = fitz.open(path)
+  try:
+    pix = doc[page].get_pixmap(dpi=288, clip=fitz.Rect(clip), colorspace=fitz.csGRAY)
+  finally:
+    doc.close()
+  samples = pix.samples # a copy on every read, so read once
+  rows = [y for y in range(pix.height)
+    if min(samples[y * pix.stride:y * pix.stride + pix.width]) < 128]
+  if not rows: return None
+  return (pix.y + rows[0]) / 4, (pix.y + rows[-1] + 1) / 4
+
 def pdf_links(path:str) -> list[dict]:
   """Link annotations of every page, as PyMuPDF reads them."""
   import fitz

@@ -2,16 +2,17 @@
 
 """
 Justified text: lines fill the width, the last line and hard breaks stay left,
-and words split at the hyphenation points of the text's language.
+words split at the hyphenation points of the text's language
+and one-letter words keep to the word after them.
 """
 
 import io, sys
 import pytest
 from pdfmarq import PDF, Align, MM_TO_PT, RichSegment, render_rich
-from pdfmarq.inline import measure_extent
 from pdfmarq.inline import (_Word, _justify_ratio, _spaced_width, _stretches, _JUSTIFY_SHRINK,
   _tokenize, _wrap, measure_extent, wrap_line_heights)
-from conftest import needs_fitz, pdf_words, pdf_links, pdf_chars, tight_mm
+from pdfmarq.md import MarkdownStyle
+from conftest import needs_fitz, pdf_words, pdf_links, pdf_chars, pdf_text, render_md, tight_mm
 
 TEXT = "Justified text spreads its spaces until every line but the last meets the edge. " * 5
 PHRASE = "Tighter spaces fit"
@@ -126,6 +127,7 @@ def code_spaces_never_stretch():
 
 #-------------------------------------------------------------------------------------- Hyphenation
 
+@pytest.mark.filterwarnings("ignore::pdfmarq.GlyphWarning") # Helvetica metrics, its boxes aside
 def words_split_at_hyphenation_points(broken):
   pytest.importorskip("pyphen")
   lines = broken([RichSegment(POLISH, hyphenate="pl")])
@@ -190,3 +192,41 @@ def no_break_space_binds_its_words(tmp_path):
   bound = measure_extent(pdf, [RichSegment("a w\u00a0domu")])[0]
   free = measure_extent(pdf, [RichSegment("a w domu")])[0]
   assert bound > free
+
+#----------------------------------------------------------------------------------- Single letters
+
+ARTICLES = ("We bought a car and a boat, so I said a word to a friend of a friend "
+  "who had a plan for a trip to a lake where I saw a bird. ") * 3
+
+def single_letters_keep_to_the_next_word(broken):
+  # at some widths a line ends with `a` or `I`, and bound to the word after it none does
+  def ends_single(segment:RichSegment) -> bool:
+    lines = [line for width in range(30, 90, 4) for line in broken([segment], width)[:-1]]
+    return any(len(line.split()[-1]) == 1 for line in lines if line.strip())
+  assert ends_single(RichSegment(ARTICLES))
+  assert not ends_single(RichSegment(ARTICLES, bind_single_letters=True))
+
+@pytest.mark.filterwarnings("ignore::pdfmarq.GlyphWarning") # Helvetica metrics, its boxes aside
+def binding_changes_only_lines_a_letter_would_end(broken):
+  # elsewhere the lines stay as they were, a hyphenated word after the letter included
+  pytest.importorskip("pyphen")
+  for width in range(30, 90, 2):
+    free = broken([RichSegment(POLISH, hyphenate="pl")], width)
+    if any(len(line.split()[-1]) == 1 for line in free[:-1]): continue
+    bound = broken([RichSegment(POLISH, hyphenate="pl", bind_single_letters=True)], width)
+    assert bound == free, width
+
+@needs_fitz
+def markdown_binds_single_letters(tmp_path):
+  # paragraphs follow the style, and copy out with their plain spaces
+  def line_ends(bind:bool) -> list[str]:
+    path = str(tmp_path / f"bind{bind}.pdf")
+    render_md(path, ARTICLES, MarkdownStyle(bind_single_letters=bind))
+    rows: dict[int, list] = {}
+    for w in pdf_words(path):
+      rows.setdefault(round(w[3]), []).append(w)
+    return [max(row, key=lambda w: w[0])[4] for _, row in sorted(rows.items())][:-1]
+  assert "a" in line_ends(False)
+  assert not any(len(word) == 1 for word in line_ends(True))
+  copied = pdf_text(str(tmp_path / "bindTrue.pdf"))
+  assert "a car" in copied and "\u00a0" not in copied

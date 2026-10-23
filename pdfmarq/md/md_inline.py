@@ -112,6 +112,7 @@ class InlineMixin:
         superscript=is_sup,
         subscript=is_sub,
         hyphenate=base.hyphenate,
+        bind_single_letters=base.bind_single_letters,
       )
     def make_emoji(ch):
       """OpenMoji drawing for an emoji char, fallback to raw glyph."""

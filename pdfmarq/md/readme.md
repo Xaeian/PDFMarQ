@@ -51,6 +51,10 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=False, h2_size=None)
   The last line and a line a hard break ends stay left.
 - `hyphenate` names the language whose `pyphen` patterns split words at the end of a paragraph line.
   Headings and table cells keep their words whole.
+- `kerning=True` kerns the letter pairs of TrueType text, as `AV` and `Ty` want, through `PDF.kerning`.
+  It needs `uharfbuzz`, the `[kerning]` extra.
+- `bind_single_letters=True` keeps a one-letter word of a paragraph with the word after it, so no line ends with `w` or `i`, as Polish typesetting asks.
+  The text copies out with its plain spaces.
 - `keep_together=False` lets text flow, so columns end evenly.
   A paragraph splits with at least two lines on each side, and a list goes item by item.
   A heading reserves room for itself, as drawn, and three lines of the text after it.
@@ -256,6 +260,9 @@ Installed by `pip install pdfmarq[md]`:
 - `emoji`, `mdit-py-emoji` - `:shortcode:` emoji
 - `pyphen` - hyphenation patterns for `hyphenate`
 - `fonttools` - the font's own small capitals for `title_caps`
+
+Installed by `pip install pdfmarq[kerning]`:
+- `uharfbuzz` - kerned letter pairs for `kerning`
 
 System tools via npm, **not on PyPI**:
 - `mermaid-cli` for ` ```mermaid ` blocks: `npm install -g @mermaid-js/mermaid-cli`.

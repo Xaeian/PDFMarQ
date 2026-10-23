@@ -36,6 +36,20 @@ pdf.fonts.register_file("DejaVuSans", "Bold", "assets/DejaVuSans-Bold.ttf")
 # Partial updates - only change what you need
 pdf.font("Helvetica", 16, "Bold").text("Title")
 pdf.font(size=11, mode="Regular").text("Body")
+# Kerned letter pairs of TrueType faces, as AV and Ty want: pip install pdfmarq[kerning]
+pdf.kerning().font("Barlow", 40, "Bold").text("AVATAR")
+```
+
+Kerning leaves ligatures and alternate glyphs off, since they copy out of the PDF as other letters.
+
+A character the font has no glyph for draws as an empty box, so it warns once per font with `GlyphWarning`.
+The built-in faces keep to Western European letters, which leaves out `ą ę ś ź ż ń ł ć`.
+A build that must not ship a box turns the warning into an error:
+
+```py
+import warnings
+from pdfmarq import GlyphWarning
+warnings.simplefilter("error", GlyphWarning)
 ```
 
 ## Cursor and flow
@@ -78,9 +92,14 @@ pdf.inset(right=30)              # 30mm given way on the right, from the current
 pdf.inset()                      # close: full width again, below what was drawn
 # Keep a block together
 pdf.keep(40)                     # 40mm of room here, or on to the next frame
+# A box laid out as a page of its own: a slide's title, body or picture
+with pdf.frame(0, 30, 120, 80):  # x, y from the content's top left, width, height
+  pdf.text("Inside the box")     # markdown and columns fill it as they fill a page
+pdf.text("The cursor is back where it was")
 ```
 
 `new_page()` always starts a new page; an open region carries on there from its first column.
+A frame holds one page: what does not fit, a page break among it, runs past its bottom and warns.
 Header and footer callbacks always see the whole page.
 
 ## Text
@@ -93,6 +112,7 @@ pdf.text("Right", width=40, align="R", padding=1) # right-aligned with padding
 ```
 
 When both `width` and `height` are given, font auto-scales down by `0.1pt` steps to fit.
+Lines go 1.2 sizes apart, centred in the box as each line centres its letters.
 
 Mixed-style text goes through `render_rich`, which also justifies:
 
@@ -102,6 +122,8 @@ segs = [RichSegment("Plain, "), RichSegment("bold", bold=True), RichSegment(" an
 render_rich(pdf, segs, 80, 0, pdf.y, Align.JUSTIFY) # width, x, y in mm
 ```
 
+`render_rich` takes mm whatever `unit` the PDF was made with, as `pdf.x`, `pdf.y` and `content_width` give them, and so does the markdown engine.
+Each line is `line_gap` times its size tall, its letters in the middle: from the top of the capitals to the bottom of the descenders, as the font records them.
 A justified line resizes its spaces to meet the edge.
 It may tighten them to three quarters of their width to take one more word, as page layout programs do.
 Measure justified text with the same `align`: `pdfmarq.inline.wrap_line_heights(..., align=Align.JUSTIFY)`.
@@ -109,6 +131,7 @@ The last line and a line a hard break ends stay left.
 `RichSegment(char_space=1)` spaces letters out by 1pt each, as capitals want.
 `RichSegment(hyphenate="pl")` lets a word split at a line end, at a hyphenation point of the Polish patterns from `pyphen`, which the `[md]` extra installs.
 Code, links, numbers and words in capitals stay whole.
+`RichSegment(bind_single_letters=True)` keeps a one-letter word, as `w` or `i`, on the line of the word after it, as Polish typesetting asks.
 
 ## Signing lines and page number
 
@@ -161,6 +184,7 @@ data = builder.build(180, "Helvetica", "Regular", 11)
 pdf.rect(40, 20) # filled rectangle at cursor
 pdf.rect(60, 30, thickness=1, fill=False) # stroked only
 pdf.round_rect(50, 20, radius=3)
+pdf.round_rect(50, 20, radius=3, thickness=0.5, fill=False, dash=(3, 2)) # dashed outline, pt
 pdf.circle(10, thickness=0.5)
 pdf.line(100, 0, 0.5) # horizontal 100mm, 0.5pt thick
 pdf.line(0, 50, 1) # vertical 50mm
@@ -223,8 +247,9 @@ Bookmarks are resolved to their actual page at save time, so outline entries poi
 ## Page sizes
 
 ```py
-from pdfmarq import A4, A3, A5, LETTER, LEGAL
+from pdfmarq import A4, A3, A5, LETTER, LEGAL, SLIDE
 PDF("out.pdf", width=LETTER.width, height=LETTER.height)
+PDF("deck.pdf", width=SLIDE.width, height=SLIDE.height) # 16:9, as PowerPoint sets a slide
 landscape = A4.landscape() # swapped dimensions
 PDF("out.pdf", width=landscape.width, height=landscape.height)
 ```

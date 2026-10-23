@@ -152,7 +152,6 @@ class TableMixin:
     v_pad = s.table_pad
     # One typographic ladder step below body keeps table text lighter than prose
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
-    text_top_offset = cell_size * 0.30 / MM_TO_PT
 
     def cell_data(inline_token:Token|None, bold:bool) -> dict:
       """Convert one cell to a render-ready dict.
@@ -267,7 +266,7 @@ class TableMixin:
         header_data, header_h, header_cell_h,
         chunk_body_data, chunk_body_heights, chunk_body_cell_h,
         aligns, col_widths, text_width_mm,
-        x_start, total_w, h_pad, v_pad, text_top_offset,
+        x_start, total_w, h_pad, v_pad,
         row_offset=row_idx, # for correct zebra striping
       )
 
@@ -283,7 +282,7 @@ class TableMixin:
         header_data, header_h, header_cell_h,
         [], [], [],
         aligns, col_widths, text_width_mm,
-        x_start, total_w, h_pad, v_pad, text_top_offset,
+        x_start, total_w, h_pad, v_pad,
         row_offset=0,
       )
 
@@ -459,7 +458,6 @@ class TableMixin:
     total_w:float,
     h_pad:float,
     v_pad:float,
-    text_top_offset:float,
     row_offset:int = 0,
   ):
     """Render one chunk of a table: header + a subset of body rows.
@@ -517,8 +515,7 @@ class TableMixin:
         align = aligns[idx] if idx < len(aligns) else Align.LEFT
         cell_h = header_cell_h[idx]
         self._draw_cell(
-          cd, x_cell, y, cw, header_h, text_width_mm[idx], cell_h,
-          align, h_pad, text_top_offset,
+          cd, x_cell, y, cw, header_h, text_width_mm[idx], cell_h, align, h_pad,
         )
         x_cell += cw
 
@@ -531,8 +528,7 @@ class TableMixin:
         align = aligns[idx] if idx < len(aligns) else Align.LEFT
         cell_h = body_cell_heights[ri][idx]
         self._draw_cell(
-          cd, x_cell, y_row, cw, row_h, text_width_mm[idx], cell_h,
-          align, h_pad, text_top_offset,
+          cd, x_cell, y_row, cw, row_h, text_width_mm[idx], cell_h, align, h_pad,
         )
         x_cell += cw
       y_row += row_h
@@ -541,7 +537,7 @@ class TableMixin:
 
   def _draw_cell(
     self, cd:dict, x_cell:float, y_cell:float, cw:float, row_h:float,
-    text_w_mm:float, cell_h:float, align:str, h_pad:float, text_top_offset:float,
+    text_w_mm:float, cell_h:float, align:str, h_pad:float,
   ):
     """Render one cell. Dispatches on `cd['type']`: text via render_rich,
     image via pdf.image()/pdf.svg() with column alignment respected.
@@ -572,6 +568,6 @@ class TableMixin:
     v_offset = (row_h - cell_h) / 2
     render_rich(
       pdf, cd["segs"], text_w_mm,
-      x_cell + h_pad, y_cell + v_offset + text_top_offset,
+      x_cell + h_pad, y_cell + v_offset,
       align, s.line_height,
     )

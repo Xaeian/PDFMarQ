@@ -1,7 +1,9 @@
 # pdfmarq/core.py
 
 """Core PDF class - main facade for document generation."""
-import random
+import random, warnings
+from contextlib import contextmanager
+from importlib.util import find_spec
 from typing import Callable
 from dataclasses import replace
 from reportlab.pdfgen import canvas
@@ -10,13 +12,14 @@ from reportlab.lib.colors import Color
 
 from .constants import Defaults, Align
 from .utils import to_mm, parse_margin, parse_color
-from .fonts import FontManager, is_builtin, builtin_name
+from .fonts import FontManager, fit_glyphs
 from .styles import Style, TableStyle
-from .layout import Cursor, PageGeometry, Columns
-from .text import TextMetrics
+from .layout import Cursor, PageGeometry, Columns, Frame
+from .text import TextMetrics, centred_baseline
 from .tables import TableBuilder, TableData
 from .structure import Metadata, BookmarkManager, LinkManager
 from . import graphics as gfx
+from ._warn import caller_level, warn_missing
 
 #----------------------------------------------------------------------------------- NumberedCanvas
 
@@ -138,6 +141,7 @@ class PDF:
     # `_page` is the frame content is drawn into: the whole page, or the open column.
     self._page_full = self._page
     self._columns: Columns|None = None
+    self._frame: Frame|None = None # the box `frame()` lays content out in, while it runs
     # Canvas - `NumberedCanvas` buffers pages
     # so deferred footer (with total page count) can be drawn at `save()` time.
     self._canvas = NumberedCanvas(path)
@@ -250,7 +254,8 @@ class PDF:
   
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
     """Set page size."""
-    if self._columns: raise ValueError("page() cannot resize the page while columns are open")
+    if self._columns or self._frame:
+      raise ValueError("page() cannot resize the page inside columns or a frame")
     if width:
       self._page_full.width = to_mm(width, self.unit)
     if height:
@@ -264,7 +269,12 @@ class PDF:
 
     An open column region carries on from its first column at the top of the new page,
     below whatever the `on_new_page` callbacks placed there, capped as `columns()` asked.
+    A frame holds one page: inside `frame()` the content stays and runs on,
+    which the frame warns of.
     """
+    if self._frame:
+      self._frame.overflow = True
+      return self
     self._finalize_page()
     self._canvas.showPage()
     self._page_num += 1
@@ -287,7 +297,8 @@ class PDF:
     For asymmetric left/right margins, pass a 4-tuple to the `PDF` constructor:
     `PDF(..., margin=(top, right, bot, left))`.
     """
-    if self._columns: raise ValueError("margin() cannot move margins while columns are open")
+    if self._columns or self._frame:
+      raise ValueError("margin() cannot move margins inside columns or a frame")
     top = top if top is not None else lr
     bot = bot if bot is not None else top
     page = self._page_full
@@ -351,11 +362,11 @@ class PDF:
     Without a column region this is `new_page()`.
     Parallel columns (`flow=False`) belong to a caller that breaks pages itself,
     so there it does nothing.
+    Inside `frame()` there is no next page: the content stays and runs past the bottom.
     """
     region = self._columns
-    if not region: return self.new_page()
-    if not region.flow: return self
-    if region.index + 1 < region.count:
+    if region and not region.flow: return self
+    if region and region.index + 1 < region.count:
       self._reach()
       self._enter_column(region.index + 1, 0)
       return self
@@ -410,6 +421,45 @@ class PDF:
     self._page = self._page_full
     self._cursor.set(0, region.top + region.bottom)
 
+  #------------------------------------------------------------------------------------------ Frame
+
+  @contextmanager
+  def frame(self, x:float, y:float, width:float, height:float):
+    """
+    Lay out what the block draws in a box `width` by `height`,
+    its top left `x`, `y` from the content's top left, as the cursor counts.
+
+    While the block runs the box is the page: content width, margins, `y` and centring refer to it
+    and `columns()` divides it, so `text`, `render_rich` and markdown fill it as they fill a page.
+    A slide places its title, body and pictures this way.
+    The cursor comes back to where it was.
+
+    A frame holds one page: content asking for more room than it has, a page break among it,
+    runs on past its bottom, which warns when the block ends.
+    """
+    if self._columns or self._frame:
+      raise ValueError("frame() opens on the page, outside columns and other frames")
+    x, y, width, height = (to_mm(value, self.unit) for value in (x, y, width, height))
+    if width <= 0 or height <= 0:
+      raise ValueError(f"a frame needs a size, got {width:.1f}x{height:.1f}mm")
+    page = self._page_full
+    left, top = page.margin_left + x, page.margin_top + y
+    self._frame = Frame(page, self._cursor)
+    self._page_full = self._page = replace(page, margin_left=left,
+      margin_right=page.width - left - width, margin_top=top,
+      margin_bot=page.height - top - height, axis=left + width / 2)
+    self._cursor = Cursor()
+    try:
+      yield self
+    finally:
+      self._end_columns()
+      frame, self._frame = self._frame, None
+      self._page_full = self._page = frame.page
+      self._cursor = frame.cursor
+    if frame.overflow:
+      warnings.warn(f"content asked for more room than its {width:.1f}x{height:.1f}mm frame holds",
+        RuntimeWarning, stacklevel=caller_level())
+
   #------------------------------------------------------------------------------------------ Fonts
   
   def add_font(self, family:str, mode:str="Regular") -> "PDF":
@@ -429,24 +479,25 @@ class PDF:
     self._apply_font()
     return self
 
+  def kerning(self, on:bool=True) -> "PDF":
+    """
+    Kern the letter pairs of TrueType text drawn from here on, as `AV` and `Ty` want,
+    measuring it the same way, so lines wrap where they are drawn.
+    It needs uharfbuzz, the `[kerning]` extra, and warns once without it.
+    Ligatures and alternate glyphs stay off: they copy out of the PDF as other letters.
+    """
+    if on and find_spec("uharfbuzz") is None:
+      warn_missing("uharfbuzz", "uharfbuzz", "kerning")
+    self._metrics.kerning = on
+    return self
+
   def _apply_font(self):
     """Apply current font to canvas."""
-    family = self._style.font_family
-    mode = self._style.font_mode
-    size = self._style.font_size
-    if is_builtin(family, mode):
-      font_name = builtin_name(family, mode)
-    else:
-      font_name = self._fonts.register(family, mode)
-    self._canvas.setFont(font_name, size)
+    self._canvas.setFont(self._font_name(), self._style.font_size)
 
   def _font_name(self) -> str:
-    """Get current font name for reportlab."""
-    family = self._style.font_family
-    mode = self._style.font_mode
-    if is_builtin(family, mode):
-      return builtin_name(family, mode)
-    return f"{family}-{mode}"
+    """reportlab name of the current face, or of its stand-in for a missing file."""
+    return self._metrics.font_name(self._style.font_family, self._style.font_mode)
 
   #----------------------------------------------------------------------------------------- Cursor
   
@@ -516,6 +567,7 @@ class PDF:
     """Draw text at cursor position."""
     if content is None:
       content = ""
+    content = fit_glyphs(content, self._font_name())
     width_mm = to_mm(width, self.unit) if width else 0
     height_mm = to_mm(height, self.unit) if height else 0
     padding_mm = to_mm(padding, self.unit)
@@ -539,7 +591,7 @@ class PDF:
     else:
       text = content
       font_size = size
-      text_height = self._metrics.lines_height(1, family, mode, size)
+      text_height = self._metrics.lines_height(1, size)
       width_pt = self._metrics.text_width(content, family, mode, size)
       width_mm = width_pt / mm
       lines = 1
@@ -554,19 +606,16 @@ class PDF:
       self.color_rand()
       self._canvas.rect(x_pt, y_pt - height_pt, width_pt, height_pt, stroke=0, fill=1)
       self.color_black()
-    # Vertical centering - use real visual metrics (`visual_metrics`),
-    # not `lines_height`, which includes interline leading.
-    # Cell sizing still uses the (roomier) `lines_height`, but for positioning WITHIN the cell
-    # we want actual glyph extents so text ends up visually centered.
-    ascent_pt, descent_pt = self._metrics.visual_metrics(family, mode, font_size)
-    visual_h = (ascent_pt + descent_pt) * lines
-    margin_v = max(0, (height_pt - visual_h) / 2)
-    offset_top = ascent_pt
-    # Create text object
-    text_obj = self._canvas.beginText(x_pt, y_pt - offset_top - margin_v)
-    text_obj.setFont(self._font_name(), font_size)
+    # Each line is `lines_height(1)` tall, its letters in the middle as `render_rich` sets them,
+    # and the lines together sit in the middle of the box.
+    line_pt = self._metrics.lines_height(1, font_size)
+    above, below = self._metrics.letter_span(family, mode, font_size)
+    margin_v = max(0, (height_pt - line_pt * lines) / 2)
+    baseline_pt = y_pt - margin_v - centred_baseline(line_pt, above, below)
+    text_obj = self._canvas.beginText(x_pt, baseline_pt)
+    text_obj.setFont(self._font_name(), font_size, leading=line_pt)
     for line in text.splitlines():
-      line_width = self._metrics.text_width(line, family, mode, font_size)
+      line, line_width = self._metrics.shaped(line, family, mode, font_size)
       if align == Align.CENTER:
         text_obj.setTextOrigin(x_pt + (width_pt - line_width) / 2, text_obj.getY())
       elif align == Align.RIGHT:
@@ -613,9 +662,9 @@ class PDF:
 
   def round_rect(
     self, width:float, height:float, radius:float,
-    thickness:float = 0, fill:bool = True,
+    thickness:float = 0, fill:bool = True, dash:tuple|None = None,
   ) -> "PDF":
-    """Draw rectangle with rounded corners at cursor. Radius in current unit."""
+    """Rounded rectangle at cursor, `radius` in the current unit and `dash` as in `rect`."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
     w_mm = to_mm(width, self.unit)
     h_mm = to_mm(height, self.unit)
@@ -626,7 +675,7 @@ class PDF:
       x_mm -= w_mm / 2
     gfx.draw_round_rect(
       self._canvas, x_mm * mm, (y_mm - h_mm) * mm,
-      w_mm * mm, h_mm * mm, r_mm * mm, thickness, fill,
+      w_mm * mm, h_mm * mm, r_mm * mm, thickness, dash, fill,
     )
     return self
 

@@ -2,9 +2,11 @@
 
 """Markdown rendering smoke: feed small samples through `md_to_pdf`, verify valid PDF."""
 
+import warnings
 from pathlib import Path
 import pytest
 from conftest import assert_valid_pdf
+from pdfmarq import GlyphWarning
 from pdfmarq.paper import md_to_pdf, PaperStyle
 from pdfmarq.constants import A4
 
@@ -175,11 +177,26 @@ def default_fonts_draw_polish(tmp_path):
   pytest.importorskip("matplotlib")
   fitz = pytest.importorskip("fitz")
   path = tmp_path / "pl.pdf"
-  md_to_pdf("Letters ą ę ś ź ż ń, `code: ą ę ś`\n\n```\nblock: ź ż ń\n```\n", str(path))
+  with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    md_to_pdf("Letters ą ę ś ź ż ń, `code: ą ę ś`\n\n```\nblock: ź ż ń\n```\n", str(path))
+  assert not [w for w in caught if issubclass(w.category, GlyphWarning)]
   page = fitz.open(str(path))[0]
   text = page.get_text()
   assert "Letters ą ę ś ź ż ń" in text and "block: ź ż ń" in text and "\x00" not in text
   assert {font[3].split("+")[-1] for font in page.get_fonts()} >= {"DejaVuSans", "DejaVuSansMono"}
+
+def missing_glyph_warns_once_at_the_calling_line(tmp_path):
+  # DejaVu has no kanji: each draws as an empty box, said once however often it comes
+  pytest.importorskip("matplotlib")
+  from pdfmarq._warn import reset_warnings
+  reset_warnings()
+  with pytest.warns(GlyphWarning) as caught:
+    md_to_pdf("Kanji 漢, and 漢 again.\n", str(tmp_path / "kanji.pdf"))
+  glyphs = [w for w in caught if issubclass(w.category, GlyphWarning)]
+  assert [str(w.message) for w in glyphs] \
+    == ["DejaVuSans-Regular has no glyph for '漢' (U+6F22), drawn as an empty box"]
+  assert Path(glyphs[0].filename).name == Path(__file__).name
 
 def fonts_are_read_once_per_process(tmp_path, monkeypatch):
   # a series of documents would otherwise parse every face again for each one

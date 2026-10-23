@@ -3,9 +3,10 @@
 """End-to-end smoke: public API produces a valid PDF on disk (no crash, valid header)."""
 
 import pytest
-from conftest import assert_valid_pdf
+from pathlib import Path
+from conftest import assert_valid_pdf, needs_fitz
 from pdfmarq import (
-  PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich,
+  PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich, GlyphWarning,
 )
 
 #---------------------------------------------------------------------------------------- PDF basic
@@ -64,6 +65,17 @@ def font_partial_update_keeps_other_fields(tmp_path):
     pdf.font(size=11, mode="Regular").text("Body").enter()
   assert_valid_pdf(path)
 
+def text_draws_in_the_face_standing_in_for_a_missing_one(tmp_path):
+  # a family with no Bold file falls back to its Regular, in `text` as in every other call
+  import shutil, reportlab
+  (tmp_path / "Fam").mkdir()
+  vera = Path(reportlab.__file__).parent / "fonts" / "Vera.ttf"
+  shutil.copy(vera, tmp_path / "Fam" / "Fam-Regular.ttf")
+  path = tmp_path / "fallback.pdf"
+  with PDF(str(path), font_dir=str(tmp_path)) as pdf:
+    pdf.font("Fam", 12, "Bold").text("Regular stands in")
+  assert_valid_pdf(path)
+
 #--------------------------------------------------------------------------------------------- Text
 
 def text_wrapped_to_width(tmp_path):
@@ -111,6 +123,29 @@ def shapes_all_render(tmp_path):
     pdf.line(100, 0, 0.5).enter(5)
     pdf.line(80, 0, 1, dash=(3, 2))
   assert_valid_pdf(path)
+
+@needs_fitz
+def dashed_outline_leaves_later_strokes_solid(tmp_path):
+  # a line drawn straight on the canvas after a dashed shape must not inherit its dash
+  import fitz
+  path = str(tmp_path / "dash.pdf")
+  with PDF(path) as pdf:
+    pdf.round_rect(40, 20, radius=3, thickness=0.5, fill=False, dash=(3, 2)).enter(25)
+    pdf.c.line(10, 10, 100, 10)
+    pdf.rect(40, 20, thickness=0.5, fill=False, dash=(4, 1)).enter(25)
+    pdf.c.line(10, 20, 100, 20)
+  dashes = [drawing["dashes"] for drawing in fitz.open(path)[0].get_drawings()]
+  assert dashes == ["[ 3 2 ] 0", "[] 0", "[ 4 1 ] 0", "[] 0"]
+
+def core_font_warns_about_a_letter_it_lacks(tmp_path):
+  # Helvetica keeps to WinAnsi, which has no ż, and reportlab takes Ω from Symbol
+  from pdfmarq._warn import reset_warnings
+  reset_warnings()
+  with pytest.warns(GlyphWarning) as caught:
+    with PDF(str(tmp_path / "glyph.pdf")) as pdf:
+      pdf.font("Helvetica", 12).text("żż Ω").enter().text("ż")
+  assert [str(w.message) for w in caught if issubclass(w.category, GlyphWarning)] \
+    == ["Helvetica has no glyph for 'ż' (U+017C), drawn as an empty box"]
 
 def pdf_path_polygon_is_reachable(tmp_path):
   # the file path attribute does not shadow `def path()`,
