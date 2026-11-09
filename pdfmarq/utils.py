@@ -11,8 +11,7 @@ def to_mm(value:float, unit:str="mm") -> float:
   unit = unit.lower()
   factors = {"mm": Unit.MM, "cm": Unit.CM, "in": Unit.INCH, "inch": Unit.INCH,
     "pt": Unit.PT, "px": Unit.PX}
-  if unit not in factors:
-    raise ValueError(f"Unknown unit: {unit}. Use: mm, cm, in, pt, px")
+  if unit not in factors: raise ValueError(f"Unknown unit: {unit}. Use: mm, cm, in, pt, px")
   return value * factors[unit]
 
 def to_pt(value_mm:float) -> float:
@@ -32,16 +31,17 @@ def mm_to_pt(*values:float) -> list[float]|float:
 _SIZE_LADDER = (6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72)
 
 def smaller_size(body_pt:float, min_pt:float=7) -> float:
-  """Next-smaller standard typographic size below `body_pt`.
+  """
+  Next-smaller standard typographic size below `body_pt`.
 
   Walks `_SIZE_LADDER`.
   Used by tables and bibliography to derive a "one step smaller" reading size
   that hits expected Word ladder values (11→10, 12→11, 14→12, 16→14, 18→16)
   instead of arbitrary `body - 1` deltas that produce non-standard sizes like 13.
-  Clamps at `min_pt`."""
+  Clamps at `min_pt`.
+  """
   for i, size in enumerate(_SIZE_LADDER):
-    if size >= body_pt:
-      return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
+    if size >= body_pt: return min_pt if i == 0 else max(min_pt, _SIZE_LADDER[i - 1])
   return max(min_pt, _SIZE_LADDER[-2])
 
 #------------------------------------------------------------------------------------------- Colors
@@ -50,11 +50,9 @@ _HEX_DIGITS = set("0123456789abcdefABCDEF")
 
 def parse_color(color:tuple|str|None) -> tuple[float, float, float]:
   """Parse color from tuple or hex string to (r, g, b) 0-1 range."""
-  if color is None:
-    return (0, 0, 0)
+  if color is None: return (0, 0, 0)
   if isinstance(color, tuple):
-    if len(color) >= 3:
-      return (color[0], color[1], color[2])
+    if len(color) >= 3: return (color[0], color[1], color[2])
     raise ValueError("Color tuple must have at least 3 values (r, g, b)")
   if isinstance(color, str):
     raw = color
@@ -79,9 +77,7 @@ def color_alpha(color:tuple, alpha:float) -> tuple[float, float, float, float]:
   return (r, g, b, alpha)
 
 def color_hex(color:tuple|str) -> str:
-  """Return `RRGGBB` uppercase hex string (no `#` prefix).
-
-  """
+  """Return `RRGGBB` uppercase hex string (no `#` prefix)."""
   r, g, b = parse_color(color)
   return f"{int(round(r * 255)):02X}{int(round(g * 255)):02X}{int(round(b * 255)):02X}"
 
@@ -99,14 +95,14 @@ def format_date(value:date|str|None, fmt:str) -> str:
   if isinstance(value, str):
     try:
       return datetime.strptime(value, "%Y-%m-%d").date().strftime(fmt)
-    except ValueError:
-      return value
+    except ValueError: return value
   return str(value)
 
 #------------------------------------------------------------------------------------------- Margin
 
 def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
-  """Parse margin to `(top, right, bot, left)` tuple. CSS-style.
+  """
+  Parse margin to `(top, right, bot, left)` tuple. CSS-style.
 
   Accepts:
     `n`              → all sides `n`
@@ -114,10 +110,8 @@ def parse_margin(margin:float|tuple|list) -> tuple[float, float, float, float]:
     `(v, h)`         → vertical `v`, horizontal `h`
     `(t, h, b)`      → top, horizontal, bottom
     `(t, r, b, l)`   → top, right, bottom, left (full CSS form)
-
   """
-  if isinstance(margin, (int, float)):
-    return (margin, margin, margin, margin)
+  if isinstance(margin, (int, float)): return (margin, margin, margin, margin)
   if isinstance(margin, (tuple, list)):
     n = len(margin)
     if n == 1: return (margin[0], margin[0], margin[0], margin[0])

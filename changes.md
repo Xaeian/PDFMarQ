@@ -5,7 +5,7 @@
 - Breaking: `TextMetrics` measures lines with `letter_span` and `lines_height`
 - `pdf.frame()`, `SLIDE` page size and kerning, the `[kerning]` extra
 - `bind_single_letters`: no line ends with `w` or `i`
-- Bibliography titled in the style's language, `pt` preset
+- Bibliography title in papers, `pt` preset
 - Fix: text sat high in lines, cells and callouts
 - Fixes across `text()`, code blocks and dashes
 

@@ -102,8 +102,7 @@ def _degrees(text:str) -> float:
   """An `orient` angle, `grad` tested before the `rad` it ends with."""
   value = _number(text)
   for unit, scale in (("grad", 0.9), ("rad", 180 / math.pi), ("turn", 360.0)):
-    if text.endswith(unit):
-      return value * scale
+    if text.endswith(unit): return value * scale
   return value
 
 #--------------------------------------------------------------------------------------- Directions
@@ -112,8 +111,7 @@ def _way(*points:Point) -> Dir:
   """Direction from the first point to the first later one that differs."""
   x0, y0 = points[0]
   for x, y in points[1:]:
-    if (x, y) != (x0, y0):
-      return x - x0, y - y0
+    if (x, y) != (x0, y0): return x - x0, y - y0
   return None
 
 def _back(*points:Point) -> Dir:
@@ -130,10 +128,8 @@ def _arc_ways(
   Through the centre form of SVG implementation notes F.6.5.
   """
   rx, ry = abs(rx), abs(ry)
-  if p0 == p1:
-    return None, None # the spec omits the arc
-  if not rx or not ry:
-    return _way(p0, p1), _way(p0, p1) # the spec draws a line
+  if p0 == p1: return None, None # the spec omits the arc
+  if not rx or not ry: return _way(p0, p1), _way(p0, p1) # the spec draws a line
   cos, sin = math.cos(math.radians(phi)), math.sin(math.radians(phi))
   dx, dy = (p0[0] - p1[0]) / 2, (p0[1] - p1[1]) / 2
   x1, y1 = cos * dx + sin * dy, -sin * dx + cos * dy
@@ -164,8 +160,7 @@ class Vertex:
   def angle(self) -> float:
     """`orient="auto"`, in degrees: along the path, halfway round a corner."""
     ways = [math.atan2(d[1], d[0]) for d in (self.into, self.out) if d]
-    if len(ways) < 2:
-      return math.degrees(ways[0]) if ways else 0.0
+    if len(ways) < 2: return math.degrees(ways[0]) if ways else 0.0
     a, b = ways
     mid = (a + b) / 2
     if abs(b - a) > math.pi: mid += math.pi
@@ -203,14 +198,12 @@ def path_vertices(data:str) -> list[Vertex]:
     x, y = end
 
   def reflect(kind:str) -> Point:
-    if curve and curve[0] == kind:
-      return 2 * x - curve[1][0], 2 * y - curve[1][1]
+    if curve and curve[0] == kind: return 2 * x - curve[1][0], 2 * y - curve[1][1]
     return x, y
 
   while not scan.done():
     command = scan.read("letter") or command
-    if not command:
-      return []
+    if not command: return []
     op, rel = command.upper(), command.islower()
     if op == "Z":
       if out:
@@ -221,8 +214,7 @@ def path_vertices(data:str) -> list[Vertex]:
       curve, command = None, ""
       continue
     nums = [scan.read(kind) for kind in _ARGS[op]]
-    if None in nums:
-      return []
+    if None in nums: return []
     v = [float(n) for n in nums]
     ox, oy = (x, y) if rel else (0.0, 0.0)
     p0 = (x, y)
@@ -257,16 +249,14 @@ def path_vertices(data:str) -> list[Vertex]:
 def shape_vertices(node) -> list[Vertex]:
   """Vertices of a `line`, `path`, `polyline` or `polygon`."""
   name = _tag(node)
-  if name == "path":
-    return path_vertices(node.get("d") or "")
+  if name == "path": return path_vertices(node.get("d") or "")
   if name == "line":
     points = [(_number(node.get("x1")), _number(node.get("y1"))),
       (_number(node.get("x2")), _number(node.get("y2")))]
   else:
     nums = [float(n) for n in _NUM_RE.findall(node.get("points") or "")]
     points = list(zip(nums[0::2], nums[1::2]))
-  if len(points) < 2:
-    return []
+  if len(points) < 2: return []
   data = "M" + " L".join(f"{px!r} {py!r}" for px, py in points)
   return path_vertices(data + (" Z" if name == "polygon" else ""))
 

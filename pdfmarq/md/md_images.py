@@ -60,21 +60,20 @@ def load_image_info(
   alt:str = "",
   default_dpi:int = 96,
 ) -> ImageInfo|None:
-  """Read image metadata + parse author overrides.
+  """
+  Read image metadata + parse author overrides.
   Returns `None` if the file cannot be opened.
 
   Author overrides come from the markdown image title `![alt](src "DSL")`,
   parsed as space-separated `key=value` pairs (`w h max_w max_h scale align`).
   """
-  if not src or not os.path.exists(src):
-    return None
+  if not src or not os.path.exists(src): return None
   is_svg = src.lower().endswith(".svg")
   if is_svg:
     dims = _load_svg_dims(src)
   else:
     dims = _load_raster_dims(src, default_dpi)
-  if dims is None:
-    return None
+  if dims is None: return None
   nat_w_mm, nat_h_mm, dimensionless, dpi = dims
   info = ImageInfo(
     src=src, is_svg=is_svg,
@@ -88,38 +87,39 @@ def load_image_info(
   return apply_dsl(info, parse_image_dsl(title))
 
 def _load_svg_dims(src:str) -> tuple[float, float, bool, None]|None:
-  """Returns `(w_mm, h_mm, dimensionless, None)`.
+  """
+  Returns `(w_mm, h_mm, dimensionless, None)`.
   `dimensionless=True` when the SVG declares neither intrinsic dims nor viewBox -
-  render context decides the size."""
+  render context decides the size.
+  """
   try:
     d = svg2rlg(src)
-    if d is None:
-      return None
+    if d is None: return None
     w, h = float(d.width or 0), float(d.height or 0)
-    if w <= 0 or h <= 0:
-      return 1.0, 1.0, True, None # dimensionless - aspect derived from context
+    if w <= 0 or h <= 0: return 1.0, 1.0, True, None # dimensionless - aspect derived from context
     return w / MM_TO_PT, h / MM_TO_PT, False, None
-  except Exception:
-    return None
+  except Exception: return None
 
 def _load_raster_dims(src:str, default_dpi:int) -> tuple[float, float, bool, float]|None:
-  """Returns `(w_mm, h_mm, False, dpi)`.
+  """
+  Returns `(w_mm, h_mm, False, dpi)`.
   DPI is read from PIL `info["dpi"]` _(present in PNG/JPEG metadata as pHYs/JFIF resolution)_,
-  fallback to `default_dpi`."""
+  fallback to `default_dpi`.
+  """
   try:
     with PILImage.open(src) as im:
       px_w, px_h = im.size
       meta = im.info.get("dpi")
     real_dpi = meta[0] if isinstance(meta, tuple) and meta[0] else default_dpi
     return px_w * 25.4 / real_dpi, px_h * 25.4 / real_dpi, False, real_dpi
-  except Exception:
-    return None
+  except Exception: return None
 
 #---------------------------------------------------------------------------------------- Title DSL
 
 @dataclass
 class ImageDSL:
-  """Parsed `![alt](src "key=value ...")` title DSL.
+  """
+  Parsed `![alt](src "key=value ...")` title DSL.
 
   When `is_dsl=False` the title was either empty or contained no `=` token -
   treat it as opaque description and do not apply any overrides.
@@ -137,7 +137,8 @@ _DSL_NUMERIC_KEYS = {"w", "h", "max_w", "max_h", "scale"}
 _DSL_ALIGN_VALUES = {"L", "C", "R"}
 
 def parse_image_dsl(title:str|None) -> ImageDSL:
-  """Parse `key=value` space-separated DSL from an image title slot.
+  """
+  Parse `key=value` space-separated DSL from an image title slot.
 
   Supported keys (case-insensitive):
     `w`, `h`         exact dimension in mm
@@ -152,11 +153,9 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
   Parsing never raises.
   """
   out = ImageDSL()
-  if not title or not title.strip():
-    return out
+  if not title or not title.strip(): return out
   tokens = title.split()
-  if not any("=" in t for t in tokens):
-    return out # opaque description, no DSL parsing
+  if not any("=" in t for t in tokens): return out # opaque description, no DSL parsing
   out.is_dsl = True
   for tok in tokens:
     if "=" not in tok:
@@ -206,10 +205,11 @@ def parse_image_dsl(title:str|None) -> ImageDSL:
   return out
 
 def apply_dsl(info:ImageInfo, dsl:ImageDSL) -> ImageInfo:
-  """Fold a parsed title DSL into `info` and return it.
-  `scale` wins absolutely, `w`/`h` override the flow, `max_*` stay soft caps."""
-  if not dsl.is_dsl:
-    return info
+  """
+  Fold a parsed title DSL into `info` and return it.
+  `scale` wins absolutely, `w`/`h` override the flow, `max_*` stay soft caps.
+  """
+  if not dsl.is_dsl: return info
   if dsl.scale is not None:
     info.explicit_w_mm = info.nat_w_mm * dsl.scale
     info.explicit_h_mm = info.nat_h_mm * dsl.scale
@@ -230,7 +230,8 @@ def size_block(
   svg_fill_width:bool = True,
   min_dpi:float = 150,
 ) -> tuple[float, float]:
-  """Size a paragraph-level (block) image.
+  """
+  Size a paragraph-level (block) image.
 
   - Author override (`w`/`h`/`scale`) wins; final size still clamped to `(page_w_mm, max_h_mm)`
     so explicit dimensions can't run off-page.
@@ -247,8 +248,7 @@ def size_block(
     page_w_mm = min(page_w_mm, info.dsl_max_w_mm)
   if info.dsl_max_h_mm is not None:
     max_h_mm = min(max_h_mm, info.dsl_max_h_mm) if max_h_mm > 0 else info.dsl_max_h_mm
-  if info.explicit_w_mm or info.explicit_h_mm:
-    return _explicit(info, page_w_mm, max_h_mm)
+  if info.explicit_w_mm or info.explicit_h_mm: return _explicit(info, page_w_mm, max_h_mm)
   ar = info.nat_h_mm / info.nat_w_mm if info.nat_w_mm > 0 else 1.0
   w = min(page_w_mm, _upscale_cap_mm(info, min_dpi, svg_fill_width))
   return _clamp_no_upscale(w, w * ar, page_w_mm, max_h_mm)
@@ -257,22 +257,22 @@ def size_inline(
   info:ImageInfo,
   inline_cap_mm:float,
 ) -> tuple[float, float]:
-  """Size an inline mid-paragraph image.
+  """
+  Size an inline mid-paragraph image.
   Always height-capped at `inline_cap_mm` (LaTeX `height=2ex` idiom).
   Width scales proportionally.
-  DSL `max_w`/`max_h` further narrow the cap, and `align` is ignored, the image riding the text."""
+  DSL `max_w`/`max_h` further narrow the cap, and `align` is ignored, the image riding the text.
+  """
   cap_w = inline_cap_mm * 6
   cap_h = inline_cap_mm
   if info.dsl_max_w_mm is not None: cap_w = min(cap_w, info.dsl_max_w_mm)
   if info.dsl_max_h_mm is not None: cap_h = min(cap_h, info.dsl_max_h_mm)
-  if info.explicit_w_mm or info.explicit_h_mm:
-    return _explicit(info, cap_w, cap_h)
+  if info.explicit_w_mm or info.explicit_h_mm: return _explicit(info, cap_w, cap_h)
   effective_cap_h = inline_cap_mm
   if info.dsl_max_h_mm is not None:
     effective_cap_h = min(effective_cap_h, info.dsl_max_h_mm)
   nw, nh = info.nat_w_mm, info.nat_h_mm
-  if nh <= 0:
-    return effective_cap_h, effective_cap_h
+  if nh <= 0: return effective_cap_h, effective_cap_h
   if nh > effective_cap_h:
     nw, nh = nw * (effective_cap_h / nh), effective_cap_h
   # Width is capped too: a very wide, very short image clears the height cap untouched
@@ -288,7 +288,8 @@ def cell_intrinsic_w_mm(
   cell_image_max_w_mm:float,
   cell_image_scale:float = 0.5,
 ) -> tuple[float, float]:
-  """Width range an image cell contributes to HTML auto-layout.
+  """
+  Width range an image cell contributes to HTML auto-layout.
 
   Returns `(col_min, col_max)`:
 
@@ -308,8 +309,7 @@ def cell_intrinsic_w_mm(
   if info.explicit_w_mm:
     v = min(info.explicit_w_mm, cell_image_max_w_mm)
     return v, v
-  if info.is_svg and info.dimensionless:
-    return inline_cap_mm, inline_cap_mm
+  if info.is_svg and info.dimensionless: return inline_cap_mm, inline_cap_mm
   col_max = min(info.nat_w_mm * cell_image_scale, cell_image_max_w_mm)
   # `inline_cap_mm` is a readability floor, clamped to the max:
   # an icon narrower than the cap would otherwise invert the range.
@@ -324,18 +324,18 @@ def size_cell(
   cell_image_max_w_mm:float = 60,
   cell_image_scale:float = 0.5,
 ) -> tuple[float, float]:
-  """Size an image inside a table cell.
+  """
+  Size an image inside a table cell.
 
   Render at `min(natural × cell_image_scale, cell_image_max_w_mm, cell_w_mm, max_h_mm)`.
   Never upscales (unlike block SVG) - a cell-filling SVG looks broken inside a multi-column table.
   The scale + abs cap mirror the intrinsic-width logic,
   so that when a mixed col gets stretched wider by long text, the image doesn't grow to fill -
   it stays at its preferred scaled size.
-  Dimensionless SVGs render at inline cap (icon)."""
-  if info.explicit_w_mm or info.explicit_h_mm:
-    return _explicit(info, cell_w_mm, max_h_mm)
-  if info.is_svg and info.dimensionless:
-    return inline_cap_mm, inline_cap_mm
+  Dimensionless SVGs render at inline cap (icon).
+  """
+  if info.explicit_w_mm or info.explicit_h_mm: return _explicit(info, cell_w_mm, max_h_mm)
+  if info.is_svg and info.dimensionless: return inline_cap_mm, inline_cap_mm
   preferred_w = min(info.nat_w_mm * cell_image_scale, cell_image_max_w_mm)
   preferred_w = min(preferred_w, cell_w_mm)
   if preferred_w >= info.nat_w_mm:
@@ -355,19 +355,18 @@ def _upscale_cap_mm(
   info:ImageInfo, min_dpi:float, svg_fill_width:bool,
 ) -> float:
   """Widest the image may grow to before it turns soft."""
-  if info.is_svg:
-    return float("inf") if info.dimensionless or svg_fill_width else info.nat_w_mm
-  if info.generated or not info.dpi or min_dpi <= 0:
-    return float("inf")
+  if info.is_svg: return float("inf") if info.dimensionless or svg_fill_width else info.nat_w_mm
+  if info.generated or not info.dpi or min_dpi <= 0: return float("inf")
   return info.nat_w_mm * info.dpi / min(info.dpi, min_dpi)
 
 def _clamp_no_upscale(
   nw:float, nh:float, max_w:float, max_h:float,
 ) -> tuple[float, float]:
-  """Scale uniformly DOWN to fit `(max_w, max_h)`.
-  Returns natural size when it already fits."""
-  if nw <= 0 or nh <= 0:
-    return nw, nh
+  """
+  Scale uniformly DOWN to fit `(max_w, max_h)`.
+  Returns natural size when it already fits.
+  """
+  if nw <= 0 or nh <= 0: return nw, nh
   sw = max_w / nw if max_w > 0 and nw > max_w else 1.0
   sh = max_h / nh if max_h > 0 and nh > max_h else 1.0
   s = min(sw, sh)
@@ -376,8 +375,10 @@ def _clamp_no_upscale(
 def _explicit(
   info:ImageInfo, max_w:float, max_h:float,
 ) -> tuple[float, float]:
-  """Resolve explicit width/height, a missing dimension from the natural aspect ratio.
-  Final size still clamped to `(max_w, max_h)`."""
+  """
+  Resolve explicit width/height, a missing dimension from the natural aspect ratio.
+  Final size still clamped to `(max_w, max_h)`.
+  """
   ew, eh = info.explicit_w_mm, info.explicit_h_mm
   nw, nh = info.nat_w_mm, info.nat_h_mm
   if ew and eh:

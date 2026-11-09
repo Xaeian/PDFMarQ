@@ -9,7 +9,7 @@ Blocks drawn around lines keep their letters in the middle too.
 import io
 import pytest
 from conftest import needs_fitz, pdf_ink, pdf_strokes, pdf_words, render_md
-from pdfmarq import PDF, MM_TO_PT, RichSegment, render_rich
+from pdfmarq import PDF, MM_TO_PT, RichSegment, TableStyle, render_rich
 from pdfmarq.inline import measure_rich, wrap_line_heights
 from pdfmarq.md import MarkdownStyle
 
@@ -94,11 +94,10 @@ def empty_line_is_as_tall_as_its_text():
 
 @needs_fitz
 @pytest.mark.parametrize("md", [
-  "| Hp |\n|---|\n",
   "```\nHp\nHp\n```\n",
   "> Hp\n",
   "> [!NOTE]\n> Hp\n", # the title is the first line
-], ids=["table", "code", "quote", "callout"])
+], ids=["code", "quote", "callout"])
 def block_keeps_its_letters_in_the_middle(tmp_path, md):
   # as much room above the capitals as below the descenders, between borders or beside a bar
   path = str(tmp_path / "block.pdf")
@@ -110,6 +109,35 @@ def block_keeps_its_letters_in_the_middle(tmp_path, md):
   # Courier, the mono face where DejaVu is missing, records no cap height and is never embedded:
   # its capitals sit up to a point low, in whatever face the viewer draws it
   assert top - frame.y0 == pytest.approx(frame.y1 - bottom, abs=1.2)
+
+@needs_fitz
+def table_text_sits_between_its_pads(tmp_path):
+  # the table is as tall as before, only its letters move: half the difference of the pads
+  def draw(name:str, top:float, bot:float) -> tuple[float, float]:
+    path = str(tmp_path / f"{name}.pdf")
+    with PDF(path) as pdf:
+      pdf.table([["Hp"]], style=TableStyle(cell_pad_top=top, cell_pad_bot=bot))
+      end = pdf.y
+    return pdf_ink(path, (0, 0, 595, PAGE_H))[0], end
+  level, level_end = draw("level", 0.5, 0.5)
+  pushed, pushed_end = draw("pushed", 1.0, 0.0)
+  assert pushed_end == pytest.approx(level_end)
+  assert pushed - level == pytest.approx(0.5 * MM_TO_PT, abs=0.3)
+
+@needs_fitz
+@pytest.mark.parametrize("markdown", [False, True], ids=["table", "markdown"])
+def table_cell_centres_its_capitals(tmp_path, markdown):
+  # capitals and digits sit level in a cell: descenders would hang into the bottom pad
+  path = str(tmp_path / "cell.pdf")
+  if markdown:
+    render_md(path, "| H |\n|---|\n")
+  else:
+    with PDF(path) as pdf:
+      pdf.table([], header=["H"])
+  top, bottom = pdf_ink(path, (0, 0, 595, PAGE_H))
+  cell = min((d["rect"] for d in pdf_strokes(path)[0] if d["rect"].height > 2
+    and d["rect"].y0 <= top and d["rect"].y1 >= bottom), key=lambda rect: rect.height)
+  assert top - cell.y0 == pytest.approx(cell.y1 - bottom, abs=0.5)
 
 @needs_fitz
 def bullet_sits_mid_lowercase(tmp_path):

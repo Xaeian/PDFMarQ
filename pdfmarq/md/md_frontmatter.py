@@ -48,7 +48,8 @@ def _text_loader():
   return TextLoader
 
 def peek_frontmatter(md_text:str) -> dict|None:
-  """Lightweight YAML frontmatter parse without markdown rendering.
+  """
+  Lightweight YAML frontmatter parse without markdown rendering.
   Returns the parsed dict or None if no frontmatter / parse failure.
   Public so a caller can read a document's content keys and decide how to render it.
   The library itself never derives form from them.
@@ -58,8 +59,7 @@ def peek_frontmatter(md_text:str) -> dict|None:
   try:
     data = read_yaml(m.group(1))
     return data if isinstance(data, dict) else None
-  except Exception:
-    return None
+  except Exception: return None
 
 def split_frontmatter(md_text:str, warn:bool=True, strict:bool=False) -> tuple[dict, str]:
   """

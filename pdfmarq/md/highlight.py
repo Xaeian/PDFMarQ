@@ -216,7 +216,8 @@ def highlight_code(
     warn_missing("pygments", "pygments", "syntax highlighting in code blocks")
     return None
   try:
-    lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=False)
+    # A line comment ends at `\n` in most lexers, so the last line needs one as well
+    lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=True)
   except ClassNotFound:
     return None
   try:
@@ -242,7 +243,7 @@ def highlight_code(
         ))
       if idx < len(parts) - 1:
         lines.append([])
-  # Drop trailing empty line if code ended with \n
+  # Drop the empty line the final `\n` opens
   if lines and not lines[-1]:
     lines.pop()
   return lines or None

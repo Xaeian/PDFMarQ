@@ -333,6 +333,16 @@ class TestMarkdownHighlighting(unittest.TestCase):
     self.assertGreater(len(rows[0]), 1, "heading lost its colour")
     self.assertGreater(len(rows[7]), 1, "list marker lost its colour")
 
+class TestLastLineHighlighting(unittest.TestCase):
+  """A code block reaches the lexer without the closing newline a line comment ends at:
+  the last line keeps its comment whole all the same, so no word in it turns into a keyword."""
+  def test_last_line_keeps_its_comment(self):
+    from pdfmarq.md.highlight import highlight_code
+    lines = highlight_code("make  # build it\nmake run  # then flash it", "sh")
+    first, last = ([seg for seg in line if seg.text.startswith("#")] for line in lines)
+    self.assertEqual(["# then flash it"], [seg.text for seg in last], "last comment fell apart")
+    self.assertEqual(first[0].color, last[0].color, "last comment lost its colour")
+
 #---------------------------------------------------------------------------------------- Autoscale
 
 class TestAutoscaleFloor(unittest.TestCase):

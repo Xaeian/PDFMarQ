@@ -106,7 +106,7 @@ class TableStyle:
   border_size: float = 0.33
   border_size_header: float = 1.0
   border_size_outer: float = 0.2
-  # Cell padding (mm) - vertical is asymmetric, an optical pushdown.
+  # Cell padding (mm). Text sits between the top and bottom pads, its capitals in the middle.
   cell_pad_top: float = 0.5
   cell_pad_bot: float = 0.5
   cell_pad_h: float = 0.5

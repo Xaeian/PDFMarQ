@@ -162,6 +162,8 @@ The document packages layer their own labels on top.
 Above the footnotes `footnote_label=None` draws a thin rule, which suits notes and short acts.
 `footnote_label=True` titles them instead, as a level-2 heading, with the word of the style's language: `Literatura` in `pl`, `References` in `en`.
 A string titles them with its own word, as `footnote_label="Bibliografia"`.
+`pdfmarq.paper` titles them unasked, while the engine and `pdfmarq.legal` keep the rule.
+A document that ends with a heading has titled them itself: the entries follow that heading, with no second title and no rule.
 
 ## Features
 

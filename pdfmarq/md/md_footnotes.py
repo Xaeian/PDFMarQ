@@ -25,14 +25,18 @@ class FootnotesMixin:
     `True` in the style's language, as `footnote_word` gives it,
     or its own word, as `"Bibliografia"`.
     `None` draws a thin HR instead, the smaller font signalling reference matter on its own.
+    A document that ends with a heading has titled the section itself,
+    so the entries follow that heading as a paragraph would, with no second title and no rule.
     """
     s = self.style
     end = self._find_close(tokens, start, "footnote_block_open", "footnote_block_close")
-    self.pdf.enter(s.para_gap)
-    if s.footnote_label:
+    if start > 0 and tokens[start - 1].type == "heading_close":
+      pass # the author's own title, its level and its word, right above the entries
+    elif s.footnote_label:
       title = s.footnote_word if s.footnote_label is True else s.footnote_label
       self._render_heading(2, self._md.parseInline(title)[0])
     else:
+      self.pdf.enter(s.para_gap)
       # Full-width HR separator.
       x = self._indent_mm
       w = self.pdf.content_width - x

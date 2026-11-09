@@ -14,7 +14,7 @@ The header needs at least 2 body rows beside it, or it moves to a new page first
 from typing import NamedTuple
 from markdown_it.token import Token
 from ..inline import RichSegment, render_rich, measure_rich, measure_extent
-from ..constants import Align
+from ..constants import Align, MM_TO_PT
 from ..utils import smaller_size
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
@@ -55,8 +55,7 @@ def _cap_widths(widths:list[float], total:float) -> list[float]:
   left = len(widths)
   for w in sorted(widths):
     cap = remaining / left
-    if w >= cap:
-      return [min(x, cap) for x in widths]
+    if w >= cap: return [min(x, cap) for x in widths]
     remaining -= w
     left -= 1
   return list(widths)
@@ -134,7 +133,8 @@ def _balance_image_cols(
   line_h_mm:float,
   bias:float,
 ) -> tuple[list[float], list[float]]:
-  """Reflow widths so a pure-image col's height matches its widest text-col partner.
+  """
+  Reflow widths so a pure-image col's height matches its widest text-col partner.
   Mixed cols (both image and text rows) are skipped -
   they need full text width and balancing would truncate text.
 
@@ -144,13 +144,10 @@ def _balance_image_cols(
   Budget constraint: w_i + w_j = const.
   Equating heights yields a quadratic in w_i.
   """
-  if not any(is_image_col) or ncols < 2:
-    return col_widths, text_width_mm
+  if not any(is_image_col) or ncols < 2: return col_widths, text_width_mm
   for ic in range(ncols):
-    if not is_image_col[ic]:
-      continue
-    if has_text[ic]:
-      continue # mixed col: text rows need full width
+    if not is_image_col[ic]: continue
+    if has_text[ic]: continue # mixed col: text rows need full width
     aspects = [row[ic].aspect for row in rows
       if ic < len(row) and row[ic].image and row[ic].aspect is not None]
     if not aspects: continue
@@ -201,23 +198,24 @@ def _balance_image_cols(
 
 #--------------------------------------------------------------------------------------- TableMixin
 class TableMixin:
-  """Markdown table rendering with HTML-like auto-layout and inline image
-  support. Mixed into `MarkdownRenderer`."""
+  """
+  Markdown table rendering with HTML-like auto-layout and inline image
+  support. Mixed into `MarkdownRenderer`.
+  """
   def _extract_cell_image(self, inline_token:Token|None) -> ImageInfo|None:
-    """Return `ImageInfo` when the cell contains exactly one local image.
+    """
+    Return `ImageInfo` when the cell contains exactly one local image.
     Mixed content, multiple images, or remote URLs return `None` and fall
     through to `render_rich` as inline icon-sized images.
     """
-    if inline_token is None:
-      return None
+    if inline_token is None: return None
     children = inline_token.children or []
     nontrivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
     if len(nontrivial) != 1 or nontrivial[0].type != "image": return None
     img = nontrivial[0]
     img_attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
     src = img_attrs.get("src", "")
-    if not src or src.startswith(("http://", "https://")):
-      return None
+    if not src or src.startswith(("http://", "https://")): return None
     src = self.resolve_path(src)
     return load_image_info(
       src, attrs=img_attrs, alt=img.content or "",
@@ -279,7 +277,8 @@ class TableMixin:
     body:list[list[Token|None]],
     aligns:list[str],
   ):
-    """Draw a markdown table, splitting across pages when needed.
+    """
+    Draw a markdown table, splitting across pages when needed.
     Header is repeated at the top of each continuation page.
     """
     s = self.style
@@ -292,24 +291,29 @@ class TableMixin:
     # One typographic ladder step below body keeps table text lighter than prose
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
 
+    # Text sits between the pads, its capitals in the middle and descenders hanging below,
+    # as `PDF.table` sets it: centring descenders with the capitals lifts a cell of digits
+    def drop_mm(mode:str) -> float:
+      _, below = pdf.metrics.letter_span(s.font_body, mode, cell_size)
+      return below / MM_TO_PT / 2
+
     def cell_data(inline_token:Token|None, bold:bool) -> dict:
-      """Convert one cell to a render-ready dict.
+      """
+      Convert one cell to a render-ready dict.
       Single-image cells get block-style sizing;
-      everything else is `text` with a list of `RichSegment`s for `render_rich`.
+      everything else is `text` with a list of `RichSegment`s for `render_rich`,
+      and the `drop` (mm) its lines move down by.
       """
       img = self._extract_cell_image(inline_token)
-      if img is not None:
-        return {"type": "image", "info": img}
+      if img is not None: return {"type": "image", "info": img}
+      mode = s.bold_mode if bold else s.body_mode
       fallback = [RichSegment(
-        text=" ", family=s.font_body,
-        mode=s.bold_mode if bold else s.body_mode,
+        text=" ", family=s.font_body, mode=mode,
         size=cell_size, color=s.body_color,
       )]
-      if inline_token is None:
-        return {"type": "text", "segs": fallback}
+      if inline_token is None: return {"type": "text", "segs": fallback, "drop": drop_mm(mode)}
       base = RichSegment(
-        text="", family=s.font_body,
-        mode=s.bold_mode if bold else s.body_mode,
+        text="", family=s.font_body, mode=mode,
         size=cell_size, color=s.body_color,
       )
       segs = self._inline_to_segments(inline_token, base) or fallback
@@ -317,7 +321,7 @@ class TableMixin:
       for seg in segs:
         if seg.math_drawing is None and seg.size == s.body_size:
           seg.size = cell_size
-      return {"type": "text", "segs": segs}
+      return {"type": "text", "segs": segs, "drop": drop_mm(mode)}
 
     # Convert all cells once; dicts are reused across page chunks.
     header_data: list[dict] = []
@@ -379,8 +383,7 @@ class TableMixin:
       fit_count = 0
       for i in range(row_idx, total_body):
         needed += body_heights[i]
-        if needed > avail:
-          break
+        if needed > avail: break
         fit_count += 1
 
       if fit_count >= total_body - row_idx:
@@ -469,7 +472,8 @@ class TableMixin:
     v_pad:float,
     row_offset:int = 0,
   ):
-    """Render one chunk of a table: header + a subset of body rows.
+    """
+    Render one chunk of a table: header + a subset of body rows.
     `row_offset` is the global row index of the first body row in this chunk,
     used for correct zebra stripe continuity across pages.
     """
@@ -548,7 +552,8 @@ class TableMixin:
     self, cd:dict, x_cell:float, y_cell:float, cw:float, row_h:float,
     text_w_mm:float, cell_h:float, align:str, h_pad:float,
   ):
-    """Render one cell. Dispatches on `cd['type']`: text via render_rich,
+    """
+    Render one cell. Dispatches on `cd['type']`: text via render_rich,
     image via pdf.image()/pdf.svg() with column alignment respected.
     """
     s = self.style
@@ -574,7 +579,7 @@ class TableMixin:
       else:
         pdf.image(info.src, img_w, img_h)
       return
-    v_offset = (row_h - cell_h) / 2
+    v_offset = (row_h - cell_h) / 2 + cd["drop"]
     render_rich(
       pdf, cd["segs"], text_w_mm,
       x_cell + h_pad, y_cell + v_offset,

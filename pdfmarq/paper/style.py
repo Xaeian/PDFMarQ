@@ -40,6 +40,9 @@ class PaperStyle(MarkdownStyle):
   page_number_label: str|None = "Page"
   # `Page X/Y` vs just `Page X`.
   page_number_total: bool = True
+  # A paper titles its bibliography unasked, in the style's language, `Literatura` in `pl`.
+  # `None` draws the engine's thin rule, as a note or an act has it.
+  footnote_label: str|bool|None = True
 
   # Frontmatter header layout
   banner_pad_top: float = 0 # mm above header block (start near top)

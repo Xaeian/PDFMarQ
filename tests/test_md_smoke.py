@@ -5,7 +5,7 @@
 import warnings
 from pathlib import Path
 import pytest
-from conftest import assert_valid_pdf, needs_fitz, pdf_pages, pdf_text
+from conftest import assert_valid_pdf, needs_fitz, pdf_pages, pdf_text, pdf_words
 from pdfmarq import GlyphWarning
 from pdfmarq.paper import md_to_pdf, PaperStyle, lang_style
 from pdfmarq.constants import A4
@@ -79,6 +79,36 @@ def md_footnote_label_titles_the_bibliography(tmp_path, label, title):
   titles = {"Literatura", "Bibliografia", "References"} & set(pdf_text(path).split())
   assert titles == ({title} if title else set())
   assert pdf_pages(path) == 1
+
+@needs_fitz
+@pytest.mark.parametrize("src, title", [
+  ("Body[^1].\n\n[^1]: footnote text.", "Literatura"),
+  ("Body[^1].\n\n### Bibliografia\n\n[^1]: footnote text.", "Bibliografia"),
+], ids=["language word", "own heading"])
+def md_paper_titles_the_bibliography_unasked(tmp_path, src, title):
+  # a paper titles its footnotes in its language, unless it ends with a heading of its own
+  path = str(tmp_path / "fn.pdf")
+  md_to_pdf(src, path, style=lang_style("pl"))
+  words = pdf_text(path).split()
+  assert [w for w in words if w in {"Literatura", "Bibliografia"}] == [title]
+
+@needs_fitz
+def md_paper_bibliography_title_sits_where_an_authors_would(tmp_path):
+  # the title a paper adds is drawn as an author's `## Literatura` is, at the same height
+  tops = []
+  for name, heading in (("auto", ""), ("authored", "## Literatura\n\n")):
+    path = str(tmp_path / f"{name}.pdf")
+    md_to_pdf(f"Body[^1].\n\n{heading}[^1]: footnote text.", path, style=lang_style("pl"))
+    tops.append([round(w[1], 1) for w in pdf_words(path) if w[4] in ("Literatura", "[1]")])
+  assert tops[0] == tops[1]
+
+def md_only_a_paper_titles_the_bibliography_unasked():
+  # the bare engine and an act keep the thin rule over their footnotes
+  from pdfmarq.md import MarkdownStyle
+  from pdfmarq.legal import LegalStyle
+  assert MarkdownStyle().footnote_label is None
+  assert LegalStyle().footnote_label is None
+  assert PaperStyle().footnote_label is True
 
 def md_page_landscape_flips_page(tmp_path):
   # orientation comes from `page=`, never from the document

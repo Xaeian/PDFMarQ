@@ -796,6 +796,11 @@ class PDF:
       self.cursor(x_col, y_start)
       self.line(0, total_h, style.border_size_outer)
     self.stroke_color(0, 0, 0)
+    # Text sits between the pads, its capitals in the middle and descenders hanging below:
+    # `text` centres descenders with the capitals, which lifts a cell of digits off its row
+    def drop_mm(mode:str) -> float:
+      _, below = self._metrics.letter_span(self._style.font_family, mode, self._style.font_size)
+      return (style.cell_pad_top - style.cell_pad_bot + below / mm) / 2
     # Header text
     self.cursor(x_start, y_start)
     if data.header and data.header_fitted:
@@ -805,16 +810,21 @@ class PDF:
         hr_, hg_, hb_ = parse_color(style.header_color)
         self.color(hr_, hg_, hb_, 1)
       self.font(mode=header_mode)
+      header_drop = drop_mm(header_mode)
+      self._cursor.move(dy=header_drop)
       for idx, txt in enumerate(data.header_fitted):
         if txt is None:
           txt = data.header[idx]
         align = data.column_aligns[idx] if idx < len(data.column_aligns) else Align.LEFT
         self.text(txt, data.column_widths[idx], data.header_height, align, h_pad)
+      self._cursor.move(dy=-header_drop)
       self.font(mode=old_mode)
       if style.header_color is not None:
         self.color(*old_color)
       self.enter().enter(style.header_gap)
     # Body text
+    body_drop = drop_mm(self._style.font_mode)
+    self._cursor.move(dy=body_drop)
     for i, row in enumerate(data.body_fitted):
       for idx, txt in enumerate(row):
         if txt is None:
@@ -822,6 +832,7 @@ class PDF:
         align = data.column_aligns[idx] if idx < len(data.column_aligns) else Align.LEFT
         self.text(txt, data.column_widths[idx], data.body_heights[i], align, h_pad)
       self.enter()
+    self._cursor.move(dy=-body_drop)
     return self
 
   #-------------------------------------------------------------------------------------- Structure
