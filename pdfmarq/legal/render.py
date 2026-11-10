@@ -158,7 +158,7 @@ def _columns(
   A longer one flows, its last page balanced when the end of the document still fits below it.
   """
   line = style.line_mm(style.body_size)
-  if pdf.content_height - pdf.y < _MIN_REGION_LINES * line and pdf.y > 0.5:
+  if pdf.content_height - pdf.y < _MIN_REGION_LINES * line and not pdf.at_top:
     pdf.new_page()
   region = Region(clauses, pdf.content_width, style.columns, style.column_gap)
   page = pdf.content_height
@@ -190,7 +190,7 @@ def _make_room(pdf:PDF, height:float, bottom:bool):
   Room for the end of a document, kept on one page:
   a new page when the rest of this one is too short, otherwise, with `bottom`, its bottom margin.
   """
-  if height > pdf.content_height - pdf.y and pdf.y > 0.5: pdf.new_page()
+  if height > pdf.content_height - pdf.y and not pdf.at_top: pdf.new_page()
   elif bottom: pdf.cursor(0, pdf.content_height - height)
 
 def _tail_height(pdf:PDF, style:LegalStyle, labels:list[str], items:list[str]) -> float:
@@ -347,7 +347,7 @@ def _rows(pdf:PDF, versions:list[_Version], rows:list[list[tuple[int, int]]]):
     row = rows[k]
     kind = _kind(versions[0].tokens, row[0][0])
     if kind == "pagebreak":
-      if pdf.y > 0.5: pdf.new_page()
+      if not pdf.at_top: pdf.new_page()
       k += 1
       continue
     y = pdf.y
@@ -358,7 +358,7 @@ def _rows(pdf:PDF, versions:list[_Version], rows:list[list[tuple[int, int]]]):
       need += _row_height(versions, rows[k + 1], width, y + height)
     room = pdf.content_height - y
     if need > room:
-      if y > 0.5:
+      if not pdf.at_top:
         pdf.new_page()
         continue
       if height > room:

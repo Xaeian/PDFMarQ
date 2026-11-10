@@ -13,12 +13,14 @@ The header needs at least 2 body rows beside it, or it moves to a new page first
 """
 from typing import NamedTuple
 from markdown_it.token import Token
-from ..inline import RichSegment, render_rich, measure_rich, measure_extent
+from ..inline import RichSegment, RichText, render_rich, measure_rich, measure_extent
 from ..constants import Align, MM_TO_PT
 from ..utils import smaller_size
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
 )
+
+_DOUBLE_RULE_GAP = 0.5 # mm between the two lines of a double rule
 
 #------------------------------------------------------------------------------------------ Helpers
 
@@ -301,8 +303,8 @@ class TableMixin:
       """
       Convert one cell to a render-ready dict.
       Single-image cells get block-style sizing;
-      everything else is `text` with a list of `RichSegment`s for `render_rich`,
-      and the `drop` (mm) its lines move down by.
+      everything else is `text` with its `RichSegment`s and the `drop` (mm) its lines move down by,
+      and gets its `RichText` once the widths of the columns are known.
       """
       img = self._extract_cell_image(inline_token)
       if img is not None: return {"type": "image", "info": img}
@@ -314,16 +316,18 @@ class TableMixin:
       if inline_token is None: return {"type": "text", "segs": fallback, "drop": drop_mm(mode)}
       base = RichSegment(
         text="", family=s.font_body, mode=mode,
-        size=cell_size, color=s.body_color,
+        size=cell_size, color=s.body_color, bind_single_letters=s.bind_single_letters,
       )
-      segs = self._inline_to_segments(inline_token, base) or fallback
-      # Coerce body_size segments to cell_size; inline defaults inherit body_size.
+      segs = self.segments(inline_token, base) or fallback
+      # Coerce body_size segments to cell_size;
+      # inline defaults inherit body_size.
       for seg in segs:
         if seg.math_drawing is None and seg.size == s.body_size:
           seg.size = cell_size
       return {"type": "text", "segs": segs, "drop": drop_mm(mode)}
 
-    # Convert all cells once; dicts are reused across page chunks.
+    # Convert all cells once;
+    # dicts are reused across page chunks.
     header_data: list[dict] = []
     if header:
       header_data = [cell_data(c, bold=True) for c in header]
@@ -331,9 +335,15 @@ class TableMixin:
       [cell_data(c, bold=False) for c in row] for row in body
     ]
 
-    # Widths calculated once from all rows; held constant across page chunks.
+    # Widths calculated once from all rows;
+    # held constant across page chunks.
     col_widths, text_width_mm = self._compute_col_widths(
       header_data, body_data, ncols, total_w, h_pad)
+    # each text cell set once in its column, so it is measured as it is drawn
+    for cells in [header_data, *body_data]:
+      for idx, cd in enumerate(cells):
+        if cd["type"] == "text":
+          cd["text"] = RichText(cd["segs"], text_width_mm[idx], aligns[idx], s.line_height)
 
     min_row_h = s.line_mm(cell_size) + v_pad * 2
     inline_cap_mm = s.inline_image_max_h
@@ -347,7 +357,7 @@ class TableMixin:
           cell_image_scale=s.cell_image_scale,
         )
         return h
-      return measure_rich(pdf, cd["segs"], text_w_mm, line_gap=s.line_height)
+      return measure_rich(pdf, cd["text"])
 
     def row_height(cells:list[dict]) -> tuple[float, list[float]]:
       per_cell: list[float] = []
@@ -372,6 +382,7 @@ class TableMixin:
 
     row_idx = 0
     total_body = len(body_data)
+    double = _DOUBLE_RULE_GAP if s.table_double else 0 # a double rule's room outside the rows
     min_rows = 2 # body rows required alongside header per chunk
     tried_new_page = False # prevents infinite loop when a row exceeds page height
 
@@ -379,7 +390,7 @@ class TableMixin:
       avail = pdf.content_height - pdf.y
 
       # How many rows fit on this page?
-      needed = header_h
+      needed = header_h + 2 * double
       fit_count = 0
       for i in range(row_idx, total_body):
         needed += body_heights[i]
@@ -396,7 +407,8 @@ class TableMixin:
         continue
       # else: fresh page already tried, render what we can (at least 1 row)
 
-      # Always emit at least 1 row; rows taller than content_height must not loop.
+      # Always emit at least 1 row;
+      # rows taller than content_height must not loop.
       chunk_count = max(fit_count, 1)
       chunk_count = min(chunk_count, total_body - row_idx)
 
@@ -419,7 +431,7 @@ class TableMixin:
         pdf.next_frame()
 
     if total_body == 0 and header_data: # header-only table
-      self.pdf.keep(header_h)
+      self.pdf.keep(header_h + 2 * double)
       self._draw_table_chunk(
         header_data, header_h, header_cell_h,
         [], [], [],
@@ -479,16 +491,17 @@ class TableMixin:
     """
     s = self.style
     pdf = self.pdf
-    y = pdf.y
+    double = _DOUBLE_RULE_GAP if s.table_double else 0
+    y = pdf.y + double # the rows start under the outer line of a double rule
     chunk_body_h = sum(body_heights)
     chunk_h = header_h + chunk_body_h
 
-    if header_data: # header background
+    if header_data and s.table_header_bg is not None: # header background
       pdf.cursor(x_start, y)
       pdf.color(*s.table_header_bg[:3])
       pdf.rect(total_w, header_h)
 
-    if s.table_zebra: # zebra striping; row_offset ensures continuity across chunks
+    if s.table_zebra: # zebra stripes, `row_offset` continuing them across chunks
       y_zebra = y + header_h
       for idx, rh in enumerate(body_heights):
         global_idx = row_offset + idx
@@ -500,32 +513,37 @@ class TableMixin:
     pdf.color_black()
 
     pdf.stroke_color(*s.table_border[:3])
-    pdf.cursor(x_start, y)
-    pdf.line(total_w, 0, s.table_border_thick)
-    if header_data:
-      pdf.cursor(x_start, y + header_h)
-      pdf.line(total_w, 0, s.table_header_thick)
+    def rule(y_rule:float, thick:float, outward:float=0):
+      """A rule across the table at `y_rule`, with its double `outward` mm away from the cells."""
+      pdf.cursor(x_start, y_rule)
+      pdf.line(total_w, 0, thick)
+      if outward:
+        pdf.cursor(x_start, y_rule + outward)
+        pdf.line(total_w, 0, thick)
+    rule(y, s.table_border_thick, -double)
+    if header_data: # the bottom rule too, of a table with no body
+      rule(y + header_h, s.table_header_thick, 0 if body_heights else double)
     y_running = y + header_h
-    for rh in body_heights:
+    for idx, rh in enumerate(body_heights):
       y_running += rh
-      pdf.cursor(x_start, y_running)
-      pdf.line(total_w, 0, s.table_border_thick)
+      if idx == len(body_heights) - 1: rule(y_running, s.table_border_thick, double)
+      elif s.table_rules != "head": rule(y_running, s.table_border_thick)
 
-    # Vertical lines
-    x_cursor = x_start
-    pdf.cursor(x_cursor, y)
-    pdf.line(0, chunk_h, s.table_border_thick)
-    for w in col_widths:
-      x_cursor += w
-      pdf.cursor(x_cursor, y)
-      pdf.line(0, chunk_h, s.table_border_thick)
+    if s.table_rules == "grid": # vertical lines, out to the outer line of a double rule
+      x_cursor = x_start
+      pdf.cursor(x_cursor, y - double)
+      pdf.line(0, chunk_h + 2 * double, s.table_border_thick)
+      for w in col_widths:
+        x_cursor += w
+        pdf.cursor(x_cursor, y - double)
+        pdf.line(0, chunk_h + 2 * double, s.table_border_thick)
     self._reset_stroke()
 
     if header_data: # header content
       x_cell = x_start
       for idx, cd in enumerate(header_data):
         cw = col_widths[idx]
-        align = aligns[idx] if idx < len(aligns) else Align.LEFT
+        align = aligns[idx]
         cell_h = header_cell_h[idx]
         self._draw_cell(
           cd, x_cell, y, cw, header_h, text_width_mm[idx], cell_h, align, h_pad,
@@ -537,8 +555,8 @@ class TableMixin:
       x_cell = x_start
       row_h = body_heights[ri]
       for idx, cd in enumerate(row):
-        cw = col_widths[idx] if idx < len(col_widths) else col_widths[-1]
-        align = aligns[idx] if idx < len(aligns) else Align.LEFT
+        cw = col_widths[idx]
+        align = aligns[idx]
         cell_h = body_cell_heights[ri][idx]
         self._draw_cell(
           cd, x_cell, y_row, cw, row_h, text_width_mm[idx], cell_h, align, h_pad,
@@ -546,7 +564,7 @@ class TableMixin:
         x_cell += cw
       y_row += row_h
 
-    pdf.cursor(x_start, y + chunk_h)
+    pdf.cursor(x_start, y + chunk_h + double)
 
   def _draw_cell(
     self, cd:dict, x_cell:float, y_cell:float, cw:float, row_h:float,
@@ -580,8 +598,4 @@ class TableMixin:
         pdf.image(info.src, img_w, img_h)
       return
     v_offset = (row_h - cell_h) / 2 + cd["drop"]
-    render_rich(
-      pdf, cd["segs"], text_w_mm,
-      x_cell + h_pad, y_cell + v_offset,
-      align, s.line_height,
-    )
+    render_rich(pdf, cd["text"], x_cell + h_pad, y_cell + v_offset)

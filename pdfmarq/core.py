@@ -18,13 +18,16 @@ from .text import TextMetrics, centred_baseline
 from .tables import TableBuilder, TableData
 from .structure import Metadata, BookmarkManager, LinkManager
 from . import graphics as gfx
-from ._warn import caller_level, warn_missing
+from .warn import caller_level, warn_missing
+
+_AT_TOP_MM = 0.5 # a cursor this near the top of a frame stands at its top
 
 #----------------------------------------------------------------------------------- NumberedCanvas
 
 class NumberedCanvas(canvas.Canvas):
-  """Canvas subclass that buffers pages instead of emitting immediately.
-  
+  """
+  Canvas subclass that buffers pages instead of emitting immediately.
+
   This enables deferred rendering of content that depends on the total page count
   (e.g. footer "Page 1/5").
   Pages are accumulated in `_saved_pages` during normal `showPage()` calls.
@@ -48,7 +51,7 @@ class NumberedCanvas(canvas.Canvas):
     # (page, canvas method name, key, kwargs) - replayed in `save()`.
     self._deferred_bookmarks: list[tuple[int, str, str, dict]] = []
     self._replaying = False
-  
+
   def showPage(self):
     """Buffer current page state instead of emitting."""
     self._saved_pages.append(dict(self.__dict__))
@@ -65,11 +68,10 @@ class NumberedCanvas(canvas.Canvas):
 
   def _defer_bookmark(self, method:str, key:str, kwargs:dict):
     """Queue a named destination for the save-time replay of this page."""
-    if self._replaying:
-      return getattr(super(), method)(key, **kwargs)
+    if self._replaying: return getattr(super(), method)(key, **kwargs)
     self._deferred_bookmarks.append((self._pageNumber, method, key, kwargs))
     return None
-  
+
   def save(self):
     """Replay buffered pages, running final-page callbacks with known total."""
     # Buffer any pending content from the last page
@@ -102,7 +104,8 @@ class NumberedCanvas(canvas.Canvas):
 #---------------------------------------------------------------------------------------------- PDF
 
 class PDF:
-  """Main PDF generator with fluent API.
+  """
+  Main PDF generator with fluent API.
 
   Example:
     >>> with PDF("output.pdf") as pdf:
@@ -162,7 +165,7 @@ class PDF:
     self._new_page_callbacks: list[Callable] = [] # after showPage + cursor reset
 
   #-------------------------------------------------------------------------------- Context manager
-  
+
   def __enter__(self) -> "PDF":
     return self
 
@@ -181,6 +184,11 @@ class PDF:
   def y(self) -> float:
     """Cursor Y position in mm from page top edge (Y grows down)."""
     return self._cursor.y
+
+  @property
+  def at_top(self) -> bool:
+    """Whether the cursor stands at the top of its frame, where a break would leave it empty."""
+    return self._cursor.y <= _AT_TOP_MM
 
   @property
   def page_width(self) -> float:
@@ -234,8 +242,10 @@ class PDF:
 
   @property
   def c(self):
-    """Direct reportlab `Canvas` access for advanced operations not exposed by the fluent API.
-    Use sparingly - bypasses cursor / page tracking."""
+    """
+    Direct reportlab `Canvas` access for advanced operations not exposed by the fluent API.
+    Use sparingly - bypasses cursor / page tracking.
+    """
     return self._canvas
 
   @property
@@ -250,12 +260,14 @@ class PDF:
 
   @property
   def output_path(self) -> str:
-    """Destination file path. Symmetric with `DOCX.output_path`.
-    `pdf.path()` is reserved for the polygon-draw method, so use this for filename inspection."""
+    """
+    Destination file path. Symmetric with `DOCX.output_path`.
+    `pdf.path()` is reserved for the polygon-draw method, so use this for filename inspection.
+    """
     return self._path
 
   #------------------------------------------------------------------------------------------- Page
-  
+
   def page(self, width:float|None=None, height:float|None=None) -> "PDF":
     """Set page size."""
     if self._columns or self._frame:
@@ -296,7 +308,8 @@ class PDF:
     return self
 
   def margin(self, lr:float, top:float|None=None, bot:float|None=None) -> "PDF":
-    """Set page margins. `lr` sets both left and right symmetrically.
+    """
+    Set page margins. `lr` sets both left and right symmetrically.
 
     For asymmetric left/right margins, pass a 4-tuple to the `PDF` constructor:
     `PDF(..., margin=(top, right, bot, left))`.
@@ -314,7 +327,13 @@ class PDF:
 
   #---------------------------------------------------------------------------------------- Columns
 
-  def columns(self, count:int, gap:float=8, flow:bool=True, height:float|list|None=None) -> "PDF":
+  def columns(
+    self,
+    count:int,
+    gap:float = 8,
+    flow:bool = True,
+    height:float|list|tuple|None = None,
+  ) -> "PDF":
     """
     Lay out what follows in `count` columns, starting at the current height.
 
@@ -322,15 +341,25 @@ class PDF:
     Flowing columns fill left to right as `next_frame()` moves on.
     With `flow=False` the caller places content per column and breaks pages itself.
     `height` caps the columns on this page, which is how a caller balances them.
-    A list caps them page by page from this one, `None` leaving a page uncapped:
+    A list or a tuple caps them page by page from this one, `None` leaving a page uncapped:
     `[None, 120]` balances the second page of the region only.
+    A page given as a list or tuple of its own caps its columns one by one:
+    `[(150, None)]` keeps the first clear of a footnote below it.
     `columns(1)` closes the region, below its lowest column.
+    A `height` that does not fit `count` fails before the open region closes.
     """
     if count < 1: raise ValueError(f"column count must be at least 1, got {count}")
+    def cap_mm(cap:float|None) -> float|None:
+      return None if cap is None else to_mm(cap, self.unit)
+    caps = []
+    for cap in height if isinstance(height, (list, tuple)) else [height]:
+      if isinstance(cap, (list, tuple)):
+        if len(cap) != count: raise ValueError(f"{len(cap)} column caps for {count} columns")
+        caps.append(tuple(cap_mm(c) for c in cap))
+      else: caps.append(cap_mm(cap))
+    caps = caps or [None]
     self._end_columns()
     if count == 1: return self
-    caps = height if isinstance(height, (list, tuple)) else [height]
-    caps = [None if cap is None else to_mm(cap, self.unit) for cap in caps] or [None]
     self._open(Columns(count, to_mm(gap, self.unit), flow, self._cursor.y, caps[0],
       later=caps[1:]))
     return self
@@ -384,7 +413,7 @@ class PDF:
     """
     height = to_mm(height, self.unit)
     if height <= self.content_height - self._cursor.y: return self
-    if height > self.content_height and self._cursor.y <= 0.5: return self
+    if height > self.content_height and self.at_top: return self
     return self.next_frame()
 
   def _open(self, region:Columns):
@@ -403,7 +432,8 @@ class PDF:
     width = region.column_width(full.content_width)
     left = full.margin_left + region.left + index * (width + region.gap)
     height = full.content_height - region.top # down to the page's bottom margin
-    if region.height is not None: height = min(height, region.height)
+    cap = region.height[index] if isinstance(region.height, tuple) else region.height
+    if cap is not None: height = min(height, cap)
     self._page = full.box(left, full.margin_top + region.top, width, height)
     region.index = index
     self._cursor.set(0, y)
@@ -460,7 +490,7 @@ class PDF:
         RuntimeWarning, stacklevel=caller_level())
 
   #------------------------------------------------------------------------------------------ Fonts
-  
+
   def add_font(self, family:str, mode:str="Regular") -> "PDF":
     """Register font for use."""
     self._fonts.register(family, mode)
@@ -499,7 +529,7 @@ class PDF:
     return self._metrics.font_name(self._style.font_family, self._style.font_mode)
 
   #----------------------------------------------------------------------------------------- Cursor
-  
+
   def cursor(self, x:float|None=None, y:float|None=None, align:str|None=None) -> "PDF":
     """Set cursor position and/or alignment."""
     if x is not None:
@@ -521,7 +551,7 @@ class PDF:
     return self
 
   #----------------------------------------------------------------------------------------- Colors
-  
+
   def color(self, r:float, g:float, b:float, a:float=1) -> "PDF":
     """Set fill color."""
     self._canvas.setFillColor(Color(r, g, b, a))
@@ -554,7 +584,7 @@ class PDF:
     return self
 
   #------------------------------------------------------------------------------------------- Text
-  
+
   def text(
     self,
     content:str,
@@ -577,7 +607,7 @@ class PDF:
     width_pt = width_mm * mm if width_mm else 0
     height_pt = height_mm * mm if height_mm else 0
     padding_pt = padding_mm * mm
-    # Fit text / measure BEFORE computing position
+    # measured first, since the position depends on the width
     if width_pt:
       fit = self._metrics.box_fit(
         content, width_pt - 2 * padding_pt, height_pt,
@@ -597,7 +627,6 @@ class PDF:
     if not height_pt:
       height_pt = text_height
       height_mm = height_pt / mm
-    # NOW compute canvas position with correct width
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor, width_mm)
     x_pt, y_pt = x_mm * mm, y_mm * mm
     # Debug rectangle
@@ -629,7 +658,7 @@ class PDF:
     return self
 
   #--------------------------------------------------------------------------------- Lines & Shapes
-  
+
   def line(self, width:float=0, height:float=0, thickness:float=1, dash:tuple|None=None) -> "PDF":
     """Draw line from cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
@@ -640,7 +669,7 @@ class PDF:
     elif self._cursor.align == Align.CENTER:
       x_mm -= w_mm / 2
     gfx.draw_line(self._canvas, x_mm * mm, y_mm * mm,
-                  (x_mm + w_mm) * mm, (y_mm - h_mm) * mm, thickness, dash)
+      (x_mm + w_mm) * mm, (y_mm - h_mm) * mm, thickness, dash)
     return self
 
   def rect(
@@ -697,7 +726,7 @@ class PDF:
     return self
 
   #----------------------------------------------------------------------------------------- Images
-  
+
   def image(self, path:str, width:float, height:float) -> "PDF":
     """Draw image at cursor."""
     x_mm, y_mm = self._page.cursor_to_canvas(self._cursor)
@@ -725,7 +754,7 @@ class PDF:
     return self
 
   #----------------------------------------------------------------------------------------- Tables
-  
+
   def table(
     self,
     body:list[list[str]],
@@ -760,9 +789,10 @@ class PDF:
     header_mode = "Bold" if style.header_bold else self._style.font_mode
     # Backgrounds: solid GitHub-light subtle colors (no alpha trickery).
     if data.header:
-      r, g, b = parse_color(style.header_bg)
-      self.color(r, g, b, 1)
-      self.rect(data.total_width, data.header_height)
+      if style.header_bg is not None:
+        r, g, b = parse_color(style.header_bg)
+        self.color(r, g, b, 1)
+        self.rect(data.total_width, data.header_height)
       self.enter(data.header_height).enter(style.header_gap)
     for i, h in enumerate(data.body_heights):
       bg = style.row_bg_odd if i % 2 else style.row_bg_even
@@ -836,9 +866,10 @@ class PDF:
     return self
 
   #-------------------------------------------------------------------------------------- Structure
-  
+
   def anchor(self, key:str) -> "PDF":
-    """Register a named destination at the current cursor position.
+    """
+    Register a named destination at the current cursor position.
 
     A viewer following a link to `key` scrolls to this point rather than fitting the whole page,
     which is what makes an anchor useful in a long document.
@@ -867,9 +898,11 @@ class PDF:
     subject:str|None = None, keywords:str|None = None,
     comments:str|None = None, category:str|None = None,
   ) -> "PDF":
-    """Set document metadata.
+    """
+    Set document metadata.
     `comments`/`category` accepted for parity with `DOCX.metadata()`,
-    but not emitted to the PDF /Info dict."""
+    but not emitted to the PDF /Info dict.
+    """
     if title: self._metadata.title = title
     if author: self._metadata.author = author
     if subject: self._metadata.subject = subject
@@ -879,9 +912,10 @@ class PDF:
     return self
 
   #-------------------------------------------------------------------------------- Headers/Footers
-  
+
   def on_page(self, callback:Callable) -> "PDF":
-    """Register callback to run on each page (for headers/footers).
+    """
+    Register callback to run on each page (for headers/footers).
 
     Callback receives (pdf, page_num) arguments.
     """
@@ -889,7 +923,8 @@ class PDF:
     return self
 
   def on_new_page(self, callback:Callable) -> "PDF":
-    """Register callback to run after a new page is started (after cursor reset).
+    """
+    Register callback to run after a new page is started (after cursor reset).
     Use to advance the cursor past a top header before content begins.
 
     Callback receives (pdf, page_num) arguments.
@@ -898,11 +933,13 @@ class PDF:
     return self
 
   def on_final_page(self, callback:Callable) -> "PDF":
-    """Register callback that runs at `save()` time once total page count is known.
+    """
+    Register callback that runs at `save()` time once total page count is known.
     Use for footers like "Page 1/5" that need the final page total.
 
     Callback receives (pdf, page_num, total_pages).
-    Canvas is on the correct page; cursor state is saved and restored around each call.
+    Canvas is on the correct page;
+    cursor state is saved and restored around each call.
     """
     self._canvas._final_page_callbacks.append(
       lambda pdf, page_num, total: self._wrap_final_callback(callback, pdf, page_num, total),
@@ -937,7 +974,8 @@ class PDF:
       self._cursor = cursor_backup
 
   def _finalize_page(self):
-    """Run page callbacks and flush bookmarks/links for the current page.
+    """
+    Run page callbacks and flush bookmarks/links for the current page.
 
     Must be called while the canvas is still on this page:
     both `bookmarkPage()` and `linkURL()` bind to the current canvas page.
@@ -947,9 +985,10 @@ class PDF:
     self._links.apply(self._canvas, self._page.height, self._page_num)
 
   #----------------------------------------------------------------------------------------- Output
-  
+
   def save(self) -> "PDF":
-    """Render and save PDF. Idempotent - a second call is a no-op.
+    """
+    Render and save PDF. Idempotent - a second call is a no-op.
 
     Keeps `pdf.save()` inside a `with` block legal: `__exit__` saves too,
     and reportlab's canvas can only be saved once.

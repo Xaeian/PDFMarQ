@@ -36,8 +36,11 @@ class TableData:
 #------------------------------------------------------------------------------------- TableBuilder
 
 class TableBuilder:
-  """Fluent builder that turns row/column inputs into a `TableData` ready for `PDF._draw_table`.
-  Each setter returns `self` for chaining; call `build()` to finalize."""
+  """
+  Fluent builder that turns row/column inputs into a `TableData` ready for `PDF._draw_table`.
+  Each setter returns `self` for chaining;
+  call `build()` to finalize.
+  """
   def __init__(self, metrics:TextMetrics, style:TableStyle|None=None):
     self.metrics = metrics
     self.style = style or TableStyle()
@@ -69,7 +72,7 @@ class TableBuilder:
     return self
 
   def width(self, width:float) -> "TableBuilder":
-    """Force absolute total width in mm; unset lets `build()` use `available_width`."""
+    """Force a total width in mm, which `build()` otherwise takes from `available_width`."""
     self._width = width
     return self
 
@@ -80,9 +83,11 @@ class TableBuilder:
     font_mode:str = "Regular",
     font_size:float = 11,
   ) -> TableData:
-    """Prepare table data for rendering. Pure - does not mutate builder state.
+    """
+    Prepare table data for rendering. Pure - does not mutate builder state.
 
-    Uses `style.font_size` when set; otherwise the `font_size` argument.
+    Uses `style.font_size` when set;
+    otherwise the `font_size` argument.
     Header runs in bold when `style.header_bold` is true.
     """
     s = self.style

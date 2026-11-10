@@ -34,7 +34,7 @@ except ImportError:
 
 from reportlab.lib.colors import Color
 from ..core import PDF
-from .markdown_style import MarkdownStyle
+from .markdown_style import MarkdownStyle, TABLE_RULES
 from .md_fonts import FontsMixin
 from .md_preprocess import PreprocessMixin, normalize_math_delimiters
 from .md_inline import InlineMixin
@@ -46,7 +46,7 @@ from .md_table import TableMixin
 from .md_footnotes import FootnotesMixin
 from .md_frontmatter import split_frontmatter
 from .md_plugins import sup_plugin, mark_plugin
-from .._warn import caller_level, warn_missing
+from ..warn import caller_level, warn_missing
 from ..inline import hyphenator
 from . import md_html
 
@@ -69,7 +69,7 @@ class MarkdownRenderer(
         f"not {pdf.unit!r}")
     self.pdf = pdf
     self.style = style or MarkdownStyle()
-    if self.style.hyphenate: hyphenator(self.style.hyphenate) # an unknown language fails here
+    self._check_style()
     # Root for resolving relative image paths.
     self.base_dir = base_dir or os.getcwd()
     # Auto-register default fonts before the first draw.
@@ -80,6 +80,7 @@ class MarkdownRenderer(
     self._md = md
     self._indent_mm = 0
     self._list_depth = 0
+    self._in_group = False # inside a group directive, where blocks skip their own pre-break
     self._eq_counter = 0
     self._known_slugs: set = set() # populated by `index()`
     self._slug_uses: dict = {} # slug → times used, for numbering repeats
@@ -96,7 +97,8 @@ class MarkdownRenderer(
     self._publish_style_fonts()
 
   def _publish_style_fonts(self):
-    """Load the style's families up front, so SVG text can reach all three.
+    """
+    Load the style's families up front, so SVG text can reach all three.
 
     Drawing alone registers them lazily.
     That leaves a diagram labelled in the mono family on Helvetica whenever the page holds no code.
@@ -123,8 +125,6 @@ class MarkdownRenderer(
         "mdit-subscript", "mdit-py-plugins", "subscript (~text~)"),
       ("mdit_py_plugins.deflist", "deflist_plugin",
         "mdit-deflist", "mdit-py-plugins", "definition lists"),
-      ("mdit_py_emoji", "emoji_plugin",
-        "mdit-py-emoji", "mdit-py-emoji", "emoji shortcodes (:smile:)"),
     ]
     for module_path, attr, key, pkg, feature in plugins:
       if attr == "dollarmath_plugin" and not self.style.math_enable: continue
@@ -136,7 +136,7 @@ class MarkdownRenderer(
     md.use(sup_plugin).use(mark_plugin) # bundled
 
   #------------------------------------------------------------------------------------------ Entry
-  
+
   def render(self, md_text:str):
     """Parse, index and draw a whole markdown document into the current frame."""
     tokens = self.parse(md_text)
@@ -196,15 +196,28 @@ class MarkdownRenderer(
     if style is None: return self._render_tokens(tokens)
     own, self.style = self.style, style
     try:
+      self._check_style()
       self._ensure_default_font()
       self._publish_style_fonts()
       self._render_tokens(tokens)
     finally:
       self.style = own
 
+  def _check_style(self):
+    """Fail on a value of `style` the engine cannot set, before anything is drawn."""
+    s = self.style
+    if s.hyphenate: hyphenator(s.hyphenate) # an unknown language fails here
+    if s.table_rules not in TABLE_RULES:
+      raise ValueError(f"table_rules must be one of {', '.join(TABLE_RULES)}, "
+        f"got {s.table_rules!r}")
+    if not isinstance(s.bind_single_letters, str):
+      raise TypeError(f"bind_single_letters names the letters that bind, as `aiouwz`, "
+        f"got {s.bind_single_letters!r}")
+
   @staticmethod
   def _collect_heading_slugs(tokens:list[Token]) -> set:
-    """Pre-scan tokens to collect all heading slugs. Used to filter internal links:
+    """
+    Pre-scan tokens to collect all heading slugs. Used to filter internal links:
     `[x](#slug)` is rendered as a jump only when `slug` is a real heading,
     otherwise the text is kept but not linkified.
     Prevents reportlab crash on save when a link targets a non-existent anchor.
@@ -275,8 +288,7 @@ class MarkdownRenderer(
         if md_html.is_hr_block(content):
           self._render_hr()
         elif md_html.is_pagebreak_directive(content):
-          if self.pdf.y > 0.5: # skip when already at page top
-            self.pdf.new_page()
+          if not self.pdf.at_top: self.pdf.new_page()
         elif md_html.is_group_open_directive(content):
           end_i = self._find_group_close(tokens, i)
           self._render_group(tokens[i+1:end_i])
@@ -296,17 +308,19 @@ class MarkdownRenderer(
         i += 1
 
   #--------------------------------------------------------------------------------- Shared helpers
-  
+
   @staticmethod
   def _is_image_only_inline(inline:Token) -> bool:
-    """True when an inline token's only meaningful child is a single image
+    """
+    True when an inline token's only meaningful child is a single image
     (softbreaks/hardbreaks ignored).
     Used to detect the setext-heading-with-image misparse
-    and the paragraph-with-image block-image promotion."""
+    and the paragraph-with-image block-image promotion.
+    """
     children = inline.children or []
     non_trivial = [c for c in children if c.type not in ("softbreak", "hardbreak")]
     return len(non_trivial) == 1 and non_trivial[0].type == "image"
-  
+
   @staticmethod
   def _find_close(tokens:list[Token], start:int, open_type:str, close_type:str) -> int:
     """Return index of the matching close token for a balanced open token."""
@@ -316,13 +330,14 @@ class MarkdownRenderer(
       if tt == open_type: depth += 1
       elif tt == close_type:
         depth -= 1
-        if depth == 0:
-          return j
+        if depth == 0: return j
     return len(tokens) - 1
 
   def _reset_stroke(self):
-    """Reset canvas stroke and fill to black.
-    Prevents color leaks from link underlines and coloured rects bleeding into later elements."""
+    """
+    Reset canvas stroke and fill to black.
+    Prevents color leaks from link underlines and coloured rects bleeding into later elements.
+    """
     c = self.pdf.c
     c.setStrokeColor(Color(0, 0, 0))
     c.setFillColor(Color(0, 0, 0))
@@ -344,18 +359,19 @@ class MarkdownRenderer(
     return None
 
   def resolve_path(self, src:str) -> str:
-    """Join `src` with `base_dir` when relative.
-    Absolute paths and URLs pass through unchanged."""
-    if not src or src.startswith(("http://", "https://", "data:")):
-      return src
-    if os.path.isabs(src):
-      return src
+    """
+    Join `src` with `base_dir` when relative.
+    Absolute paths and URLs pass through unchanged.
+    """
+    if not src or src.startswith(("http://", "https://", "data:")): return src
+    if os.path.isabs(src): return src
     return os.path.normpath(os.path.join(self.base_dir, src))
 
   #------------------------------------------------------------------------------------- Directives
 
   def _find_group_close(self, tokens:list[Token], start:int) -> int:
-    """Return index of the matching `<!-- /group -->` for the open at `start`.
+    """
+    Return index of the matching `<!-- /group -->` for the open at `start`.
     Inner groups are silent markers only (no extra keep-together behavior).
     Returns `len(tokens)` for unclosed groups (warns, renders to EOF).
     """
@@ -391,9 +407,9 @@ class MarkdownRenderer(
     total_h = self._group_height(tokens)
     remaining = self.pdf.content_height - self.pdf.y
     page_avail = self.pdf.content_height
-    if total_h > remaining and total_h <= page_avail and self.pdf.y > 0.5:
+    if total_h > remaining and total_h <= page_avail and not self.pdf.at_top:
       self.pdf.next_frame()
-    was_in_group = getattr(self, "_in_group", False)
+    was_in_group = self._in_group
     self._in_group = True
     try:
       self._render_tokens(tokens)

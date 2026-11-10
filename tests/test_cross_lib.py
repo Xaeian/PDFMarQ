@@ -267,11 +267,65 @@ def frontmatter_readers_agree(name, src):
   assert pdf_peek(src) == doc_peek(src), f"readers disagree on {name!r}"
   assert pdf_split(src) == doc_split(src), f"splits disagree on {name!r}"
 
+@pytest.mark.parametrize("value, expected", [
+  ("Anna Nowak, Jan Kowalski", [{"name": "Anna Nowak"}, {"name": "Jan Kowalski"}]),
+  (["Anna Nowak", None, " "], [{"name": "Anna Nowak"}]),
+  ([{"name": "Anna Nowak", "orcid": "0000-0001", "email": None, "aff": ["umg", "pg"]}, "Jan"],
+    [{"name": "Anna Nowak", "orcid": "0000-0001", "aff": ["umg", "pg"]}, {"name": "Jan"}]),
+  ({"name": "Anna Nowak", "aff": "umg"}, [{"name": "Anna Nowak", "aff": "umg"}]),
+  (["Anna Nowak, 0000-0002-1825-0097, a.nowak@example.com", "Jan Kowalski, j.k@example.com"],
+    [{"name": "Anna Nowak", "orcid": "0000-0002-1825-0097", "email": "a.nowak@example.com"},
+      {"name": "Jan Kowalski", "email": "j.k@example.com"}]),
+  ("Anna Nowak, https://orcid.org/0000-0002-1825-0097, Jan Kowalski",
+    [{"name": "Anna Nowak", "orcid": "0000-0002-1825-0097"}, {"name": "Jan Kowalski"}]),
+  ("Jan Kowalski, 1950-2020", [{"name": "Jan Kowalski"}, {"name": "1950-2020"}]), # as written
+  (["Anna Nowak , 0000-0002-1825-0097, a.nowak@example.com",
+    "Jan Kowalski, l j.k@example.com, ORCID: 0000-0002-1825-0097"],
+    [{"name": "Anna Nowak", "orcid": "0000-0002-1825-0097", "email": "a.nowak@example.com"},
+      {"name": "Jan Kowalski", "email": "j.k@example.com", "orcid": "0000-0002-1825-0097"}]),
+  ("Anna Nowak, Jan Kowalski j.k@example.com", # a comma left out
+    [{"name": "Anna Nowak"}, {"name": "Jan Kowalski", "email": "j.k@example.com"}]),
+  ("Anna Nowak a.nowak@example.com 0000-0002-1825-0097",
+    [{"name": "Anna Nowak", "email": "a.nowak@example.com", "orcid": "0000-0002-1825-0097"}]),
+  ("Anna Nowak, orcid.org/0000-0002-1825-0097, e-mail: a.nowak@example.com",
+    [{"name": "Anna Nowak", "orcid": "0000-0002-1825-0097", "email": "a.nowak@example.com"}]),
+  ("Jan Kowalski <j.k@example.com>, Ewa Lis (ORCID iD: 0000-0002-1825-0097)",
+    [{"name": "Jan Kowalski", "email": "j.k@example.com"},
+      {"name": "Ewa Lis", "orcid": "0000-0002-1825-0097"}]),
+  (None, []),
+])
+@pytest.mark.filterwarnings("error")
+def people_read_alike(value, expected):
+  # an author list reads the same in both packages, its details kept as written, no warning
+  from pdfmarq.md import people as pdf_people
+  from docmarq.md import people as doc_people
+  assert pdf_people(value) == doc_people(value) == expected
+
+@pytest.mark.parametrize("content, options", [
+  ("<!-- group -->\n", []), ("<!-- group wide -->\n", ["wide"]), ("<!--GROUP Wide-->", ["wide"]),
+  ("<!-- group these later -->", None), ("<!-- group wide top -->", None),
+  ("<!-- groupwide -->", None),
+])
+def group_directives_read_alike(content, options):
+  # `None` marks a comment that opens no group: `wide` is the one word a group takes
+  from pdfmarq.md import is_group_open_directive as pdf_opens, group_options as pdf_options
+  from docmarq.md import is_group_open_directive as doc_opens, group_options as doc_options
+  assert pdf_opens(content) == doc_opens(content) == (options is not None)
+  assert pdf_options(content) == doc_options(content) == (options or [])
+
+def table_rules_read_alike():
+  # each engine keeps the names a table is ruled by, so a style carries over
+  from pdfmarq.md.markdown_style import TABLE_RULES
+  from docmarq.tables import _RULED_SIDES
+  assert tuple(_RULED_SIDES) == TABLE_RULES
+
 def shared_helpers_are_identical():
-  # helpers vendored twice on purpose; this is what keeps the copies from drifting
+  # helpers vendored twice on purpose;
+  # this is what keeps the copies from drifting
   import inspect
   import pdfmarq.paper.render as pdf_paper, docmarq.paper.render as doc_paper
   import pdfmarq.md.md_frontmatter as pdf_fm, docmarq.md.frontmatter as doc_fm
+  import pdfmarq.md.md_html as pdf_html, docmarq.md.tokens as doc_tokens
   import pdfmarq.parts as pdf_parts, docmarq.parts as doc_parts
   import pdfmarq.legal.header as pdf_header, docmarq.legal.header as doc_header
   import pdfmarq.legal.render as pdf_legal, docmarq.legal.render as doc_legal
@@ -281,7 +335,16 @@ def shared_helpers_are_identical():
       left = left.replace(pdf_word, docx_word)
     assert left == right, f"{name} drifted"
   same(pdf_paper, doc_paper, "_skip_matching_h1")
+  same(PdfStyle, DocxStyle, "author_label")
   same(pdf_fm, doc_fm, "metadata_from_frontmatter", ("PDF.metadata", "DOCX.metadata"))
+  for name in ("people", "_named", "_details", "byline"):
+    same(pdf_fm, doc_fm, name)
+  for name in ("is_group_open_directive", "group_options"):
+    same(pdf_html, doc_tokens, name)
+  import pdfmarq.inline as pdf_inline
+  same(pdf_inline, doc_tokens, "binds")
+  for name in ("_UNITS", "_NUMBER", "_SENTENCE_END", "_OBJECT", "_OPENERS"):
+    assert getattr(pdf_inline, name) == getattr(doc_tokens, name), name
   for name in ("default_sign_labels", "sign_labels"):
     same(pdf_parts, doc_parts, name)
   assert pdf_parts.LANG_LABELS == doc_parts.LANG_LABELS
@@ -349,7 +412,7 @@ def round_two_helpers_are_identical():
   import inspect
   import pdfmarq.md.md_frontmatter as pdf_fm, docmarq.md.frontmatter as doc_fm
   import pdfmarq.utils as pdf_utils, docmarq.utils as doc_utils
-  import pdfmarq._warn as pdf_warn, docmarq._warn as doc_warn
+  import pdfmarq.warn as pdf_warn, docmarq.warn as doc_warn
   import pdfmarq.legal.render as pdf_legal, docmarq.legal.render as doc_legal
   def same(a, b, name:str, *words:tuple[str, str]):
     left, right = inspect.getsource(getattr(a, name)), inspect.getsource(getattr(b, name))
@@ -367,7 +430,8 @@ def round_two_helpers_are_identical():
 #------------------------------------------------------------------------------------- Style fields
 
 def engine_defaults_differ_only_where_documented():
-  # each difference has a row in docmarq/md/readme.md; a new one needs a row there too
+  # each difference has a row in docmarq/md/readme.md;
+  # a new one needs a row there too
   import dataclasses
   from pdfmarq.md import MarkdownStyle as PdfEngine
   from docmarq.md import MarkdownStyle as DocEngine
@@ -380,7 +444,8 @@ def engine_defaults_differ_only_where_documented():
   assert not names(DocEngine) - names(PdfEngine) # docmarq reads no field pdfmarq lacks
 
 def paper_styles_match():
-  # past the engine, the paper fields agree; pdfmarq alone draws the banner itself
+  # past the engine, the paper fields agree;
+  # pdfmarq alone draws the banner itself
   import dataclasses
   from pdfmarq.md import MarkdownStyle as PdfEngine
   from docmarq.md import MarkdownStyle as DocEngine

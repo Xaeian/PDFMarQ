@@ -269,3 +269,40 @@ def link_rect_starts_at_the_margins(tmp_path):
   assert rect.x0 == pytest.approx(25 * MM_TO_PT, abs=0.1)
   assert rect.y0 == pytest.approx(30 * MM_TO_PT, abs=0.1)
   assert rect.width == pytest.approx(30 * MM_TO_PT, abs=0.1)
+
+def caps_set_column_by_column(pdf):
+  full = pdf._page_full.content_height
+  pdf.columns(2, gap=10, height=[(50, None), 80])
+  assert pdf.content_height == pytest.approx(50)
+  pdf.next_frame()
+  assert pdf.content_height == pytest.approx(full)
+  pdf.next_frame()
+  assert pdf.content_height == pytest.approx(80)
+
+def a_tuple_caps_page_by_page_as_a_list_does(pdf):
+  pdf.columns(2, gap=10, height=(50, 80))
+  assert pdf.content_height == pytest.approx(50)
+  pdf.next_frame()
+  assert pdf.content_height == pytest.approx(50)
+  pdf.next_frame()
+  assert pdf.content_height == pytest.approx(80)
+
+def caps_refuse_a_count_off_the_columns(pdf):
+  with pytest.raises(ValueError, match="3 column caps for 2 columns"):
+    pdf.columns(2, height=[(10, 20, 30)])
+  with pytest.raises(ValueError, match="1 column caps for 2 columns"):
+    pdf.columns(2, height=[[10]])
+
+def wrong_caps_leave_the_open_region_as_it_was(pdf):
+  pdf.columns(2, gap=10)
+  width = pdf.content_width
+  with pytest.raises(ValueError):
+    pdf.columns(3, height=[(10, 20)])
+  assert pdf.content_width == pytest.approx(width) # still a column of the region
+
+def at_top_holds_until_the_cursor_moves_down(pdf):
+  assert pdf.at_top
+  pdf.cursor(0, 1)
+  assert not pdf.at_top
+  pdf.next_frame()
+  assert pdf.at_top

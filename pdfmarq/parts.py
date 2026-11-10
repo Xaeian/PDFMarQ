@@ -10,7 +10,7 @@ Lengths are mm: the `PDF` they draw into must use mm, as the markdown engine doe
 from dataclasses import replace
 from reportlab.lib.colors import Color
 from .constants import Align, MM_TO_PT
-from .inline import RichSegment, render_rich, measure_rich
+from .inline import RichSegment, RichText, render_rich, measure_rich
 
 _SIGN_BLOCK_MM = 10 # least room under the handwriting gap: line, label and breathing space
 _SIGN_SPACING_MM = 6 # least space between two signing lines
@@ -95,9 +95,13 @@ def _line_width(pdf, count:int, width:float) -> float:
   """Width (mm) of each of `count` signing lines across the frame, `width` at most."""
   return min(width, pdf.content_width / count - _SIGN_SPACING_MM)
 
+def _label(face:RichSegment, label:str, line_w:float) -> RichText:
+  """`label` in `face`, centred under a signing line `line_w` mm wide."""
+  return RichText([replace(face, text=label)], line_w, Align.CENTER, 1.0)
+
 def _label_height(pdf, labels:list[str], face:RichSegment, line_w:float) -> float:
   """Height (mm) of the tallest label, set in `face` under a line `line_w` mm wide."""
-  return max(measure_rich(pdf, [replace(face, text=label)], line_w, 1.0) for label in labels)
+  return max(measure_rich(pdf, _label(face, label, line_w)) for label in labels)
 
 def signatures_height(
   pdf, labels:list[str], face:RichSegment, *,
@@ -116,7 +120,8 @@ def signatures(
   """
   Signing lines at the cursor, under each its label in `face`, centred.
 
-  One line sits at the right margin; several span margin to margin, spread evenly.
+  One line sits at the right margin;
+  several span margin to margin, spread evenly.
   The lines are `thick` pt, in the colour of `face`, dashed `(on, off)` pt by `dash`:
   `(1, 2)` gives the dotted line of a form.
   A block that does not fit the rest of the frame moves on, as `pdf.keep()` decides.
@@ -135,8 +140,7 @@ def signatures(
     pdf.cursor(x_left, y)
     pdf.stroke_color(*face.color[:3])
     pdf.line(line_w, 0, thick, dash=dash)
-    render_rich(pdf, [replace(face, text=label)], line_w, x_left, y + _LABEL_GAP_MM,
-      Align.CENTER, 1.0)
+    render_rich(pdf, _label(face, label, line_w), x_left, y + _LABEL_GAP_MM)
   pdf.cursor(0, y + _LABEL_GAP_MM + _label_height(pdf, labels, face, line_w))
 
 #-------------------------------------------------------------------------------------- Page number
@@ -147,4 +151,4 @@ def page_number(pdf, label:str, n:int, total:int, face:RichSegment, *, show_tota
   c = pdf.c
   c.setFillColor(Color(*face.color[:3]))
   c.setFont(pdf.fonts.register(face.family, face.mode), face.size)
-  c.drawCentredString(pdf.page_width / 2 * MM_TO_PT, pdf._page.margin_bot / 2 * MM_TO_PT, text)
+  c.drawCentredString(pdf.page_width / 2 * MM_TO_PT, pdf.margin_bot / 2 * MM_TO_PT, text)

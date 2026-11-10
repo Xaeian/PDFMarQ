@@ -1,6 +1,7 @@
 # pdfmarq/md/md_preprocess.py
 
-r"""Source text preprocessors run before markdown-it parsing.
+r"""
+Source text preprocessors run before markdown-it parsing.
 
 - `_iter_content_lines`   fence-aware line iterator used by other preprocessors
 - `_normalize_list_indent` 2-space list indent → 4-space (markdown-it requires 4)
@@ -8,18 +9,26 @@ r"""Source text preprocessors run before markdown-it parsing.
 - `normalize_math_delimiters` LaTeX `\[...\]` / `\(...\)` → `$$` / `$...$`
 """
 import re
-from .._warn import warn_missing
+from ..warn import warn_missing
 
 #---------------------------------------------------------------------------------- PreprocessMixin
 
+# A shortcode as the warning knows one, a name with a letter in it:
+# a time as `12:30:45` or a table's `|:---:|` is no shortcode.
+_SHORTCODE = re.compile(r":[\w+-]*[a-z][\w+-]*:")
+
 class PreprocessMixin:
-  """Source text preprocessing mixed into `MarkdownRenderer`.
-  Runs before markdown-it parsing: list indent normalization and emoji expansion."""
+  """
+  Source text preprocessing mixed into `MarkdownRenderer`.
+  Runs before markdown-it parsing: list indent normalization and emoji expansion.
+  """
   @staticmethod
   def _iter_content_lines(md_text:str):
-    """Yield `(line, is_content)` for each line.
+    """
+    Yield `(line, is_content)` for each line.
     `is_content` is `False` for lines inside fenced code blocks
-    AND for the fence delimiter lines."""
+    AND for the fence delimiter lines.
+    """
     in_fence = False
     marker = ""
     for line in md_text.split("\n"):
@@ -41,7 +50,8 @@ class PreprocessMixin:
       yield line, True
 
   # A sub-item nests only when indented to the parent's content column (2 for `- `, 3 for `1. `).
-  # Below that it gets doubled; from 3 up it already clears the bar,
+  # Below that it gets doubled;
+  # from 3 up it already clears the bar,
   # and doubling would push it past the 4-space code threshold.
   _NEST_PROMOTE_BELOW = 3
 
@@ -66,12 +76,14 @@ class PreprocessMixin:
 
   @staticmethod
   def _emojize_outside_code(md_text:str) -> str:
-    """Replace `:name:` emoji shortcodes with Unicode chars outside code."""
+    """
+    Replace `:name:` emoji shortcodes with Unicode chars outside code.
+    Without the `emoji` package the text stays as written, and only a shortcode in it warns.
+    """
     try:
-      import emoji as _emoji
+      import emoji
     except ImportError:
-      warn_missing("emoji", "emoji", "emoji shortcodes (:name:)")
-      return md_text
+      emoji = None
     out: list[str] = []
     for line, is_content in PreprocessMixin._iter_content_lines(md_text):
       if not is_content:
@@ -79,7 +91,10 @@ class PreprocessMixin:
         continue
       parts = line.split("`")
       for i in range(0, len(parts), 2):
-        parts[i] = _emoji.emojize(parts[i], language="alias")
+        if emoji:
+          parts[i] = emoji.emojize(parts[i], language="alias")
+        elif _SHORTCODE.search(parts[i]):
+          warn_missing("emoji", "emoji", "emoji shortcodes (:name:)")
       out.append("`".join(parts))
     return "\n".join(out)
 
@@ -89,7 +104,8 @@ _MATH_INLINE_RE = re.compile(r"\\\((.+?)\\\)")
 _MATH_BLOCK_LINE_RE = re.compile(r"^(\s*)\\\[\s*(.+?)\s*\\\]\s*$")
 
 def normalize_math_delimiters(md_text:str) -> str:
-  r"""LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
+  r"""
+  LaTeX math delimiters `\[...\]` / `\(...\)` become `$$` / `$...$`.
 
   The bracket forms are what LaTeX sources and AI assistants emit;
   only the dollar forms reach the parser.

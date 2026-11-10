@@ -1,15 +1,16 @@
 # tests/conftest.py
 
-"""Collect only functions defined in the test module, since `python_functions = ["*"]`.
-Carries the shared PDF validator too."""
+"""
+Collect only functions defined in the test module, since `python_functions = ["*"]`.
+Carries the shared PDF validator too.
+"""
 
 import importlib.util, inspect
 from pathlib import Path
 import pytest
 
 def pytest_pycollect_makeitem(collector, name, obj):
-  if inspect.isclass(obj):
-    return None # a test class is pytest's own business
+  if inspect.isclass(obj): return None # a test class is pytest's own business
   if not inspect.isfunction(obj) or obj.__module__ != collector.obj.__name__:
     return [] # imported helpers, marks and constants are not tests
 
@@ -19,10 +20,12 @@ def pytest_pycollect_makeitem(collector, name, obj):
 # A wheel under test has no twin beside it, so the parity tests stand down
 # rather than compare against whatever version PyPI happens to hold.
 def _twin_installed() -> bool:
-  """A bare `docmarq` can resolve as an empty namespace package,
-  so ask for the subpackage the tests actually reach for."""
+  """
+  A bare `docmarq` can resolve as an empty namespace package,
+  so ask for the subpackage the tests actually reach for.
+  """
   try:
-    import docmarq.paper
+    importlib.import_module("docmarq.paper")
   except ImportError:
     return False
   return True
@@ -48,7 +51,8 @@ def assert_valid_pdf(path:str|Path, min_size:int=200):
   assert head.startswith(b"%PDF-"), f"Not a PDF (header={head!r}): {p}"
 
 def assert_valid_docx(path:str|Path, min_size:int=2000):
-  """Validate that `path` points to a real-looking DOCX file (ZIP magic `PK\\x03\\x04`).
+  """
+  Validate that `path` points to a real-looking DOCX file (ZIP magic `PK\\x03\\x04`).
 
   Local copy so cross-lib tests don't depend on `docmarq.tests.*`.
   """

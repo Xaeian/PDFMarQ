@@ -43,7 +43,8 @@ class Cursor:
     return self
 
   def advance_x(self, width:float) -> "Cursor":
-    """Advance x past an element of `width` based on alignment.
+    """
+    Advance x past an element of `width` based on alignment.
 
     `CENTER` intentionally leaves x untouched: a centered element is anchored
     to the page midline, so the cursor's logical "current x" doesn't change
@@ -119,7 +120,8 @@ class PageGeometry:
     return self.margin_left
 
   def cursor_to_canvas(self, cursor:Cursor, width:float=0) -> tuple[float, float]:
-    """Convert cursor position to canvas coordinates (mm).
+    """
+    Convert cursor position to canvas coordinates (mm).
 
     Cursor: origin top-left, y grows down
     Canvas: origin bottom-left, y grows up
@@ -144,7 +146,7 @@ class Columns:
 
   `top` is where the region starts, in mm below the page's top margin.
   `height` caps the columns on the current page, and `later` on each page after it in turn,
-  `None` leaving a page uncapped.
+  `None` leaving a page uncapped and a tuple capping each column of it on its own.
   `left` and `right` narrow the region inside the page margins (mm).
   `bottom` is the lowest point any column reached, measured from `top`.
   """
@@ -152,7 +154,7 @@ class Columns:
   gap: float
   flow: bool
   top: float
-  height: float|None = None
+  height: float|tuple|None = None
   left: float = 0
   right: float = 0
   index: int = 0

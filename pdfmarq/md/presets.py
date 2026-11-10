@@ -1,6 +1,8 @@
 # pdfmarq/md/presets.py
 
-"""Built-in language presets for `MarkdownStyle`: the labels the engine writes itself.
+"""
+Built-in language presets for `MarkdownStyle`: the labels the engine writes itself.
+`pl`, `cs` and `sk` also name their one-letter words that bind: `bind_single_letters`.
 
 Each preset is a dict of fields applied to a fresh `MarkdownStyle`
 via `lang_style(lang, **overrides)`.
@@ -16,8 +18,8 @@ from .markdown_style import MarkdownStyle
 
 #------------------------------------------------------------------------------------------ Presets
 
-# `en` keeps the MarkdownStyle defaults - empty preset is intentional.
-LANG_PRESETS:dict[str, dict] = {
+# `en` keeps the `MarkdownStyle` defaults - empty preset is intentional.
+LANG_PRESETS: dict[str, dict] = {
   "en": {},
   "pl": {
     "callout_label_note": "Notatka",
@@ -26,6 +28,7 @@ LANG_PRESETS:dict[str, dict] = {
     "callout_label_warning": "Ostrzeżenie",
     "callout_label_caution": "Uwaga",
     "footnote_word": "Literatura",
+    "bind_single_letters": "aiouwz",
   },
   "de": {
     "callout_label_note": "Hinweis",
@@ -66,6 +69,7 @@ LANG_PRESETS:dict[str, dict] = {
     "callout_label_warning": "Varování",
     "callout_label_caution": "Pozor",
     "footnote_word": "Literatura",
+    "bind_single_letters": "aikosuvz",
   },
   "sk": {
     "callout_label_note": "Poznámka",
@@ -74,6 +78,7 @@ LANG_PRESETS:dict[str, dict] = {
     "callout_label_warning": "Upozornenie",
     "callout_label_caution": "Pozor",
     "footnote_word": "Literatúra",
+    "bind_single_letters": "aikosuvz",
   },
   "pt": {
     "callout_label_note": "Nota",
@@ -88,17 +93,10 @@ LANG_PRESETS:dict[str, dict] = {
 #------------------------------------------------------------------------------------------ Builder
 
 def lang_style(lang:str, **overrides) -> MarkdownStyle:
-  """Build a `MarkdownStyle` from a language preset + caller overrides.
-
-  Unknown `lang` falls back to the `en` preset _(`MarkdownStyle` defaults)_,
-  so callers don't have to validate the language code themselves.
-
-  Args:
-    lang: Language code from `LANG_PRESETS` _(`en`, `pl`, `de`)_.
-    **overrides: Extra `MarkdownStyle` fields, win over preset values.
-
-  Returns:
-    Configured `MarkdownStyle` instance.
+  """
+  Build a `MarkdownStyle` from a language preset + caller overrides.
+  Unknown `lang` silently falls back to `en` so callers need not pre-validate.
+  `overrides` win over preset values.
   """
   base = LANG_PRESETS.get(lang, {})
   return MarkdownStyle(**{**base, **overrides})

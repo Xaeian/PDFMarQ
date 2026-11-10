@@ -185,11 +185,11 @@ def versions_aligned():
 #------------------------------------------------------------------------------------------- Margin
 
 @pytest.mark.parametrize("value, expected", [
-  (10, (10, 10, 10, 10)),          # scalar
-  ((10, 20), (10, 20, 10, 20)),    # (v, h)
-  ((10, 20, 30), (10, 20, 30, 20)),# (t, h, b)
-  ((1, 2, 3, 4), (1, 2, 3, 4)),    # 4-element CSS form keeps all four
-  ([1, 2, 3, 4], (1, 2, 3, 4)),    # list accepted
+  (10, (10, 10, 10, 10)),           # scalar
+  ((10, 20), (10, 20, 10, 20)),     # (v, h)
+  ((10, 20, 30), (10, 20, 30, 20)), # (t, h, b)
+  ((1, 2, 3, 4), (1, 2, 3, 4)),     # 4-element CSS form keeps all four
+  ([1, 2, 3, 4], (1, 2, 3, 4)),     # list accepted
 ])
 def parse_margin_css_forms(value, expected):
   assert parse_margin(value) == expected
@@ -279,7 +279,8 @@ def page_x_for_align(align, expected):
   assert p.x_for_align(50, align) == pytest.approx(expected)
 
 def page_asymmetric_margins():
-  # left and right can differ; content width reflects the sum
+  # left and right can differ;
+  # content width reflects the sum
   p = PageGeometry(width=210, height=297, margin_left=10, margin_right=30)
   assert p.content_width == 170
   assert p.x_for_align(50, Align.LEFT) == 10

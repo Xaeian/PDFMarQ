@@ -80,8 +80,7 @@ def draw_path(
   fill:bool = False,
 ):
   """Draw path through points (coordinates in pt)."""
-  if len(points) < 2:
-    return
+  if len(points) < 2: return
   canvas.setLineWidth(stroke_width)
   canvas.setDash()
   p = canvas.beginPath()
@@ -152,15 +151,16 @@ def draw_svg(
   x:float, y:float,
   width:float, height:float,
 ):
-  """Draw SVG on canvas (coordinates in pt).
+  """
+  Draw SVG on canvas (coordinates in pt).
   Uses canvas-level transform (`saveState`/`translate`/`scale`/`restoreState`)
   so target size is deterministic on every platform/svglib version.
   Internal `Drawing` attributes like `transform` and `scale` are inconsistent across versions,
   especially on Python 3.13 + Windows.
-  Falls back to the union bounding box when intrinsic dims are missing."""
+  Falls back to the union bounding box when intrinsic dims are missing.
+  """
   drawing = load_svg(path)
-  if drawing is None:
-    raise ValueError(f"Could not load SVG: {path}")
+  if drawing is None: raise ValueError(f"Could not load SVG: {path}")
   nat_w, nat_h = _svg_size(drawing, (width, height))
   s = min(width / nat_w, height / nat_h)
   canvas.saveState()

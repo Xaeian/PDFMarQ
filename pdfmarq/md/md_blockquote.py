@@ -1,15 +1,17 @@
 # pdfmarq/md/md_blockquote.py
 
-"""Blockquote rendering with GitHub-style callout support.
+"""
+Blockquote rendering with GitHub-style callout support.
 
 Left colored bar + indented content.
 Callouts (`> [!NOTE]`, `> [!WARNING]`, etc.) override bar color and prepend a bold title.
-Content is pre-measured so the blockquote fits on one page when possible."""
+Content is pre-measured so the blockquote fits on one page when possible.
+"""
 
 from markdown_it.token import Token
 import copy, re
-from ..inline import RichSegment, render_rich, measure_rich
-from ..constants import Align, MM_TO_PT
+from ..inline import RichSegment, RichText, render_rich, measure_rich
+from ..constants import MM_TO_PT
 
 #------------------------------------------------------------------------------------ Callout types
 
@@ -26,9 +28,11 @@ CALLOUT_TYPES = {
 _CALLOUT_MARKER_RE = re.compile(rf"^\[!({'|'.join(CALLOUT_TYPES)})\]\s*")
 
 def _callout_palette(style, name:str) -> tuple[tuple, tuple]:
-  """Return `(border_rgb, text_rgb)` for callout `name`.
+  """
+  Return `(border_rgb, text_rgb)` for callout `name`.
   Looks up `MarkdownStyle.callout_colors` (lowercase key);
-  falls back to NOTE blue when the type is missing."""
+  falls back to NOTE blue when the type is missing.
+  """
   default = ((0.035, 0.41, 0.855), (0.035, 0.41, 0.855))
   pal = (style.callout_colors or {}).get(name.lower())
   return pal if pal else default
@@ -57,8 +61,7 @@ class BlockquoteMixin:
                 c.content = _CALLOUT_MARKER_RE.sub("", c.content)
                 break
           return m.group(1), j
-      if tokens[j].type in ("heading_open", "code_block", "fence"):
-        break
+      if tokens[j].type in ("heading_open", "code_block", "fence"): break
     return None
 
   def _render_blockquote(self, tokens:list[Token], start:int) -> int:
@@ -74,9 +77,9 @@ class BlockquoteMixin:
     for tk in quote[1:last]:
       if tk.type == "inline":
         try:
-          segs = self._inline_to_segments(tk, self._body_base())
-          h = measure_rich(self.pdf, segs, content_w_mm, line_gap=s.line_height,
-            align=self._para_align())
+          segs = self.segments(tk, self._body_base())
+          text = RichText(segs, content_w_mm, self._para_align(), s.line_height)
+          h = measure_rich(self.pdf, text)
         except Exception:
           h = body_line_mm
         total_h += max(h, body_line_mm) + s.list_gap
@@ -85,9 +88,9 @@ class BlockquoteMixin:
       total_h += body_line_mm * 1.2 # title line
     total_h += body_line_mm * 0.5 # padding
     page_avail = self.pdf.content_height
-    # Inside a `<!-- group -->`, the group owns atomicity; skip own pre-break
-    # to avoid orphaning the preceding figure/code above the break.
-    if not getattr(self, "_in_group", False):
+    # Inside a `<!-- group -->` the group keeps its blocks together:
+    # a page break of the quote's own would leave the figure or code above it behind.
+    if not self._in_group:
       if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
         self.pdf.next_frame()
     x_start = self._indent_mm
@@ -114,10 +117,8 @@ class BlockquoteMixin:
         size=s.body_size, color=text_color,
       )
       y_title = self.pdf.y
-      h_title = render_rich(
-        self.pdf, [title_seg], inner_w, inner_x, y_title,
-        Align.LEFT, s.line_height,
-      )
+      title_line = RichText([title_seg], inner_w, line_gap=s.line_height)
+      h_title = render_rich(self.pdf, title_line, inner_x, y_title)
       # The title is the first line, and the content follows as a paragraph's next line would
       self.pdf.cursor(inner_x, y_title + h_title)
     # Callout interior uses list-style (tighter) spacing - fake via `_list_depth`
@@ -129,8 +130,8 @@ class BlockquoteMixin:
       self._list_depth -= 1
     self._indent_mm = old_indent
     y_after_content = self.pdf.y + v_extra / 2
-    # Last child added `list_gap` (callout) or `para_gap` (plain); subtract it
-    # so the bar ends flush with the last text line.
+    # The last child added `list_gap` (callout) or `para_gap` (plain),
+    # taken off again so the bar ends flush with the last text line.
     trailing = s.list_gap if callout else s.para_gap
     bar_h = max(y_after_content - trailing - y_start, s.body_size / MM_TO_PT)
     self.pdf.cursor(x_start + 1, y_start)

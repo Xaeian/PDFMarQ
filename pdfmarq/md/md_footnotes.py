@@ -10,8 +10,7 @@ Definition list: `Term` (bold) above `: definition` (indented).
 """
 
 from markdown_it.token import Token
-from ..inline import RichSegment, render_rich
-from ..constants import Align
+from ..inline import RichSegment, RichText, render_rich
 from ..utils import smaller_size
 
 #----------------------------------------------------------------------------------- FootnotesMixin
@@ -19,7 +18,8 @@ from ..utils import smaller_size
 class FootnotesMixin:
   """Footnote section rendering and definition lists. Mixed into `MarkdownRenderer`."""
   def _render_footnote_block(self, tokens:list[Token], start:int) -> int:
-    """Render footnote collection at end of document.
+    """
+    Render footnote collection at end of document.
 
     `style.footnote_label` titles the section with a level-2 heading, drawn as the document's are:
     `True` in the style's language, as `footnote_word` gives it,
@@ -77,14 +77,14 @@ class FootnotesMixin:
         )
         segs: list[RichSegment] = [prefix]
         if first_inline is not None:
-          segs.extend(self._inline_to_segments(first_inline, base))
+          segs.extend(self.segments(first_inline, base))
         x = self._indent_mm
         width = self.pdf.content_width - x
         self.pdf.keep(s.line_mm(biblio_pt))
         y = self.pdf.y
         self.pdf.cursor(x, y)
         self.pdf.anchor(f"{self._anchors}fn_{label}") # [^label] refs navigate here
-        h = render_rich(self.pdf, segs, width, x, y, self._para_align(), s.line_height)
+        h = render_rich(self.pdf, RichText(segs, width, self._para_align(), s.line_height), x, y)
         self.pdf.cursor(x, y + h + s.list_gap)
         if rest:
           self._render_footnote_rest(rest, biblio_pt)
@@ -93,7 +93,8 @@ class FootnotesMixin:
     return end + 1
 
   def _render_footnote_rest(self, tokens:list[Token], size_pt:float):
-    """Render a footnote's continuation blocks, indented under its label.
+    """
+    Render a footnote's continuation blocks, indented under its label.
 
     Goes through the normal block dispatcher, so lists, code blocks and nested markup keep working.
     Body size and color are dropped to the bibliography scale for the duration,
@@ -132,14 +133,12 @@ class FootnotesMixin:
             text="", family=s.font_body, mode=s.bold_mode,
             size=s.body_size, color=s.body_color,
           )
-          segs = self._inline_to_segments(inline_token, base)
+          segs = self.segments(inline_token, base)
           x = self._indent_mm
           width = self.pdf.content_width - x
           self.pdf.keep(s.line_mm(s.body_size))
           y = self.pdf.y
-          h = render_rich(
-            self.pdf, segs, width, x, y, Align.LEFT, s.line_height,
-          )
+          h = render_rich(self.pdf, RichText(segs, width, line_gap=s.line_height), x, y)
           self.pdf.cursor(x, y + h + s.list_gap)
         i = j + 1
       elif t.type == "dd_open":

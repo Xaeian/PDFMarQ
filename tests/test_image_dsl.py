@@ -11,7 +11,7 @@ from pdfmarq.paper import md_to_pdf
 try:
   from docmarq.md.image_utils import parse_image_dsl as doc_parse, ImageDSL as DocDSL
   from docmarq.paper import md_to_docx
-except ImportError: # the twin ships separately; `needs_twin` skips what needs it
+except ImportError: # the twin ships separately, and `needs_twin` skips what needs it
   doc_parse = DocDSL = md_to_docx = None
 
 # both parsers when the twin is here, ours alone when it is not
@@ -194,7 +194,7 @@ def caption_only_title_renders_without_warnings(tmp_path, make_img):
   assert_valid_pdf(path)
 
 def scale_priority_over_other_keys(tmp_path, make_img):
-  # when `scale` is present, w/h/max_* are ignored; output renders fine
+  # with `scale` given, `w`, `h` and `max_*` are ignored, and the output renders fine
   make_img()
   src = '![a](img.png "scale=0.5 w=999 max_h=999")'
   path = tmp_path / "prio.pdf"
@@ -225,7 +225,8 @@ def images_in_one_paragraph_share_the_width(tmp_path, make_img, block_widths):
   assert block_widths[0] > 60, f"row image still at inline scale: {block_widths[0]}mm"
 
 def images_wrap_into_a_balanced_grid(tmp_path, make_img, block_widths):
-  # 7 fit across; the 8th wraps to 4+4, so every figure gets wider, not smaller
+  # 7 fit across;
+  # the 8th wraps to 4+4, so every figure gets wider, not smaller
   for i in range(8):
     make_img(f"i{i}.png", (1200, 800))
   def widths(n, name):

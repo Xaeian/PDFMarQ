@@ -101,6 +101,22 @@ def indented_code_fills_its_line(pdf, wrap):
   lines = wrap(segs, width, code=True)
   assert len(lines) == 2 and lines[0].startswith("        self")
 
+def a_bound_pair_wider_than_the_column_opens_no_line_with_a_space(wrap):
+  # its space falls at the line end, where wrapping drops it, so the next line starts on a word
+  text = "a hippopotamus, a thunderstorm, a constellation and a kaleidoscope"
+  seg = RichSegment(text, bind_single_letters="a")
+  for width in range(9, 33):
+    lines = wrap([seg], width * MM_TO_PT)
+    assert not any(line.startswith(" ") for line in lines), width
+
+def code_wider_than_a_line_fills_the_line_it_starts_on(pdf, wrap):
+  # it breaks between its segments where it stands: a fresh line would not hold it either
+  url = "https://example.com/" + "path/" * 12
+  code = ["response", " = ", "session", ".", "get", '("', url, '")']
+  segs = [RichSegment(text, family="Courier") for text in code]
+  width = pdf._metrics.text_width("x" * 60, "Courier", "Regular", 11)
+  assert wrap(segs, width, code=True)[0] == 'response = session.get("'
+
 def token_too_wide_after_indent_drops_the_indent(pdf, wrap):
   segs = [RichSegment("    ", family="Courier"), RichSegment("x" * 40, family="Courier")]
   width = pdf._metrics.text_width("x" * 42, "Courier", "Regular", 11)

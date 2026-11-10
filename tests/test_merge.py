@@ -375,7 +375,7 @@ def fields_read_anywhere_count_as_used(tmp_path):
   with warnings.catch_warnings():
     warnings.simplefilter("error")
     merge(template, [row], name="{{ file }}", base_dir=tmp_path)
-    merge('{% include f %}', [{"f": "a.md", "address": "x", "other": "y"}], base_dir=tmp_path)
+    merge("{% include f %}", [{"f": "a.md", "address": "x", "other": "y"}], base_dir=tmp_path)
 
 #------------------------------------------------------------------------------------------- Render
 

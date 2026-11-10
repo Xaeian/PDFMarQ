@@ -20,14 +20,11 @@ UNESCAPE_RE = re.compile(r'\\([ \\!"#$%&\'()*+,.\/:;<=>?@[\]^_`{|}~-])')
 #------------------------------------------------------------------------------- Superscript ^text^
 
 def _tokenize_sup(state:StateInline, silent:bool) -> bool:
-  if silent:
-    return False
+  if silent: return False
   start = state.pos
-  if state.src[start] != "^":
-    return False
+  if state.src[start] != "^": return False
   maximum = state.posMax
-  if start + 2 >= maximum:
-    return False
+  if start + 2 >= maximum: return False
   state.pos = start + 1
   found = False
   while state.pos < maximum:
@@ -61,14 +58,11 @@ def sup_plugin(md:MarkdownIt) -> None:
 #------------------------------------------------------------------------------- Highlight ==text==
 
 def _tokenize_mark(state:StateInline, silent:bool) -> bool:
-  if silent:
-    return False
+  if silent: return False
   start = state.pos
   maximum = state.posMax
-  if start + 4 > maximum:
-    return False
-  if state.src[start] != "=" or state.src[start + 1] != "=":
-    return False
+  if start + 4 > maximum: return False
+  if state.src[start] != "=" or state.src[start + 1] != "=": return False
   state.pos = start + 2
   found_end = -1
   while state.pos < maximum - 1:

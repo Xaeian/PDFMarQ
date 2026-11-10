@@ -233,7 +233,8 @@ def size_block(
   """
   Size a paragraph-level (block) image.
 
-  - Author override (`w`/`h`/`scale`) wins; final size still clamped to `(page_w_mm, max_h_mm)`
+  - Author override (`w`/`h`/`scale`) wins;
+    final size still clamped to `(page_w_mm, max_h_mm)`
     so explicit dimensions can't run off-page.
   - **Raster**: fits page width while staying above `min_dpi`, then capped by `max_h_mm`.
     `min_dpi=0` always fills the width.
@@ -243,7 +244,8 @@ def size_block(
     effective cap = `min(style_cap, dsl_cap)`.
   """
   # DSL soft caps narrow the effective constraints.
-  # `min` works because both are upper bounds; user explicitly asks for a smaller cap.
+  # `min` works because both are upper bounds;
+  # user explicitly asks for a smaller cap.
   if info.dsl_max_w_mm is not None:
     page_w_mm = min(page_w_mm, info.dsl_max_w_mm)
   if info.dsl_max_h_mm is not None:

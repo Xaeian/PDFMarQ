@@ -237,8 +237,7 @@ class TextMetrics:
     autoscale:float|None = None,
   ) -> dict:
     """Fit array of texts into columns. Returns dict with text, font_size, height, lines arrays."""
-    if not texts:
-      return {"text": [], "font_size": [], "height": [], "lines": []}
+    if not texts: return {"text": [], "font_size": [], "height": [], "lines": []}
     is_1d = isinstance(texts[0], str)
     if is_1d: texts = [texts]
     if heights is None: heights_list = [0] * len(texts)

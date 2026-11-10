@@ -1,6 +1,7 @@
 # pdfmarq/__init__.py
 
-"""PDF generation with fluent API. Built on reportlab.
+"""
+PDF generation with fluent API. Built on reportlab.
 
 Low-level drawing only - no markdown.
 For markdown documents install the `[md]` extra and import from a document package:
@@ -47,7 +48,8 @@ from .utils import (
   to_mm, to_pt, mm_to_pt, parse_color, color_alpha, color_hex, parse_margin,
   smaller_size,
 )
-from .inline import RichSegment, render_rich
+from .inline import (RichSegment, RichText, render_rich, measure_rich, wrap_line_heights,
+  flow_rich, split_rich, drop_cap)
 from .core import PDF
 
 __all__ = [
@@ -62,5 +64,6 @@ __all__ = [
   "Metadata", "Bookmark", "TOCEntry", "BookmarkManager", "LinkManager",
   "to_mm", "to_pt", "mm_to_pt", "parse_color", "color_alpha", "color_hex", "parse_margin",
   "smaller_size",
-  "RichSegment", "render_rich",
+  "RichSegment", "RichText", "render_rich", "measure_rich", "wrap_line_heights", "flow_rich",
+  "split_rich", "drop_cap",
 ]

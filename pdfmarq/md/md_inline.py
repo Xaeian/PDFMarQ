@@ -20,9 +20,11 @@ from .openmoji import get_emoji_drawing, split_text_by_emoji
 #------------------------------------------------------------------------------------------ Helpers
 
 def _mono_inline_size(s, base_size:float) -> float:
-  """Mono size (pt) for inline code embedded at `base_size`.
+  """
+  Mono size (pt) for inline code embedded at `base_size`.
   Heading-sized contexts use a 0.95 factor to avoid line-box overflow;
-  body-size uses the configured `mono_size`/`body_size` ratio."""
+  body-size uses the configured `mono_size`/`body_size` ratio.
+  """
   if base_size >= 14: return base_size * 0.95
   return base_size * (s.mono_size / s.body_size)
 
@@ -42,8 +44,11 @@ _NAMED_HIGHLIGHTS = {
 }
 
 def _resolve_highlight(color) -> tuple:
-  """Map a named highlight string to an RGB tuple.
-  Pass-through for tuples; unknown names fall back to yellow."""
+  """
+  Map a named highlight string to an RGB tuple.
+  Pass-through for tuples;
+  unknown names fall back to yellow.
+  """
   if isinstance(color, str):
     return _NAMED_HIGHLIGHTS.get(color.lower(), _NAMED_HIGHLIGHTS["yellow"])
   return color
@@ -56,9 +61,12 @@ class InlineMixin:
   Handles bold / italic / code / links / math / emoji / images.
   Mixed into `MarkdownRenderer`.
   """
-  def _inline_to_segments(
-    self, inline_token:Token, base:RichSegment,
-  ) -> list[RichSegment]:
+  def segments(self, inline_token:Token, base:RichSegment) -> list[RichSegment]:
+    """
+    `RichSegment`s of an inline token, grown from `base` as the engine grows a paragraph:
+    emphasis, code, links, formulas and emoji included.
+    Public for a package that draws text of its own with `render_rich`, as a caption.
+    """
     s = self.style
     segments: list[RichSegment] = []
     is_bold = is_italic = is_strike = False
@@ -73,8 +81,8 @@ class InlineMixin:
     def resolve_mode():
       if is_bold and is_italic: return s.bold_italic_mode
       if is_bold:
-        # Escalate inside a base already bolder than body text (a bold heading);
-        # fallback drops to Bold. A Regular `head_mode` equals `body_mode`,
+        # Escalate inside a base bolder than body text, as a bold heading, else fall back to Bold.
+        # A Regular `head_mode` equals `body_mode`,
         # so without the second test every `**bold**` in body text would turn Black.
         if base.mode in (s.head_mode, s.bold_mode) and base.mode != s.body_mode:
           return s.heavy_mode
@@ -112,13 +120,13 @@ class InlineMixin:
         superscript=is_sup,
         subscript=is_sub,
         hyphenate=base.hyphenate,
+        code=is_html_code,
         bind_single_letters=base.bind_single_letters,
       )
     def make_emoji(ch):
       """OpenMoji drawing for an emoji char, fallback to raw glyph."""
       d = get_emoji_drawing(ord(ch), fontsize_pt=base.size)
-      if d is None:
-        return make(ch)
+      if d is None: return make(ch)
       return RichSegment(
         text="",
         family=base.family, mode=base.mode, size=base.size,
@@ -155,7 +163,7 @@ class InlineMixin:
         segments.append(RichSegment(
           text=child.content,
           family=s.font_mono, mode=s.mono_mode, size=_mono_inline_size(s, base.size),
-          color=s.code_inline_color, bg_color=s.code_inline_bg,
+          color=s.code_inline_color, bg_color=s.code_inline_bg, code=True,
           link_url=link_url, link_target=link_target,
         ))
       elif ct == "link_open":
@@ -178,7 +186,7 @@ class InlineMixin:
         from .math import render_math_svg_with_baseline # loads matplotlib, so not on import
         drawing, baseline_pt = render_math_svg_with_baseline(
           child.content, fontsize=math_size, color=math_color,
-          config=getattr(self, "_math_config", None),
+          config=self._math_config,
           engine=s.math_engine, font=s.math_font,
         )
         if drawing is not None:
@@ -200,10 +208,6 @@ class InlineMixin:
             link_url=link_url,
             link_target=link_target,
           ))
-      elif ct == "emoji":
-        emoji_ch = child.content or ""
-        if emoji_ch:
-          make_text_with_emoji(emoji_ch)
       elif ct == "image":
         img_attrs = child.attrs if isinstance(child.attrs, dict) else dict(child.attrs or [])
         src = img_attrs.get("src", "")
@@ -283,7 +287,8 @@ class InlineMixin:
   )
 
   def _resolve_link(self, href:str) -> tuple[str|None, str|None]:
-    """Resolve a link href into `(link_url, link_target)` for `RichSegment`.
+    """
+    Resolve a link href into `(link_url, link_target)` for `RichSegment`.
     - `#anchor` → internal target if slug is a known heading, else neither
     - URL with a scheme → external URL
     - local path → external url under `style.link_root` (if set),
@@ -293,33 +298,28 @@ class InlineMixin:
     so leaving it un-clickable avoids broken behavior.
     The link STYLE (blue, underline) still applies.
     """
-    if not href:
-      return None, None
+    if not href: return None, None
     if href.startswith("#"):
       target = urllib.parse.unquote(href[1:])
       # Unknown anchors would crash reportlab at save() time
-      if target in getattr(self, "_known_slugs", set()):
-        return None, self._anchors + target
+      if target in self._known_slugs: return None, self._anchors + target
       return None, None
-    if href.startswith(self._EXTERNAL_SCHEMAS):
-      return href, None
+    if href.startswith(self._EXTERNAL_SCHEMAS): return href, None
     # Local link - only clickable if link_root is configured
     root = self.style.link_root
-    if not root:
-      return None, None
+    if not root: return None, None
     root = root.rstrip("/")
-    if href.startswith("/"):
-      return f"{root}{href}", None
+    if href.startswith("/"): return f"{root}{href}", None
     base = self.style.link_base or ""
     base = base.strip("/")
-    if base:
-      return f"{root}/{base}/{href}", None
+    if base: return f"{root}/{base}/{href}", None
     return f"{root}/{href}", None
 
 #--------------------------------------------------------------------------------- Checkbox drawing
 
 def _make_checkbox(fontsize_pt:float, checked:bool, fg:tuple, accent:tuple):
-  """Draw a GitHub-style task-list checkbox as a vector reportlab `Drawing`.
+  """
+  Draw a GitHub-style task-list checkbox as a vector reportlab `Drawing`.
 
   Font-independent - uses primitive shapes only (no glyph lookup).
   Box size is roughly cap-height.

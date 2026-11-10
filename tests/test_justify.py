@@ -8,7 +8,7 @@ and one-letter words keep to the word after them.
 
 import io, sys
 import pytest
-from pdfmarq import PDF, Align, MM_TO_PT, RichSegment, render_rich
+from pdfmarq import PDF, Align, MM_TO_PT, RichSegment, RichText, render_rich
 from pdfmarq.inline import (_Word, _justify_ratio, _spaced_width, _stretches, _JUSTIFY_SHRINK,
   _tokenize, _wrap, measure_extent, wrap_line_heights)
 from pdfmarq.md import MarkdownStyle
@@ -29,7 +29,7 @@ def lines_of(tmp_path):
   def draw(segments:list, align:str=Align.JUSTIFY, width:float=WIDTH_MM) -> list[list]:
     path = str(tmp_path / "justify.pdf")
     pdf = PDF(path)
-    render_rich(pdf, segments, width, 0, 0, align, 1.4)
+    render_rich(pdf, RichText(segments, width, align, 1.4), 0, 0)
     pdf.save()
     rows: dict[float, list] = {}
     for w in pdf_words(path):
@@ -46,6 +46,18 @@ def broken():
     lines = _wrap(words, width * MM_TO_PT, pdf._metrics, shrink=_JUSTIFY_SHRINK).lines
     return ["".join(w.text for w in line) for line in lines]
   return wrap
+
+@pytest.fixture
+def line_ends(tmp_path):
+  """`line_ends(write, name)`: the last word of each line `write(path)` draws, top to bottom."""
+  def ends(write, name:str) -> list[str]:
+    path = str(tmp_path / name)
+    write(path)
+    rows: dict[int, list] = {}
+    for w in pdf_words(path):
+      rows.setdefault(round(w[3]), []).append(w)
+    return [max(row, key=lambda w: w[0])[4] for _, row in sorted(rows.items())]
+  return ends
 
 @pytest.fixture
 def tight():
@@ -86,7 +98,7 @@ def link_covers_the_stretched_spaces(tmp_path):
   segs = [RichSegment("Some words lead in, then "),
     RichSegment("a link with spaces", link_url="https://example.com", underline=True),
     RichSegment(" " + TEXT)]
-  render_rich(pdf, segs, WIDTH_MM, 0, 0, Align.JUSTIFY, 1.4)
+  render_rich(pdf, RichText(segs, WIDTH_MM, Align.JUSTIFY, 1.4), 0, 0)
   pdf.save()
   rect = pdf_links(path)[0]["from"]
   spaces = next(w for w in pdf_words(path) if w[4] == "spaces")
@@ -97,8 +109,8 @@ def link_covers_the_stretched_spaces(tmp_path):
 def justified_line_tightens_to_take_a_word(tight):
   pdf = PDF(io.BytesIO())
   segs = [RichSegment(PHRASE)]
-  assert len(wrap_line_heights(pdf, segs, tight, align=Align.JUSTIFY)) == 1
-  assert len(wrap_line_heights(pdf, segs, tight, align=Align.LEFT)) == 2
+  assert len(wrap_line_heights(pdf, RichText(segs, tight, Align.JUSTIFY))) == 1
+  assert len(wrap_line_heights(pdf, RichText(segs, tight, Align.LEFT))) == 2
 
 @needs_fitz
 def tightened_line_ends_at_the_edge(lines_of, tight):
@@ -138,6 +150,16 @@ def words_split_at_hyphenation_points(broken):
 def words_stay_whole_without_a_language(broken):
   assert not any(line.endswith("-") for line in broken([RichSegment(POLISH)]))
 
+def a_long_word_no_head_of_which_fits_splits_on_the_next_line(broken):
+  # a one-letter word bound to it goes along, and no piece is cut without a hyphen
+  pytest.importorskip("pyphen")
+  word = "konstantynopolitanczykowianeczka"
+  for text in (f"A second paragraph: {word}", f"A second paragraph: a {word}"):
+    first, *heads, tail = broken([RichSegment(text, hyphenate="pl", bind_single_letters="a")], 37)
+    assert first == "A second paragraph:"
+    assert heads and all(head.endswith("-") for head in heads)
+    assert f"{first} {''.join(head[:-1] for head in heads)}{tail}" == text
+
 def code_and_links_never_split(broken):
   pytest.importorskip("pyphen")
   for seg in (RichSegment(POLISH, hyphenate="pl", bg_color=(0.9, 0.9, 0.9)),
@@ -176,10 +198,10 @@ def letter_spacing_widens_the_text():
 @needs_fitz
 def letter_spacing_is_drawn(tmp_path):
   def span(segment:RichSegment) -> float:
-    """Distance (pt) from the first glyph to the last; spaced letters read as words apart."""
+    """Distance (pt) from the first glyph to the last: spaced letters read as words apart."""
     path = str(tmp_path / "spaced.pdf")
     pdf = PDF(path)
-    render_rich(pdf, [segment], WIDTH_MM, 0, 0, Align.LEFT, 1.4)
+    render_rich(pdf, RichText([segment], WIDTH_MM, Align.LEFT, 1.4), 0, 0)
     pdf.save()
     chars = pdf_chars(path)
     return chars[-1][1] - chars[0][1]
@@ -199,12 +221,45 @@ ARTICLES = ("We bought a car and a boat, so I said a word to a friend of a frien
   "who had a plan for a trip to a lake where I saw a bird. ") * 3
 
 def single_letters_keep_to_the_next_word(broken):
-  # at some widths a line ends with `a` or `I`, and bound to the word after it none does
-  def ends_single(segment:RichSegment) -> bool:
+  # at some widths a line ends with `a`, and bound to the word after it none does
+  def ends_on_a(segment:RichSegment) -> bool:
     lines = [line for width in range(30, 90, 4) for line in broken([segment], width)[:-1]]
-    return any(len(line.split()[-1]) == 1 for line in lines if line.strip())
-  assert ends_single(RichSegment(ARTICLES))
-  assert not ends_single(RichSegment(ARTICLES, bind_single_letters=True))
+    return any(line.split()[-1] == "a" for line in lines if line.strip())
+  assert ends_on_a(RichSegment(ARTICLES))
+  assert not ends_on_a(RichSegment(ARTICLES, bind_single_letters="a"))
+
+def binds_keeps_a_letter_of_the_language_and_a_number_to_its_unit():
+  from pdfmarq.inline import binds
+  pl, cs = "aiouwz", "aikosuvz"
+  assert binds("supply", "5", "V", pl) and binds("supply", "5", "V.", pl) # a number to its unit
+  assert not binds("5", "V", "z", pl) and not binds("50", "W", "at", pl) # the unit to nothing
+  assert binds("V", "z", "port", pl) and binds("3", "z", "10", pl) # a letter of the language
+  assert not binds("Table", "I", "shows", pl) and not binds("value", "x", "is", pl)
+  assert binds("ends.", "W", "home", pl) and binds(None, "W", "home", pl) # a sentence opens
+  assert binds("LaTeX:", "A", "Document", pl) # so does a clause after a colon
+  assert binds("PLAN", "O", "HOUSE", pl) and not binds("Tabela", "I", "shows", pl) # caps
+  assert not binds("5", "s", "then", cs) and binds("x", "s", "them", cs) # a unit, then a word
+  assert binds("in", "(w", "case", pl) and binds("x", "„w", "time”", pl) # after an opener
+  assert binds("x", "(W", "home", pl) and not binds("point", "a)", "and", pl)
+  assert not binds("supply", "5", "V", "") # nothing binds without letters
+
+@needs_fitz
+def a_unit_keeps_one_plain_space_from_its_number(lines_of):
+  # justifying stretches the other spaces of a line, never the one before a unit
+  text = "The loss falls by 15 % at 5 V while the board draws 50 mA from a small cell. " * 3
+  lines = lines_of([RichSegment(text, bind_single_letters="aiouwz")], width=35)
+  pairs = [(a, b) for line in lines[:-1] for a, b in zip(line, line[1:])]
+  units = [b[0] - a[2] for a, b in pairs if a[4] in ("15", "5", "50")]
+  others = [b[0] - a[2] for a, b in pairs if a[4] not in ("15", "5", "50")]
+  assert units and max(units) - min(units) < 0.1 and max(others) > max(units) + 1
+
+def a_number_never_ends_a_line_before_its_unit(broken):
+  # nor does the unit pull the word after it along, which would part it from its number
+  text = "The board takes 5 V z port and 50 W at most, then 10 mA z cable. " * 3
+  segment = RichSegment(text, bind_single_letters="aiouwz")
+  for width in range(25, 70, 3):
+    rows = [line.split() for line in broken([segment], width)]
+    assert not any(row[-1] in ("5", "50", "10", "z") for row in rows[:-1]), width
 
 @pytest.mark.filterwarnings("ignore::pdfmarq.GlyphWarning") # Helvetica metrics, its boxes aside
 def binding_changes_only_lines_a_letter_would_end(broken):
@@ -213,20 +268,54 @@ def binding_changes_only_lines_a_letter_would_end(broken):
   for width in range(30, 90, 2):
     free = broken([RichSegment(POLISH, hyphenate="pl")], width)
     if any(len(line.split()[-1]) == 1 for line in free[:-1]): continue
-    bound = broken([RichSegment(POLISH, hyphenate="pl", bind_single_letters=True)], width)
+    bound = broken([RichSegment(POLISH, hyphenate="pl", bind_single_letters="aiouwz")], width)
     assert bound == free, width
 
 @needs_fitz
-def markdown_binds_single_letters(tmp_path):
+def markdown_binds_single_letters(tmp_path, line_ends):
   # paragraphs follow the style, and copy out with their plain spaces
-  def line_ends(bind:bool) -> list[str]:
-    path = str(tmp_path / f"bind{bind}.pdf")
-    render_md(path, ARTICLES, MarkdownStyle(bind_single_letters=bind))
-    rows: dict[int, list] = {}
-    for w in pdf_words(path):
-      rows.setdefault(round(w[3]), []).append(w)
-    return [max(row, key=lambda w: w[0])[4] for _, row in sorted(rows.items())][:-1]
-  assert "a" in line_ends(False)
-  assert not any(len(word) == 1 for word in line_ends(True))
+  def ends(bind:bool) -> list[str]:
+    def write(path:str):
+      render_md(path, ARTICLES, MarkdownStyle(bind_single_letters="a" if bind else ""))
+    return line_ends(write, f"bind{bind}.pdf")[:-1]
+  assert "a" in ends(False)
+  assert "a" not in ends(True)
   copied = pdf_text(str(tmp_path / "bindTrue.pdf"))
   assert "a car" in copied and "\u00a0" not in copied
+
+@needs_fitz
+@pytest.mark.parametrize("part", ["title", "heading", "cell"])
+def a_heading_a_table_cell_and_the_banner_title_bind_single_letters(line_ends, part):
+  from pdfmarq.paper import md_to_pdf, PaperStyle
+  text = ARTICLES[:200].strip()
+  md = {
+    "title": f"---\ntitle: {text}\n---\n\nBody.\n",
+    "heading": f"## {text}\n",
+    "cell": f"| Cell |\n|---|\n| {text} |\n",
+  }[part]
+  def ends(bind:bool) -> list[str]:
+    def write(path:str):
+      md_to_pdf(md, path, style=PaperStyle(bind_single_letters="a" if bind else "",
+        page_number_label=None))
+    return line_ends(write, f"{part}{bind}.pdf")
+  assert "a" in ends(False)
+  assert "a" not in ends(True)
+
+@needs_fitz
+def the_title_of_a_letter_binds_single_letters(line_ends):
+  from pdfmarq.legal import md_to_pdf, LegalStyle
+  md = f"---\ntitle: {ARTICLES[:200].strip()}\n---\n\nBody.\n"
+  def ends(bind:bool) -> list[str]:
+    def write(path:str):
+      md_to_pdf(md, path, style=LegalStyle(bind_single_letters="a" if bind else "",
+        page_number_label=None))
+    return line_ends(write, f"letter{bind}.pdf")
+  assert "a" in ends(False)
+  assert "a" not in ends(True)
+
+def the_polish_czech_and_slovak_presets_bind_single_letters(tmp_path):
+  from pdfmarq.md import lang_style
+  letters = {lang: lang_style(lang).bind_single_letters for lang in ("pl", "cs", "sk", "en", "de")}
+  assert letters == {"pl": "aiouwz", "cs": "aikosuvz", "sk": "aikosuvz", "en": "", "de": ""}
+  with pytest.raises(TypeError, match="aiouwz"): # the letters, not a switch
+    render_md(str(tmp_path / "t.pdf"), "Text.", MarkdownStyle(bind_single_letters=True))

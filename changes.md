@@ -1,13 +1,14 @@
 # Changes `pdfmarq`
 
-## `0.7.0` Slides
+## `0.7.0` Slides & articles
 
-- Breaking: `TextMetrics` measures lines with `letter_span` and `lines_height`
-- `pdf.frame()`, `SLIDE` page size and kerning, the `[kerning]` extra
-- `bind_single_letters`: no line ends with `w` or `i`
-- Bibliography title in papers, `pt` preset
+- Slides: 16:9 pages, boxes laid out as pages, kerned text with the `[kerning]` extra
+- Articles: indented paragraphs, ruled and double-ruled tables, columns of their own heights, drop caps
+- No line ends with a lone `w` or `i`, and no unit leaves its number
+- Authors with ORCID and e-mail, a titled bibliography, a Portuguese preset
+- Text a package sets itself, flowing across columns and pages
 - Fix: text sat high in lines, cells and callouts
-- Fixes across `text()`, code blocks and dashes
+- Fixes across `text()`, code blocks, dashes and metadata
 
 ## `0.6.1` Mail merge
 

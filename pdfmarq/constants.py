@@ -42,7 +42,8 @@ PAGE_PRESETS: dict[str, PageSize] = {
 }
 
 def page_size(name:str) -> PageSize:
-  """Resolve a preset name to a `PageSize`, case-insensitively.
+  """
+  Resolve a preset name to a `PageSize`, case-insensitively.
 
   Raises `ValueError` for an unknown name.
   Callers validate user input at their own boundary,

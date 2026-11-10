@@ -9,7 +9,7 @@ Blocks drawn around lines keep their letters in the middle too.
 import io
 import pytest
 from conftest import needs_fitz, pdf_ink, pdf_strokes, pdf_words, render_md
-from pdfmarq import PDF, MM_TO_PT, RichSegment, TableStyle, render_rich
+from pdfmarq import PDF, MM_TO_PT, RichSegment, RichText, TableStyle, render_rich
 from pdfmarq.inline import measure_rich, wrap_line_heights
 from pdfmarq.md import MarkdownStyle
 
@@ -62,7 +62,8 @@ def letters_sit_in_the_middle_of_their_line(tmp_path, tall_font, family):
   # Tall keeps 300 units above its capitals for accents, which must not push its letters down
   path = str(tmp_path / "line.pdf")
   pdf = PDF(path, font_dir=tall_font)
-  height = render_rich(pdf, [RichSegment("Hp", family=family, size=SIZE)], 100, 0, 0, line_gap=1.4)
+  text = RichText([RichSegment("Hp", family=family, size=SIZE)], 100, line_gap=1.4)
+  height = render_rich(pdf, text, 0, 0)
   pdf.save()
   line = (TOP_PT, TOP_PT + height * MM_TO_PT)
   assert sum(pdf_ink(path, (0, 0, 595, PAGE_H))) / 2 == pytest.approx(sum(line) / 2, abs=0.5)
@@ -87,8 +88,9 @@ def empty_line_is_as_tall_as_its_text():
   # two hard breaks in a row leave a line with no words, still a line of the text around it
   pdf = PDF(io.BytesIO())
   lines = [RichSegment(text, size=20) for text in ("one", "\n", "\n", "three")]
-  assert wrap_line_heights(pdf, lines, 100) == pytest.approx([20 * 1.45 / MM_TO_PT] * 3)
-  assert measure_rich(pdf, [RichSegment("", size=20)], 100) == pytest.approx(20 * 1.45 / MM_TO_PT)
+  assert wrap_line_heights(pdf, RichText(lines, 100)) == pytest.approx([20 * 1.45 / MM_TO_PT] * 3)
+  empty = RichText([RichSegment("", size=20)], 100)
+  assert measure_rich(pdf, empty) == pytest.approx(20 * 1.45 / MM_TO_PT)
 
 #------------------------------------------------------------------------------------------- Blocks
 

@@ -1,18 +1,22 @@
 # pdfmarq/inline.py
 
-"""Rich inline text rendering - mixed styles within a single line.
+"""
+Rich text: spans of mixed styles wrapped into lines, measured and drawn alike.
 
-`RichSegment` is one styled text span (bold, italic, code, links).
-`render_rich()` draws a sequence of them with word-wrap.
-This is the low-level engine used by the markdown renderer (`pdfmarq.md`, `MarkdownRenderer`).
-`core.PDF.text()` is a simpler single-style variant."""
+`RichSegment` is one styled span: bold, italic, code, a link, a formula.
+`RichText` is a run of them set at a width, with its alignment, leading and first-line indent.
+`render_rich`, `measure_rich`, `wrap_line_heights`, `flow_rich`, `split_rich` and `drop_cap`
+all take a `RichText`, so they break it at the same words.
+The markdown engine draws through them, and `PDF.text()` is a simpler single-style variant.
+"""
 import itertools, re, warnings
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 from reportlab.lib.colors import Color
 from reportlab.graphics import renderPDF
 from .constants import Align, MM_TO_PT
+from .utils import to_mm
 from .fonts import fit_glyphs
 from .text import FIT_EPS_PT, split_word, centred_baseline
 
@@ -47,7 +51,8 @@ _JUSTIFY_SHRINK = 0.75
 
 # A word splits at a line end only from this many letters, so a short one never does.
 _HYPHEN_MIN = 5
-# The letters a hyphenation point may split; punctuation around them stays whole.
+# The letters a hyphenation point may split;
+# punctuation around them stays whole.
 _SPLITTABLE = re.compile(r"(\W*)([^\W\d_]+)(\W*)")
 
 # Superscript / subscript scaling. Industry-standard: glyph at ~70% size,
@@ -60,7 +65,8 @@ _SUB_BASELINE_RATIO = 0.15  # lower baseline by this fraction of full size
 
 @dataclass
 class RichSegment:
-  """Single span of styled text, inline code, or inline math drawing.
+  """
+  Single span of styled text, inline code, or inline math drawing.
 
   Multiple segments render on one line with shared baseline.
   Background color draws a filled rect behind the span (used for inline code).
@@ -91,9 +97,11 @@ class RichSegment:
   strike: bool = False
   char_space: float = 0 # pt after every character: letter-spacing, as capitals want
   hyphenate: str|None = None # language whose patterns may split a word at a line end
-  bind_single_letters: bool = False # a one-letter word keeps to the next, as Polish asks of `w`
+  bind_single_letters: str = "" # one-letter words that keep to the next, as `aiouwz`: `binds`
+  code: bool = False # inline code: its spaces keep their width and its words stay whole
   # Soft line break BEFORE this segment.
-  # Flag-based rather than a break; an alternative to embedding `\n` in `text`.
+  # Flag-based rather than a break;
+  # an alternative to embedding `\n` in `text`.
   break_line: bool = False
   # Vertical script. Render at smaller size with baseline offset.
   # Useful for footnote refs (sup) and chemical formulae (sub).
@@ -113,6 +121,26 @@ class RichSegment:
     elif self.italic:
       self.mode = "Italic"
 
+#----------------------------------------------------------------------------------------- RichText
+
+@dataclass(frozen=True)
+class RichText:
+  """
+  Segments set at a width: everything that decides where their lines break and how tall they are.
+  Measuring, drawing, flowing and splitting take the same one, so they break at the same words.
+
+  Example:
+    >>> text = RichText(segs, 80, Align.JUSTIFY, 1.2, indent_mm=3.6)
+    >>> height = measure_rich(pdf, text)
+    >>> render_rich(pdf, text, 0, pdf.y)
+  """
+  segments: list[RichSegment]
+  width_mm: float
+  align: str = Align.LEFT # L, C, R or J, whose lines resize their spaces to fill the width
+  line_gap: float = 1.45 # a line's height, of its largest size
+  indent_mm: float = 0 # how far in the first line starts, as a paragraph of a book
+  preserve_leading_space: bool = False # spaces opening a line kept, as code keeps its indent
+
 #-------------------------------------------------------------------------------------- _Word token
 @dataclass
 class _Word:
@@ -122,19 +150,23 @@ class _Word:
   width_pt: float
   is_space: bool
   is_break: bool = False # hard line break
+  origin: "_Word|None" = None # the token a hyphenated or oversized piece was cut from
+  start: int = 0 # where in the text of `origin` the piece begins
+  rigid: bool = False # a space justifying leaves alone, as the one between a number and its unit
 
 #----------------------------------------------------------------------------------------- Tokenize
 
 def _effective_size(seg:RichSegment) -> float:
   """Glyph size after super/subscript scaling."""
-  if seg.superscript or seg.subscript:
-    return seg.size * _SCRIPT_SIZE_RATIO
+  if seg.superscript or seg.subscript: return seg.size * _SCRIPT_SIZE_RATIO
   return seg.size
 
 def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
-  """Split segments into word tokens preserving per-segment style.
+  """
+  Split segments into word tokens preserving per-segment style.
   Codepoints missing from the seg's font get remapped before width measurement,
-  to visually-equivalent ones the font has (Ω→Ohm, μ→micro, etc.)."""
+  to visually-equivalent ones the font has (Ω→Ohm, μ→micro, etc.).
+  """
   words = []
   for seg in segments:
     # `break_line` flag emits a hard break before the segment's content.
@@ -156,6 +188,17 @@ def _tokenize(segments:list[RichSegment], metrics) -> list[_Word]:
       words.append(_Word(part, seg, w, is_space=part.isspace() and "\u00a0" not in part))
   return words
 
+def _indented(words:list[_Word], segments:list[RichSegment], indent_mm:float) -> list[_Word]:
+  """
+  `words` behind an empty token `indent_mm` wide, which sets the first line in that far.
+  It wears the face of the first segment with nothing drawn around it,
+  so no shading, underline or link of the first word reaches into the indent.
+  """
+  if not indent_mm or not segments: return words
+  face = replace(segments[0], text="", bg_color=None, link_url=None, link_target=None,
+    underline=False, strike=False, break_line=False, math_drawing=None)
+  return [_Word("", face, indent_mm * MM_TO_PT, is_space=False)] + words
+
 def _text_pt(text:str, seg:RichSegment, size:float, metrics) -> float:
   """Advance of `text` set in `seg` at `size`, its letter-spacing included."""
   return metrics.text_width(text, seg.family, seg.mode, size) + seg.char_space * len(text)
@@ -163,9 +206,11 @@ def _text_pt(text:str, seg:RichSegment, size:float, metrics) -> float:
 #--------------------------------------------------------------------------------------------- Wrap
 @dataclass
 class _WrapResult:
-  """Output of `_wrap`. `overflow=True` means a chunk still didn't fit
+  """
+  Output of `_wrap`. `overflow=True` means a chunk still didn't fit
   after the force-break pass (wrap width too narrow for even one glyph).
-  `hard` holds the indices of lines a hard break ended, which justifying leaves alone."""
+  `hard` holds the indices of lines a hard break ended, which justifying leaves alone.
+  """
   lines: list[list["_Word"]]
   overflow: bool = False
   hard: set[int] = field(default_factory=set)
@@ -179,9 +224,12 @@ def _break_oversized(word:_Word, width_pt:float, metrics) -> list[_Word]:
   eff_size = _effective_size(seg)
   def measure(text:str) -> float:
     return _text_pt(text, seg, eff_size, metrics)
+  origin = word.origin or word
+  pieces = split_word(word.text, width_pt, measure)
+  starts = itertools.accumulate((len(piece) for piece in pieces), initial=word.start)
   return [
-    _Word(piece, seg, measure(piece), is_space=False)
-    for piece in split_word(word.text, width_pt, measure)
+    _Word(piece, seg, measure(piece), is_space=False, origin=origin, start=start)
+    for piece, start in zip(pieces, starts)
   ]
 
 _hyphenators: dict[str, object] = {}
@@ -199,8 +247,7 @@ def hyphenator(lang:str):
       RuntimeWarning, stacklevel=2)
     _hyphenators[lang] = None
     return None
-  if not pyphen.language_fallback(lang):
-    raise ValueError(f"no hyphenation patterns for {lang!r}")
+  if not pyphen.language_fallback(lang): raise ValueError(f"no hyphenation patterns for {lang!r}")
   _hyphenators[lang] = pyphen.Pyphen(lang=lang)
   return _hyphenators[lang]
 
@@ -214,7 +261,8 @@ def _hyphen_split(
   A word under `_HYPHEN_MIN` letters or in capitals stays whole, and so does one no cut fits.
   """
   seg = word.seg
-  if not seg.hyphenate or seg.bg_color is not None or seg.link_url or seg.link_target: return None
+  if not seg.hyphenate or seg.code or seg.bg_color is not None or seg.link_url or seg.link_target:
+    return None
   match = _SPLITTABLE.fullmatch(word.text)
   if not match or len(match[2]) < _HYPHEN_MIN or match[2].isupper(): return None
   patterns = hyphenator(seg.hyphenate)
@@ -226,8 +274,10 @@ def _hyphen_split(
     width = _text_pt(head, seg, size, metrics)
     if fits(width):
       tail = letters[cut:] + trail
-      rest = _Word(tail, seg, _text_pt(tail, seg, size, metrics), False)
-      return _Word(head, seg, width, False), rest
+      origin = word.origin or word
+      rest = _Word(tail, seg, _text_pt(tail, seg, size, metrics), False, origin=origin,
+        start=word.start + len(lead) + cut)
+      return _Word(head, seg, width, False, origin=origin, start=word.start), rest
   return None
 
 def _hyphen_split_unit(
@@ -281,30 +331,101 @@ def _units(words:list[_Word]) -> list[list[_Word]]:
 
   A word runs to the next whitespace, so it can span segments: `**PP**-1`, `[link](url).`.
   A line never breaks inside a word that fits a line of its own.
-  A one-letter word whose segment sets `bind_single_letters` takes the space and the word after it
-  into its unit, so no line ends with it, as Polish typesetting asks of `w` or `i`.
+  A space `binds` ties takes the word after it into the unit of the word before it:
+  a one-letter word of its language keeps to the next word, and a number to its unit.
   """
+  bound = _bound_spaces(words)
   units: list[list[_Word]] = []
   for w in words:
     last = units[-1][-1] if units else None
-    # the space after a bound one-letter word, waiting for the word it joins
-    bound_space = len(units) > 1 and units[-1][0].is_space and _ends_bound(units[-2])
-    if last and not (w.is_break or last.is_break) and w.is_space == last.is_space:
+    # a bound space, waiting for the word it joins to the one before it
+    waiting = len(units) > 1 and units[-1][0].is_space and id(units[-1][0]) in bound
+    joins = last and not (w.is_break or last.is_break) and w.is_space == last.is_space
+    if joins and not _is_indent(last): # a word stands apart from the indent, to be hyphenated
       units[-1].append(w)
-    elif bound_space and not w.is_break:
+    elif waiting and not w.is_break:
       space = units.pop()
-      units[-1] += space + [w] # the next word, joined to the one-letter word before it
+      units[-1] += space + [w]
     else:
       units.append([w])
   return units
 
-def _ends_bound(unit:list[_Word]) -> bool:
-  """Whether `unit` ends in a one-letter word whose segment binds it to the word after it."""
-  last = unit[-1]
-  if not last.seg.bind_single_letters or last.is_space or last.is_break: return False
-  word = itertools.takewhile(lambda token: not token.is_space, reversed(unit))
-  letters = "".join(token.text for token in word)
-  return len(letters) == 1 and letters.isalpha()
+#------------------------------------------------------------------------------------------ Binding
+
+# a number as text writes it: `5`, `3,5`, `1.5`
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# a word after which a sentence or a clause starts: a full stop or a colon, maybe in quotes
+_SENTENCE_END = re.compile(r"""[.!?…:][]"”’')»]*$""")
+# the units a number keeps to: a letter after a number is one of them, never a word
+_UNITS = frozenset((
+  "s", "ms", "µs", "us", "ns", "min", "h",
+  "V", "mV", "kV", "A", "mA", "µA", "W", "mW", "kW", "Wh", "kWh",
+  "Ω", "kΩ", "MΩ", "F", "µF", "nF", "pF", "H", "mH", "µH",
+  "Hz", "kHz", "MHz", "GHz", "dB", "B", "kB", "MB", "GB", "TB", "bit",
+  "m", "mm", "cm", "km", "µm", "nm", "g", "kg", "mg", "t", "l", "ml",
+  "N", "J", "Pa", "kPa", "bar", "K", "°C", "%", "pt", "px", "rpm",
+))
+# brackets and quotes a word may open with, as `(w` or `„w`
+_OPENERS = "([„«'" + '"'
+# a formula, a picture or code within a word, which is neither a letter nor a number
+_OBJECT = chr(0xFFFC)
+
+def binds(before:str|None, word:str, after:str, letters:str) -> bool:
+  """
+  Whether no line may end between `word` and the word `after` it.
+  `before` is the word before `word`, `None` where a paragraph or a line starts.
+  A one-letter word of `letters` keeps to the next one, as `aiouwz` in Polish,
+  and so does one opening a bracket or a quote, as `(w`.
+  A unit after a number never does, as `V` in `5 V` or Czech `s` in `5 s`.
+  A capital binds where a sentence or a clause opens, after a stop, a colon or a bracket,
+  or among capitals, as in a title.
+  Where `letters` binds anything, a number keeps to its unit as well.
+  """
+  if not letters: return False
+  if _NUMBER.fullmatch(word): return after.rstrip(".,;:!?)") in _UNITS
+  letter = word.lstrip(_OPENERS)
+  if len(letter) != 1 or letter.lower() not in letters: return False
+  if before is not None and _NUMBER.fullmatch(before) and word in _UNITS: return False
+  if letter.islower() or letter != word or before is None: return True
+  return bool(_SENTENCE_END.search(before)) or (before + after).isupper()
+
+def _bound_spaces(words:list[_Word]) -> set[int]:
+  """
+  `id` of each space no line may end at, as `binds` decides from the words around it.
+  A word runs across segments to the next space, so a bold one-letter word binds as well,
+  and the segment of its last piece names the letters that bind.
+  The space between a number and its unit is marked `rigid` on the way.
+  """
+  found = [] # a word, the segment of its last piece, the space after it, whether it opens a line
+  pieces, seg, opens = [], None, True
+  for token in words:
+    if token.is_space or token.is_break:
+      if pieces:
+        found.append(("".join(pieces), seg, token if token.is_space else None, opens))
+        pieces, opens = [], False
+      if token.is_break: opens = True
+      continue
+    if _is_indent(token): continue
+    plain = token.seg.math_drawing is None and not token.seg.code
+    pieces.append(token.text if plain else _OBJECT)
+    seg = token.seg
+  if pieces: found.append(("".join(pieces), seg, None, opens))
+  bound = set()
+  for k, (word, seg, space, opens) in enumerate(found[:-1]):
+    if space is None or found[k + 1][3]: continue
+    before = None if opens else found[k - 1][0]
+    if not binds(before, word, found[k + 1][0], seg.bind_single_letters): continue
+    bound.add(id(space))
+    space.rigid = bool(_NUMBER.fullmatch(word)) # a unit stays one space from its number
+  return bound
+
+def _is_indent(word:_Word) -> bool:
+  """Whether `word` is the empty token of a paragraph's first-line indent."""
+  return not (word.text or word.is_space or word.is_break) and word.seg.math_drawing is None
+
+def _blank(word:_Word) -> bool:
+  """Whether `word` draws nothing: whitespace, or the indent."""
+  return word.is_space or _is_indent(word)
 
 def _wrap(
   words:list[_Word], width_pt:float, metrics,
@@ -317,16 +438,20 @@ def _wrap(
   Lines break at whitespace, never inside a unit from `_units`,
   unless the segment of its last word sets `hyphenate` and the head of a split fits:
   see `_hyphen_split_unit`.
-  A word wider than a whole line is the exception: it breaks between its segments first.
-  So does a word too wide for the rest of an indented code line: an indent never stands alone.
-  A token still too wide goes to `_break_oversized`, so long links never spill past the edge.
+  A word that does not fit the rest of a line opens the next one if it fits there or splits there.
+  Otherwise it breaks between its segments from where the line stands, as long code does,
+  and a token still too wide goes to `_break_oversized`, so long links never spill past the edge.
+  After an indent alone the word breaks between its segments too, so code keeps its indent,
+  and a first piece too wide for the rest of the line starts it at the margin:
+  an indent never stands alone, of code or of a paragraph's first line.
   Widths include the run padding `render_rich` draws, via `_advance_pt`.
 
   Args:
     preserve_leading_space: Keep leading whitespace, for code where indent means something.
       Prose drops it.
     shrink: Share of their width the spaces between words may tighten to, so a word fits.
-      `1` keeps them whole; justified text passes `_JUSTIFY_SHRINK`.
+      `1` keeps them whole;
+      justified text passes `_JUSTIFY_SHRINK`.
   """
   limit = width_pt + FIT_EPS_PT
   lines: list[list[_Word]] = []
@@ -336,7 +461,7 @@ def _wrap(
   current_sp = 0.0 # width of the spaces on the line justifying may tighten
   overflow = False
   def indent_only() -> bool:
-    return all(w.is_space for w in current)
+    return all(_blank(w) for w in current)
   def fits(width:float) -> bool:
     return current_w + width - (1 - shrink) * current_sp <= limit
   def reset():
@@ -363,6 +488,7 @@ def _wrap(
     after = _advance_pt(current[-1], token) if current else alone
     if current and not fits(after):
       wrap()
+      if token.is_space: return # the space of a bound pair opens no line
       after = alone
     append([token], after)
   units = deque(_units(words))
@@ -389,11 +515,12 @@ def _wrap(
       flush()
       units.appendleft([rest]) # the rest of the word opens the next line
       continue
-    alone = _extent_pt(unit)
-    if alone <= limit and not indent_only():
-      flush()
-      append(unit, alone)
-      continue
+    if current and not indent_only():
+      fresh = lambda width: width <= limit # a line of its own
+      if _extent_pt(unit) <= limit or _hyphen_split_unit(unit, fresh, None, metrics):
+        flush()
+        units.appendleft(unit) # the next line holds it whole, or splits it from its start
+        continue
     for token in unit:
       if token.text and _advance_pt(None, token) > limit:
         room = width_pt - _run_pad_pt(token.seg)
@@ -457,7 +584,7 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
   if not segments: return 0, 0
   widest = total = 0.0
   prev: _Word|None = None
-  for unit in _units(_tokenize(segments, pdf._metrics)):
+  for unit in _units(_tokenize(segments, pdf.metrics)):
     if unit[0].is_break:
       prev = None
       continue
@@ -469,7 +596,8 @@ def measure_extent(pdf, segments:list[RichSegment]) -> tuple[float, float]:
   return widest / MM_TO_PT, total / MM_TO_PT
 
 def _line_box(line:list[_Word], line_gap:float, metrics) -> tuple[float, float]:
-  """`(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
+  """
+  `(ascent_pt, descent_pt)` of one wrapped line, measured from its baseline.
 
   The line is `line_gap` times its largest size tall, with its letters in the middle:
   from the top of the tallest capital to the bottom of the deepest descender,
@@ -490,13 +618,11 @@ def _line_box(line:list[_Word], line_gap:float, metrics) -> tuple[float, float]:
   above = below = 0.0
   for w in line:
     drawing = w.seg.math_drawing
-    if drawing is None:
-      continue
+    if drawing is None: continue
     seg_below = w.seg.math_baseline_from_bottom_pt
     below = max(below, seg_below)
     above = max(above, float(getattr(drawing, "height", 0) or 0) - seg_below)
-  if above + below <= ascent + descent:
-    return ascent, descent
+  if above + below <= ascent + descent: return ascent, descent
   return max(ascent, above), max(descent, below)
 
 def _empty_line_mm(segments:list[RichSegment], line_gap:float) -> float:
@@ -506,57 +632,32 @@ def _empty_line_mm(segments:list[RichSegment], line_gap:float) -> float:
   """
   return segments[0].size * line_gap / MM_TO_PT
 
-def wrap_line_heights(
-  pdf,
-  segments:list[RichSegment],
-  width_mm:float,
-  line_gap:float = 1.45,
-  preserve_leading_space:bool = False,
-  align:str = Align.LEFT,
-) -> list[float]:
-  """Per-line heights (mm) of the layout `render_rich` produces.
+def _wrap_text(pdf, text:RichText) -> tuple[list[_Word], _WrapResult]:
+  """Tokens of `text` and its wrapped lines: measuring, drawing and splitting all wrap here."""
+  words = _indented(_tokenize(text.segments, pdf.metrics), text.segments, text.indent_mm)
+  return words, _wrap(words, text.width_mm * MM_TO_PT, pdf.metrics,
+    preserve_leading_space=text.preserve_leading_space, shrink=_shrink(text.align))
 
-  Lets a caller split a block across pages: pick how many lines fit the space left on the page,
-  then draw that slice via `render_rich` with `first_line` / `max_lines`.
-  Uses the same tokenize + wrap pass as the drawing code,
-  so the cut lands exactly where the line is drawn.
-  `align` must be the one the text is drawn with: justified lines wrap tighter.
+def wrap_line_heights(pdf, text:RichText) -> list[float]:
   """
-  if not segments: return []
-  words = _tokenize(segments, pdf._metrics)
-  wrapped = _wrap(
-    words, width_mm * MM_TO_PT, pdf._metrics,
-    preserve_leading_space=preserve_leading_space, shrink=_shrink(align),
-  )
+  Height (mm) of each line of `text` as `render_rich` sets it.
+  A long block is cut by these: as many lines as fit the room left,
+  drawn by `render_rich` with `first_line` and `max_lines`.
+  """
+  if not text.segments: return []
+  _, wrapped = _wrap_text(pdf, text)
   heights: list[float] = []
   for line in wrapped.lines:
     if not line:
-      heights.append(_empty_line_mm(segments, line_gap))
+      heights.append(_empty_line_mm(text.segments, text.line_gap))
       continue
-    ascent, descent = _line_box(line, line_gap, pdf._metrics)
+    ascent, descent = _line_box(line, text.line_gap, pdf.metrics)
     heights.append((ascent + descent) / MM_TO_PT)
   return heights
 
-def measure_rich(
-  pdf,
-  segments:list[RichSegment],
-  width_mm:float,
-  line_gap:float = 1.45,
-  preserve_leading_space:bool = False,
-  align:str = Align.LEFT,
-) -> float:
-  """Calculate how much vertical space `render_rich` would use, without actually drawing anything.
-  Uses the same tokenization + wrap logic as `render_rich`,
-  so the number is accurate to the pixel.
-
-  Used for pre-computing heights of cells and boxes (code blocks, table cells) before drawing,
-  so backgrounds and borders can be sized correctly.
-  """
-  if not segments: return 0
-  return sum(wrap_line_heights(
-    pdf, segments, width_mm, line_gap,
-    preserve_leading_space=preserve_leading_space, align=align,
-  ))
+def measure_rich(pdf, text:RichText) -> float:
+  """Height (mm) `render_rich` takes for the whole of `text`, nothing drawn: a box sized first."""
+  return sum(wrap_line_heights(pdf, text))
 
 #------------------------------------------------------------------------------------------ Justify
 
@@ -565,8 +666,9 @@ def _shrink(align:str) -> float:
   return _JUSTIFY_SHRINK if align == Align.JUSTIFY else 1.0
 
 def _stretches(word:_Word) -> bool:
-  """A space justifying may resize: one between words, never one inside inline code."""
-  return word.is_space and word.seg.bg_color is None
+  """A space justifying may resize: never a `rigid` one, nor one inside inline code."""
+  if not word.is_space or word.rigid: return False
+  return not word.seg.code and word.seg.bg_color is None
 
 def _spaced_width(word:_Word, ratio:float) -> float:
   """Advance of `word` on a line whose stretchable spaces each change by `ratio` of their width."""
@@ -585,46 +687,28 @@ def _justify_ratio(line:list[_Word], extra_pt:float) -> float:
 
 def render_rich(
   pdf,
-  segments:list[RichSegment],
-  width_mm:float,
+  text:RichText,
   x_mm:float,
   y_mm:float,
-  align:str = Align.LEFT,
-  line_gap:float = 1.45,
-  preserve_leading_space:bool = False,
   first_line:int = 0,
   max_lines:int|None = None,
 ) -> float:
-  """Render mixed-style text with word wrap. Does not modify cursor.
-
-  Args:
-    pdf: `PDF` instance (uses `_canvas`, `_metrics`, `_page`).
-    segments: List of `RichSegment` to render in sequence.
-    width_mm: Wrap width (from left edge `x_mm`).
-    x_mm: Left edge in cursor coords (from content area left margin).
-    y_mm: Top edge in cursor coords (from content area top margin).
-    align: `L` / `C` / `R` / `J`. Justified lines resize their spaces to fill `width_mm`,
-      tightening them to take one more word when `_JUSTIFY_SHRINK` allows.
-      The last line and lines a hard break ends stay left, unless they took a word by tightening.
-    line_gap: Line height multiplier (e.g. 1.45 = 145% of font size).
-    preserve_leading_space: Keep leading whitespace on each line (for code).
-    first_line: Index of the first wrapped line to draw.
-      Lines before it are laid out but skipped, so the visible text starts at `y_mm`.
-    max_lines: Draw at most this many lines (`None` = to the end).
-      With `first_line` this renders one page-sized window of a long block;
-      use `wrap_line_heights` to decide where to cut.
-
-  Returns:
-    Total vertical space used by the lines actually drawn, in mm.
   """
-  if not segments: return 0
-  metrics = pdf._metrics
-  canvas = pdf._canvas
-  page = pdf._page
+  Draw `text` wrapped, its top-left corner at `x_mm`, `y_mm` of the frame, the cursor left alone.
+  Returns the mm the lines drawn take.
+
+  Justified lines resize their spaces to fill the width, tightening them for one more word
+  as far as `_JUSTIFY_SHRINK` allows.
+  The last line and a line a hard break ends stay left, unless they took a word by tightening.
+  `first_line` and `max_lines` draw one window of a long block, its top at `y_mm`,
+  cut where `wrap_line_heights` says the room ends.
+  """
+  if not text.segments: return 0
+  metrics = pdf.metrics
+  canvas = pdf.c
+  width_mm = text.width_mm
   width_pt = width_mm * MM_TO_PT
-  words = _tokenize(segments, metrics)
-  wrapped = _wrap(words, width_pt, metrics, preserve_leading_space=preserve_leading_space,
-    shrink=_shrink(align))
+  _, wrapped = _wrap_text(pdf, text)
   lines = wrapped.lines
   last = len(lines) - 1 # the block's own last line, wherever the window falls
   if first_line or max_lines is not None:
@@ -640,35 +724,36 @@ def render_rich(
       RuntimeWarning, stacklevel=2,
     )
   # Absolute canvas coords for top-left of text block
-  x_base_mm = page.margin_left + x_mm
-  y_top_mm = page.height - page.margin_top - y_mm
+  x_base_mm = pdf.margin_left + x_mm
+  y_top_mm = pdf.page_height - pdf.margin_top - y_mm
   current_top_mm = y_top_mm # canvas y (grows up) - top of next line
   total_used_mm = 0
   for index, line in enumerate(lines, first_line):
     if not line:
-      gap_mm = _empty_line_mm(segments, line_gap)
+      gap_mm = _empty_line_mm(text.segments, text.line_gap)
       current_top_mm -= gap_mm
       total_used_mm += gap_mm
       continue
     # Ascent positions the baseline below the top edge.
     # Both numbers come from `_line_box`, so the drawn line matches the measured one exactly.
-    ascent_pt, descent_pt = _line_box(line, line_gap, metrics)
+    ascent_pt, descent_pt = _line_box(line, text.line_gap, metrics)
     line_height_mm = (ascent_pt + descent_pt) / MM_TO_PT
     # Baseline canvas y in pt (canvas coords, y grows up)
     baseline_canvas_y_pt = (current_top_mm * MM_TO_PT) - ascent_pt
     # Alignment offset
     line_w_pt = _line_width_pt(line)
     ratio = 0.0
-    if align == Align.CENTER:
+    if text.align == Align.CENTER:
       x_offset_pt = (width_pt - line_w_pt) / 2
-    elif align == Align.RIGHT:
+    elif text.align == Align.RIGHT:
       x_offset_pt = width_pt - line_w_pt
     else:
       x_offset_pt = 0
-      # every line tightened to take a word fits; the last and hard-broken ones stay left
+      # every line tightened to take a word fits;
+      # the last and hard-broken ones stay left
       extra_pt = width_pt - line_w_pt
-      if align == Align.JUSTIFY and (extra_pt < 0 or index != last and index not in wrapped.hard):
-        ratio = _justify_ratio(line, extra_pt)
+      fills = extra_pt < 0 or index != last and index not in wrapped.hard
+      if text.align == Align.JUSTIFY and fills: ratio = _justify_ratio(line, extra_pt)
     cursor_x_pt = x_base_mm * MM_TO_PT + x_offset_pt
     # Group consecutive words into visual runs by (bg, underline, link_url, color)
     # so backgrounds and underlines are drawn continuously across spaces.
@@ -713,9 +798,9 @@ def render_rich(
       canvas.setFillColor(Color(*rseg.color[:3]))
       for w in run:
         if not w.is_space:
-          text, _ = metrics.shaped(w.text, w.seg.family, w.seg.mode, eff_size)
+          glyphs, _ = metrics.shaped(w.text, w.seg.family, w.seg.mode, eff_size)
           canvas.setFont(metrics.font_name(w.seg.family, w.seg.mode), eff_size)
-          canvas.drawString(cursor_x_pt, word_baseline_pt, text, charSpace=w.seg.char_space)
+          canvas.drawString(cursor_x_pt, word_baseline_pt, glyphs, charSpace=w.seg.char_space)
         cursor_x_pt += _spaced_width(w, ratio)
       # Underline across whole run
       if rseg.underline:
@@ -754,3 +839,159 @@ def render_rich(
   canvas.setStrokeColor(Color(0, 0, 0))
   canvas.setLineWidth(1)
   return total_used_mm
+
+#--------------------------------------------------------------------------------------------- Flow
+
+def fit_lines(heights:list[float], start:int, budget:float) -> tuple[int, float]:
+  """
+  How many lines from `start` fit `budget`, and their total height.
+
+  Takes at least one line even when it does not fit,
+  so a line taller than a whole frame still advances the caller
+  instead of spinning on a line that can never be placed.
+  """
+  count, used = 0, 0.0
+  while start + count < len(heights):
+    h = heights[start + count]
+    if count and used + h > budget: break
+    used += h
+    count += 1
+  return count, used
+
+def _in_unit(pdf, mm:float) -> float:
+  """`mm` in the unit of `pdf`, as its `cursor()` and `keep()` read lengths."""
+  return mm / to_mm(1, pdf.unit)
+
+def flow_rich(pdf, text:RichText, x_mm:float=0, min_lines:int=1):
+  """
+  Draw `text` from the cursor down, breaking between lines at the foot of each frame.
+
+  `render_rich` lays a block out from one `y`, so lines past the frame fall off the page.
+  This draws one frame of lines at a time, moving on to the next column or page,
+  and leaves the cursor at `x_mm`, under the last line drawn.
+  `min_lines` is the least a frame holds on either side of a break:
+  `1` draws whatever fits, `2` keeps a first or last line from standing alone.
+  """
+  heights = wrap_line_heights(pdf, text)
+  n = len(heights)
+  i = 0
+  moved = False # the lines from `i` on took their one step to the next frame
+  while i < n:
+    room = pdf.content_height - pdf.y
+    if room < sum(heights[i:i + min_lines]) and not pdf.at_top:
+      pdf.next_frame()
+      room = pdf.content_height - pdf.y
+    count, used = fit_lines(heights, i, room)
+    short = min_lines - (n - i - count) # lines the next frame would lack
+    if 0 < short < min_lines:
+      if count - short < min_lines and not pdf.at_top and not moved:
+        pdf.next_frame() # neither side can keep `min_lines`: the text starts on the next frame
+        moved = True
+        continue # fitted again there, a header on it included, or here when no frame follows
+      if count - short >= min_lines:
+        used -= sum(heights[i + count - short:i + count])
+        count -= short
+    y = pdf.y
+    render_rich(pdf, text, x_mm, y, first_line=i, max_lines=count)
+    pdf.cursor(_in_unit(pdf, x_mm), _in_unit(pdf, y + used))
+    i += count
+    moved = False
+    if i < n: pdf.next_frame()
+
+def split_rich(pdf, text:RichText, lines:int) -> list[RichSegment]:
+  """
+  The segments of `text` that follow its first `lines` lines, for text going on in another shape,
+  as the full width under the lines set beside a drop cap.
+
+  The cut is the one `render_rich` makes:
+  a word bound to the next by a no-break space stays with it,
+  a word hyphenated at the cut goes on whole from there, and an empty line after it stays.
+  Empty when the text takes no more than `lines` lines.
+  """
+  if lines <= 0: return list(text.segments)
+  words, wrapped = _wrap_text(pdf, text)
+  after = [w for line in wrapped.lines[lines:] for w in line]
+  if not after: return []
+  first = after[0]
+  source = first.origin or first
+  at = next(k for k, w in enumerate(words) if w is source)
+  ended = sum(1 for line in wrapped.hard if line < lines) # hard breaks that end the first lines
+  blank = [k for k, w in enumerate(words[:at]) if w.is_break][ended:] # empty lines after the cut
+  lead = words[blank[0]:at] if blank else []
+  # a word cut at a line end goes on whole from the cut
+  rest = [replace(source, text=source.text[first.start:])] if first.origin else [source]
+  return _rejoin(lead + rest + words[at + 1:])
+
+def _rejoin(words:list[_Word]) -> list[RichSegment]:
+  """`words` back as segments, a run of words of one segment joined into one, hard breaks kept."""
+  runs = []
+  broken = False
+  for w in words:
+    if w.is_break:
+      if broken: runs.append((replace(w.seg, math_drawing=None), [], True)) # an empty line
+      broken = True
+      continue
+    if runs and runs[-1][0] is w.seg and not broken and w.seg.math_drawing is None:
+      runs[-1][1].append(w.text)
+      continue
+    runs.append((w.seg, [w.text], broken))
+    broken = False
+  return [replace(seg, text="".join(texts), break_line=brk) for seg, texts, brk in runs]
+
+def drop_cap(
+  pdf,
+  text:RichText,
+  x_mm:float = 0,
+  lines:int = 2,
+  gap_mm:float = 1,
+  caps:bool = False,
+  min_lines:int = 1,
+) -> bool:
+  """
+  Draw `text` from the cursor with its first letter `lines` lines tall, as a chapter opens:
+  the letter's top on the capitals of the first line, its foot on the last baseline beside it.
+  The lines beside it take the width it leaves, `gap_mm` from it,
+  and the rest flows on under it as `flow_rich` sets text, `min_lines` as there.
+  `caps` sets the rest of the first word in capitals, as IEEE journals do.
+  `False`, with nothing drawn, for text opening with no letter, or with a link, a formula
+  or a picture, which the caller then sets as usual.
+  """
+  segments = text.segments
+  # a formula or a picture opening the text holds no letter, and one after it is mid-sentence
+  at = next((k for k, s in enumerate(segments)
+    if s.text.strip() or s.math_drawing is not None), None)
+  if at is None or segments[at].math_drawing is not None: return False
+  seg = segments[at]
+  if seg.link_url or seg.link_target: return False # the letter, drawn apart, would lose the link
+  first = seg.text.lstrip()
+  if not first[:1].isalpha(): return False
+  cut = re.match(r"\w*", first[1:]).end() if caps else 0
+  segments = [*segments[:at], replace(seg, text=first[1:cut + 1].upper() + first[cut + 1:]),
+    *segments[at + 1:]]
+  letter = first[0].upper()
+  metrics = pdf.metrics
+  line_pt = seg.size * text.line_gap
+  cap_pt, _ = metrics.letter_span(seg.family, seg.mode, seg.size)
+  # the letter's capital reaches from the capitals of the first line to the last baseline
+  size = ((lines - 1) * line_pt + cap_pt) / (cap_pt / seg.size)
+  drop = metrics.text_width(letter, seg.family, seg.mode, size) / MM_TO_PT + gap_mm
+  # the lines beside the letter and the rest under it open with no indent of their own
+  beside = replace(text, segments=segments, width_mm=text.width_mm - drop, indent_mm=0)
+  line_mm = line_pt / MM_TO_PT
+  beside_lines = len(wrap_line_heights(pdf, beside))
+  # the letter's lines and one more
+  pdf.keep(_in_unit(pdf, max(lines, min(beside_lines, lines + 1)) * line_mm))
+  y = pdf.y
+  ascent, _ = _line_box([_Word("", seg, 0, False)], text.line_gap, metrics) # a line of its face
+  baseline = y * MM_TO_PT + ascent + (lines - 1) * line_pt
+  canvas = pdf.c
+  canvas.setFont(metrics.font_name(seg.family, seg.mode), size)
+  canvas.setFillColor(Color(*seg.color[:3]))
+  canvas.drawString((pdf.margin_left + x_mm) * MM_TO_PT,
+    (pdf.page_height - pdf.margin_top) * MM_TO_PT - baseline, letter)
+  used = render_rich(pdf, beside, x_mm + drop, y, max_lines=lines)
+  # a short paragraph still clears the letter
+  pdf.cursor(_in_unit(pdf, x_mm), _in_unit(pdf, y + max(used, lines * line_mm)))
+  rest = split_rich(pdf, beside, lines)
+  if rest: flow_rich(pdf, replace(text, segments=rest, indent_mm=0), x_mm, min_lines=min_lines)
+  return True

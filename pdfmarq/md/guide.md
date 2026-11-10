@@ -196,6 +196,7 @@ A block that must stay together.
 `pagebreak` forces a break at that point.
 `group` keeps its content on one page, breaking pre-emptively when the block would fit on the next; a group larger than a page flows normally.
 Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary comment and does nothing.
+The one word `group` takes is `wide`: `<!-- group wide -->` spans the group across columns where a package sets them, and here it is an ordinary group.
 
 ## Templates
 

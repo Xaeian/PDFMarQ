@@ -102,7 +102,8 @@ def balanced_pages(
 ) -> list|None:
   """
   Column heights page by page for `region` flowing from `start` over pages `page` mm tall,
-  its last page balanced and ending within `limit`; `None` when that page cannot,
+  its last page balanced and ending within `limit`;
+  `None` when that page cannot,
   or when `region` takes one page only.
 
   As `balanced_height` does for one page, the last page's height starts at an even share

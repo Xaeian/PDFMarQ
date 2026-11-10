@@ -6,7 +6,8 @@ import pytest
 from pathlib import Path
 from conftest import assert_valid_pdf, needs_fitz
 from pdfmarq import (
-  PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, render_rich, GlyphWarning,
+  PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, RichText, render_rich,
+  GlyphWarning,
 )
 
 #---------------------------------------------------------------------------------------- PDF basic
@@ -139,7 +140,7 @@ def dashed_outline_leaves_later_strokes_solid(tmp_path):
 
 def core_font_warns_about_a_letter_it_lacks(tmp_path):
   # Helvetica keeps to WinAnsi, which has no ż, and reportlab takes Ω from Symbol
-  from pdfmarq._warn import reset_warnings
+  from pdfmarq.warn import reset_warnings
   reset_warnings()
   with pytest.warns(GlyphWarning) as caught:
     with PDF(str(tmp_path / "glyph.pdf")) as pdf:
@@ -185,6 +186,15 @@ def table_without_header(tmp_path):
   with PDF(str(path)) as pdf:
     pdf.table([["a", "b"], ["c", "d"]])
   assert_valid_pdf(path)
+
+@needs_fitz
+def table_header_bg_none_leaves_the_header_unshaded(tmp_path):
+  import fitz
+  path = tmp_path / "unshaded.pdf"
+  with PDF(str(path)) as pdf:
+    pdf.table([["a", "b"]], header=["A", "B"], style=TableStyle(header_bg=None, row_bg_odd=None))
+  with fitz.open(path) as doc:
+    assert not [d for d in doc[0].get_drawings() if d.get("fill")]
 
 def table_builder_drives_draw_table(tmp_path):
   path = tmp_path / "builder.pdf"
@@ -242,6 +252,15 @@ def metadata_render(tmp_path):
     pdf.text("body")
   assert_valid_pdf(path)
 
+@needs_fitz
+def pdf_without_metadata_holds_no_placeholders(tmp_path):
+  import fitz
+  path = tmp_path / "bare.pdf"
+  with PDF(str(path)) as pdf:
+    pdf.text("body")
+  with fitz.open(path) as doc:
+    assert (doc.metadata["title"], doc.metadata["author"], doc.metadata["subject"]) == ("", "", "")
+
 #------------------------------------------------------------------------------------------- Inline
 
 def render_rich_basic(tmp_path):
@@ -255,7 +274,7 @@ def render_rich_basic(tmp_path):
         bg_color=(0.95, 0.95, 0.95)),
       RichSegment(".", family="Helvetica", mode="Regular", size=11),
     ]
-    render_rich(pdf, segs, width_mm=120, x_mm=0, y_mm=0)
+    render_rich(pdf, RichText(segs, 120), x_mm=0, y_mm=0)
   assert_valid_pdf(path)
 
 #------------------------------------------------------------------------------------------- Styles

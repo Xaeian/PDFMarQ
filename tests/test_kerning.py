@@ -10,7 +10,7 @@ from importlib.util import find_spec
 import pytest
 import reportlab
 from conftest import needs_fitz, pdf_chars, pdf_text, pdf_words, render_md
-from pdfmarq import PDF, MM_TO_PT, RichSegment, render_rich
+from pdfmarq import PDF, MM_TO_PT, RichSegment, RichText, render_rich
 from pdfmarq.inline import measure_extent
 from pdfmarq.md import MarkdownStyle
 
@@ -44,7 +44,7 @@ def kerned_text_is_drawn_as_measured(vera_pdf, tmp_path):
   def span(kern:bool) -> float:
     """Distance (pt) between the first and the last glyph of `AVATAR`, as drawn."""
     pdf = vera_pdf(f"span{kern}.pdf").kerning(kern)
-    render_rich(pdf, [RichSegment("AVATAR", family="Vera", size=40)], 150, 0, 0)
+    render_rich(pdf, RichText([RichSegment("AVATAR", family="Vera", size=40)], 150), 0, 0)
     pdf.save()
     chars = pdf_chars(str(tmp_path / f"span{kern}.pdf"))
     return chars[-1][1] - chars[0][1]
@@ -56,7 +56,7 @@ def kerned_text_copies_out_unchanged(vera_pdf, tmp_path):
   # ligatures stay off: `ffi` would otherwise copy out as the one letter `ﬃ`
   text = "office affluent AVATAR Type"
   pdf = vera_pdf().kerning()
-  render_rich(pdf, [RichSegment(text, family="Vera", size=20)], 170, 0, 0)
+  render_rich(pdf, RichText([RichSegment(text, family="Vera", size=20)], 170), 0, 0)
   pdf.font("Vera", 20).cursor(0, 30).text(text)
   pdf.save()
   assert pdf_text(str(tmp_path / "kern.pdf")).split("\n")[:2] == [text, text]
@@ -81,7 +81,7 @@ def core_faces_keep_their_widths():
   assert kerned == pytest.approx(plain)
 
 def kerning_without_harfbuzz_warns(monkeypatch):
-  from pdfmarq._warn import reset_warnings
+  from pdfmarq.warn import reset_warnings
   reset_warnings()
   monkeypatch.setattr("pdfmarq.core.find_spec", lambda name: None)
   with pytest.warns(RuntimeWarning, match="pip install uharfbuzz"):

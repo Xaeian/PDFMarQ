@@ -51,8 +51,7 @@ class Frame(NamedTuple):
 
 def _with_transform(frame:Frame, text:str|None) -> Frame:
   """`frame` with an SVG `transform` attribute applied, left to right."""
-  if not text:
-    return frame
+  if not text: return frame
   for name, args in _TRANSFORM_RE.findall(text):
     nums = [float(n) for n in _NUM_RE.findall(args)]
     if name == "translate":
@@ -69,7 +68,8 @@ def _number(node, name:str) -> float:
   return float(found.group(0)) if found else 0.0
 
 def _with_viewport(frame:Frame, node) -> Frame:
-  """`frame` with a nested `<svg>`: its `x`/`y` placement and `viewBox` mapping.
+  """
+  `frame` with a nested `<svg>`: its `x`/`y` placement and `viewBox` mapping.
 
   A nested viewport also clips, which is ignored:
   MathJax sizes these boxes to the glyph pieces they hold, so nothing reaches an edge.
@@ -77,11 +77,9 @@ def _with_viewport(frame:Frame, node) -> Frame:
   frame = frame.then(tx=_number(node, "x"), ty=_number(node, "y"))
   box = _NUM_RE.findall(node.get("viewBox") or "")
   width, height = _number(node, "width"), _number(node, "height")
-  if len(box) < 4 or width <= 0 or height <= 0:
-    return frame
+  if len(box) < 4 or width <= 0 or height <= 0: return frame
   min_x, min_y, box_w, box_h = (float(v) for v in box[:4])
-  if not box_w or not box_h:
-    return frame
+  if not box_w or not box_h: return frame
   return frame.then(sx=width / box_w, sy=height / box_h).then(tx=-min_x, ty=-min_y)
 
 #---------------------------------------------------------------------------------------- Path data
@@ -91,7 +89,8 @@ def _fmt(value:float) -> str:
   return f"{value:.3f}".rstrip("0").rstrip(".") or "0"
 
 def transform_path(data:str, frame:Frame) -> str|None:
-  """Absolute `M`/`L`/`C`/`Z` path data mapped through `frame`, or `None`.
+  """
+  Absolute `M`/`L`/`C`/`Z` path data mapped through `frame`, or `None`.
 
   `None` covers a relative command, an unknown letter and an odd coordinate count alike:
   all of them mean the data says something this cannot restate.
@@ -101,8 +100,7 @@ def transform_path(data:str, frame:Frame) -> str|None:
   command = ""
 
   def emit() -> bool:
-    if not command or len(pending) % 2:
-      return not pending
+    if not command or len(pending) % 2: return not pending
     out.append(command)
     for i in range(0, len(pending), 2):
       out.append("%s %s" % tuple(_fmt(v) for v in frame.point(*pending[i:i + 2])))
@@ -112,8 +110,7 @@ def transform_path(data:str, frame:Frame) -> str|None:
     if number:
       pending.append(float(number))
       continue
-    if letter not in ("M", "L", "C", "Z") or not emit():
-      return None
+    if letter not in ("M", "L", "C", "Z") or not emit(): return None
     pending, command = [], "" if letter == "Z" else letter
     if letter == "Z":
       out.append("Z")
@@ -151,15 +148,15 @@ def _flat_rect(node, frame:Frame, paint:dict):
   }, paint)
 
 def _flat_text(node, frame:Frame, paint:dict):
-  """A `text` at its transformed anchor, or `None` when the frame turns it.
+  """
+  A `text` at its transformed anchor, or `None` when the frame turns it.
 
   MathJax writes one of these in place of a glyph its font does not carry,
   so it stands for a single character set in a system face.
   Text cannot be reduced to coordinates the way a path can -
   it keeps its own size and direction, which only survives an upright scale.
   """
-  if frame.sx <= 0 or frame.sy <= 0:
-    return None
+  if frame.sx <= 0 or frame.sy <= 0: return None
   x, y = frame.point(_number(node, "x"), _number(node, "y"))
   attrs = {"x": _fmt(x), "y": _fmt(y),
     "font-size": _fmt(_number(node, "font-size") * frame.sy)}
@@ -174,8 +171,7 @@ def _walk(node, frame:Frame, paint:dict, out:list) -> bool:
   """Collect flattened shapes from `node`'s children."""
   for child in node:
     name = _tag(child)
-    if name in _SKIP:
-      continue
+    if name in _SKIP: continue
     inner = _with_transform(frame, child.get("transform"))
     ink = _with_paint(paint, child)
     if name == "g":
@@ -197,7 +193,8 @@ def _walk(node, frame:Frame, paint:dict, out:list) -> bool:
   return True
 
 def _root_svg(fragment:str):
-  """Outermost `<svg>` in `fragment`, or `None`.
+  """
+  Outermost `<svg>` in `fragment`, or `None`.
 
   MathJax hands over a container holding the SVG next to an assistive-MathML copy,
   so the fragment is not one element and the SVG is not reliably the first child.
@@ -207,27 +204,24 @@ def _root_svg(fragment:str):
       node = ElementTree.fromstring(candidate)
     except ElementTree.ParseError:
       continue
-    if _tag(node) == "svg":
-      return node
+    if _tag(node) == "svg": return node
     for child in node:
-      if _tag(child) == "svg":
-        return child
+      if _tag(child) == "svg": return child
   return None
 
 def flatten(svg:str) -> str|None:
-  """SVG with every transform and nested viewport resolved into coordinates.
+  """
+  SVG with every transform and nested viewport resolved into coordinates.
 
   `None` when the fragment holds no SVG, or a construct outside the supported set.
   """
   root = _root_svg(svg)
-  if root is None:
-    return None
+  if root is None: return None
   shapes: list = []
   if not _walk(root, _with_transform(Frame(), root.get("transform")),
       _with_paint({}, root), shapes):
     return None
-  if not shapes:
-    return None
+  if not shapes: return None
   flat = ElementTree.Element(f"{{{SVG_NS}}}svg")
   for key in ("width", "height", "viewBox"):
     if root.get(key):

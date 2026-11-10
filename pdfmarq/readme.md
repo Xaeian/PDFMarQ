@@ -67,6 +67,7 @@ pdf.new_page()         # page break, cursor reset
 pdf.next_frame()       # next column, or a new page after the last one
 # Read current position
 pdf.x, pdf.y           # cursor mm
+pdf.at_top             # whether the cursor stands at the top of its frame
 pdf.content_width, pdf.content_height # frame area: the page minus margins, or the open column
 pdf.margin_left        # and margin_right, margin_top, margin_bot: the frame's, mm
 pdf.column_index       # column the cursor is in, from 0
@@ -83,6 +84,7 @@ pdf.columns(2, gap=8)            # two columns from the current height
 pdf.next_frame()                 # move on: column 2, then a new page
 pdf.columns(2, gap=8, height=90) # columns capped at 90mm on this page, for balancing
 pdf.columns(2, height=[None, 90]) # capped page by page: here the second page only
+pdf.columns(2, height=[(150, None)]) # capped column by column: the first clear of a footnote
 pdf.columns(1)                   # close: full width again, below the lowest column
 # Parallel columns: the caller places content and breaks pages itself
 pdf.columns(2, gap=8, flow=False)
@@ -114,12 +116,16 @@ pdf.text("Right", width=40, align="R", padding=1) # right-aligned with padding
 When both `width` and `height` are given, font auto-scales down by `0.1pt` steps to fit.
 Lines go 1.2 sizes apart, centred in the box as each line centres its letters.
 
-Mixed-style text goes through `render_rich`, which also justifies:
+Mixed-style text is a `RichText`: its segments set at a width, with their alignment, leading and first-line indent.
+Every function below takes one, so measuring and drawing break the same text at the same words:
 
 ```py
-from pdfmarq import RichSegment, render_rich, Align
+from pdfmarq import RichSegment, RichText, render_rich, measure_rich, flow_rich, Align
 segs = [RichSegment("Plain, "), RichSegment("bold", bold=True), RichSegment(" and more.")]
-render_rich(pdf, segs, 80, 0, pdf.y, Align.JUSTIFY) # width, x, y in mm
+text = RichText(segs, 80, Align.JUSTIFY, 1.2, indent_mm=3.6) # width and indent in mm
+height = measure_rich(pdf, text)  # mm, nothing drawn
+render_rich(pdf, text, 0, pdf.y)  # at x, y in mm, the cursor left alone
+flow_rich(pdf, text, min_lines=2) # from the cursor, across columns and pages
 ```
 
 `render_rich` takes mm whatever `unit` the PDF was made with, as `pdf.x`, `pdf.y` and `content_width` give them, and so does the markdown engine.
@@ -127,12 +133,15 @@ Each line is `line_gap` times its size tall, its letters in the middle: from the
 Text placed by hand beside such a line finds its baseline with `centred_baseline(height, *pdf.metrics.letter_span(family, mode, size))`, in pt.
 A justified line resizes its spaces to meet the edge.
 It may tighten them to three quarters of their width to take one more word, as page layout programs do.
-Measure justified text with the same `align`: `pdfmarq.inline.wrap_line_heights(..., align=Align.JUSTIFY)`.
 The last line and a line a hard break ends stay left.
+`wrap_line_heights(pdf, text)` gives the height of each line, and `render_rich` draws a window of them with `first_line` and `max_lines`.
+`flow_rich` breaks the text between lines at the foot of each column or page, and with `min_lines=2` no first or last line stands alone.
+`split_rich(pdf, text, 2)` gives the segments that follow the first two lines, for text that goes on in another shape, as under the lines beside a drop cap.
+`drop_cap(pdf, text, caps=True)` sets that drop cap: the first letter two lines tall, the rest of the text flowing under it, and `False` for text opening with no letter, a link or a formula.
 `RichSegment(char_space=1)` spaces letters out by 1pt each, as capitals want.
 `RichSegment(hyphenate="pl")` lets a word split at a line end, at a hyphenation point of the Polish patterns from `pyphen`, which the `[md]` extra installs.
 Code, links, numbers and words in capitals stay whole.
-`RichSegment(bind_single_letters=True)` keeps a one-letter word, as `w` or `i`, on the line of the word after it, as Polish typesetting asks.
+`RichSegment(bind_single_letters="aiouwz")` keeps the one-letter words it names, as `w` or `i`, on the line of the word after them, and a number with its unit, as Polish typesetting asks.
 
 ## Signing lines and page number
 

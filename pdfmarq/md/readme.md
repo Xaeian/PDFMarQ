@@ -30,13 +30,16 @@ A package that lays out the page itself works in steps:
 - `renderer.render_tokens(tokens[a:b])` draws any slice into the current frame
 - `renderer.render_tokens(part, style)` sets that part in a style of its own; heading slugs and equation numbers run on across parts
 - `MarkdownRenderer.off_page(width, style, base_dir, font_dir)` is the engine on an off-page sheet, measuring a part before it is drawn
+- `renderer.segments(inline, base)` gives the `RichSegment`s of an inline token grown from `base`, for text a package draws itself, as a caption
 - `renderer.resolve_path(src)` resolves a path against `base_dir`
 - `renderer.frontmatter_file(fm, key)` gives the file a frontmatter key names, warning when it is missing
 
 Functions of `pdfmarq.md` go with them:
 
 - `top_blocks(tokens)` gives `(start, end)` of each top-level block, a `<!-- group -->` counting as one
+- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which the engine sets as any group and a package spans across columns
 - `split_frontmatter(text)`, `metadata_from_frontmatter(fm)` and `pdf_metadata(fm, overrides)` read frontmatter, which the engine itself never draws
+- `people(value)` reads an `author`-like value as persons, each a mapping with `name` first, an ORCID or e-mail written after a name joining it, and `byline(value)` gives their names on one line
 
 Inside `pdf.columns(...)` content width, margins and page breaks follow the current column, so every block - tables, lists, images, formulas - flows through columns unchanged.
 
@@ -53,7 +56,12 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=False, h2_size=None)
   Headings and table cells keep their words whole.
 - `kerning=True` kerns the letter pairs of TrueType text, as `AV` and `Ty` want, through `PDF.kerning`.
   It needs `uharfbuzz`, the `[kerning]` extra.
-- `bind_single_letters=True` keeps a one-letter word of a paragraph with the word after it, so no line ends with `w` or `i`, as Polish typesetting asks.
+- `bind_single_letters="aiouwz"` names the one-letter words that keep to the word after them, so no line ends with `w` or `i`, as Polish typesetting asks.
+  A capital binds only where a sentence or a clause opens, after a stop, a colon or a bracket, or among capitals, as in a title, so `Table I` and a Roman `V` stay free.
+  A letter opening a bracket or a quote binds too, as `(w` or `„w`.
+  A number keeps to its unit, `5 V`, by a space justifying never stretches, and a unit after a number pulls no word along.
+  It holds in paragraphs, lists, quotes, headings, table cells and the titles of `paper` and `legal`.
+  `lang_style` sets it for `pl`, `cs` and `sk`.
   The text copies out with its plain spaces.
 - `keep_together=False` lets text flow, so columns end evenly.
   A paragraph splits with at least two lines on each side, and a list goes item by item.
@@ -61,6 +69,8 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=False, h2_size=None)
   Before a table, code block, image or formula it reserves the first rows or lines of that block, as with `keep_together` on.
   Quotes, callouts and groups always stay whole.
 - A heading size of `None` follows `body_size`.
+- `first_indent` sets the first line of a body paragraph in by that many mm, as books and journals do.
+  A paragraph of a list, a quote or a footnote keeps flush.
 - An ordered list keeps its delimiter, `1.` or `1)`, and the author's numbers when they increase.
 
 The defaults - `justify=False`, `hyphenate=None`, `keep_together=True`, sizes 20/16/13/11 - give the classic documentation look.
@@ -152,6 +162,9 @@ MarkdownStyle(
   h1_page_break=False, # True for chaptered documents
   h1_size=20, h2_size=16, h3_size=13, h4_size=11, h5_size=11, h6_size=11,
   table_zebra=True, table_zebra_bg=(0.985, 0.99, 0.995),
+  table_header_bg=None, # the header row unshaded
+  table_rules="grid", # `rows` without vertical rules, `head` above, below and under the header
+  table_double=False, # the rules above and below the table drawn double, as IEEE journals do
   footnote_label=None, # a rule above the footnotes, True a title in the style's language
 )
 ```
@@ -264,7 +277,7 @@ pdf.save()
 Installed by `pip install pdfmarq[md]`:
 - `Pygments` - syntax highlighting in code blocks
 - `matplotlib` - math formulas (`$x^2$`, `$$...$$`), the fallback engine
-- `emoji`, `mdit-py-emoji` - `:shortcode:` emoji
+- `emoji` - `:shortcode:` emoji
 - `pyphen` - hyphenation patterns for `hyphenate`
 - `fonttools` - the font's own small capitals for `title_caps`
 

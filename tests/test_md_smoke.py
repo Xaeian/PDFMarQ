@@ -118,7 +118,8 @@ def md_page_landscape_flips_page(tmp_path):
   assert_valid_pdf(path)
 
 def md_base_dir_resolves_relative_image(tmp_path):
-  # real image one dir over; `base_dir=` finds it without a chdir
+  # real image one dir over;
+  # `base_dir=` finds it without a chdir
   from PIL import Image
   img_dir = tmp_path / "assets"
   img_dir.mkdir()
@@ -187,7 +188,7 @@ def tagged_block_renders_with_its_own_label(tmp_path):
 def math_with_no_engine_says_so(tmp_path, monkeypatch):
   # no MathJax and no matplotlib: formulas stay as code, and a warning names the package
   import pdfmarq.md.math as math, pdfmarq.md.mathjax as mathjax
-  from pdfmarq._warn import reset_warnings
+  from pdfmarq.warn import reset_warnings
   monkeypatch.setattr(math, "_HAS_MATPLOTLIB", False)
   monkeypatch.setattr(mathjax, "available", lambda: False)
   reset_warnings()
@@ -198,6 +199,20 @@ def math_with_no_engine_says_so(tmp_path, monkeypatch):
   # the warning points at the line that asked for the document, not into the library
   assert {Path(w.filename).name for w in caught if "matplotlib" in str(w.message)} == {
     Path(__file__).name}
+
+def emoji_missing_warns_only_for_a_shortcode(monkeypatch):
+  # a text with no `:name:` outside code has no use for the package, so it stays quiet
+  import sys
+  from pdfmarq.md.md_preprocess import PreprocessMixin
+  from pdfmarq.warn import reset_warnings
+  monkeypatch.setitem(sys.modules, "emoji", None) # `import emoji` fails
+  reset_warnings()
+  with warnings.catch_warnings():
+    warnings.simplefilter("error")
+    text = "At 12:30:45, `:smile:` in code.\n\n| a | b |\n|:--|:-:|\n\n```\n:smile:\n```\n"
+    assert PreprocessMixin._emojize_outside_code(text) == text
+  with pytest.warns(RuntimeWarning, match="pip install emoji"):
+    assert PreprocessMixin._emojize_outside_code("Done :smile:\n") == "Done :smile:\n"
 
 def mermaid_block_reaches_its_renderer(tmp_path):
   # with no mmdc and the network off the diagram stays a code block, which still has to draw
@@ -224,7 +239,7 @@ def default_fonts_draw_polish(tmp_path):
 def missing_glyph_warns_once_at_the_calling_line(tmp_path):
   # DejaVu has no kanji: each draws as an empty box, said once however often it comes
   pytest.importorskip("matplotlib")
-  from pdfmarq._warn import reset_warnings
+  from pdfmarq.warn import reset_warnings
   reset_warnings()
   with pytest.warns(GlyphWarning) as caught:
     md_to_pdf("Kanji 漢, and 漢 again.\n", str(tmp_path / "kanji.pdf"))

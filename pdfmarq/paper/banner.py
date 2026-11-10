@@ -8,7 +8,7 @@ Both are drawn from these frontmatter keys, all optional:
   id        Document code in code-style box (e.g. "MD-001")
   title     Main title (centered, large)
   version   Version in code-style box (e.g. "1.2.3")
-  author    Author name
+  author    Names: a string as written but its ORCIDs and e-mails, or a list of names or people
   status    Badge label: draft/review/approved/deprecated/archived
   entity    Organization name (left of banner, bold)
   address   Address (right of banner, muted)
@@ -17,11 +17,14 @@ Both are drawn from these frontmatter keys, all optional:
   logo      Path to logo (.svg, .png, .jpg), resolved by the caller
 """
 from reportlab.lib.colors import Color
-from ..inline import RichSegment, render_rich
+from ..inline import RichSegment, RichText, render_rich, measure_rich
 from ..graphics import draw_svg, image_aspect
 from ..constants import MM_TO_PT, Align
 from ..utils import format_date
+from ..md import byline
 from .style import UNKNOWN_STATUS
+
+_META_GAP_MM = 4 # between the names of the author row and the updated date beside them
 
 #------------------------------------------------------------------------------------------- Banner
 
@@ -37,6 +40,7 @@ class Banner:
     self.data = data
     self.logo = logo
     self.aspect = image_aspect(logo) if logo else 1.0 # width over height
+    self.author = byline(data.get("author"), bind=True)
     self.created = format_date(data.get("created"), style.date_format)
     self.updated = format_date(data.get("updated"), style.date_format)
 
@@ -45,7 +49,8 @@ class Banner:
   def draw(self):
     """
     Draw the full banner at the cursor, on the first page.
-    The logo column shrinks while the text needs more width; one or two passes settle it.
+    The logo column shrinks while the text needs more width;
+    one or two passes settle it.
     """
     s = self.style
     pdf = self.pdf
@@ -131,11 +136,28 @@ class Banner:
       title_lines = self._estimate_lines(str(title), s.font_head,
         s.head_mode, s.banner_title_size, width)
       h_mm += s.banner_title_size / MM_TO_PT * title_lines * 1.0 + 2
-    if data.get("author") or self.created or self.updated:
+    if self.author or self.created or self.updated:
       h_mm += 1
-      meta_lines = int(bool(self.created)) + int(bool(data.get("author") or self.updated))
-      h_mm += s.banner_meta_size / MM_TO_PT * 1.3 * max(1, meta_lines)
+      line_h = s.banner_meta_size / MM_TO_PT * 1.3
+      if self.created: h_mm += line_h
+      if self.author or self.updated:
+        author = self._author_text(width)
+        h_mm += max(line_h, measure_rich(self.pdf, author) if author else 0)
     return h_mm
+
+  def _author_text(self, width:float) -> RichText|None:
+    """The names of the author row, left of the updated date when it has one, as they wrap."""
+    if not self.author: return None
+    s = self.style
+    room = width
+    if self.updated:
+      updated = f"{s.banner_label_updated}: {self.updated}"
+      room -= self.pdf.metrics.text_width(updated, s.font_body, s.body_mode,
+        s.banner_meta_size) / MM_TO_PT + _META_GAP_MM
+    label = s.author_label(self.data.get("author"))
+    segs = [RichSegment(text=f"{label}: {self.author}", family=s.font_body,
+      mode=s.body_mode, size=s.banner_meta_size, color=s.body_color)]
+    return RichText(segs, room, Align.LEFT, 1.3)
 
   def _estimate_lines(
     self, text:str, family:str, mode:str,
@@ -149,8 +171,7 @@ class Banner:
       return 1
     text_w_pt = pdf.c.stringWidth(text, font, size_pt)
     width_pt = width_mm * MM_TO_PT
-    if text_w_pt <= width_pt:
-      return 1
+    if text_w_pt <= width_pt: return 1
     return max(1, int(text_w_pt / width_pt) + 1)
 
   def _text_column(self, x_offset:float, width:float):
@@ -181,10 +202,9 @@ class Banner:
       h = self._centered(str(title), s.banner_title_size, s.font_head,
         s.head_mode, s.head_color, x_offset, width)
       pdf.enter(h + 2)
-    author = data.get("author")
-    if author or self.created or self.updated:
+    if self.author or self.created or self.updated:
       pdf.enter(1)
-      self._meta_rows(author, x_offset, width)
+      self._meta_rows(x_offset, width)
 
   def _entity_row(
     self, entity:str|None, address:str|None,
@@ -198,11 +218,11 @@ class Banner:
     if entity:
       segs = [RichSegment(text=str(entity), family=s.font_body, mode=s.bold_mode,
         size=s.banner_meta_size, color=s.body_color)]
-      h = max(h, render_rich(pdf, segs, width, x_offset, y, Align.LEFT, 1.3) or h)
+      h = max(h, render_rich(pdf, RichText(segs, width, Align.LEFT, 1.3), x_offset, y) or h)
     if address:
       segs = [RichSegment(text=str(address), family=s.font_body, mode=s.body_mode,
         size=s.banner_meta_size, color=s.muted_color)]
-      h = max(h, render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3) or h)
+      h = max(h, render_rich(pdf, RichText(segs, width, Align.RIGHT, 1.3), x_offset, y) or h)
     return h
 
   def _id_row(
@@ -241,14 +261,18 @@ class Banner:
     self, text:str, size_pt:float, family:str, mode:str, color:tuple,
     x_offset:float, width:float,
   ) -> float:
-    """Centered text. Returns its height (mm) as drawn."""
+    """Centered text, its one-letter words bound as the style says. Returns its height (mm)."""
     pdf = self.pdf
-    segs = [RichSegment(text=text, family=family, mode=mode, size=size_pt, color=color)]
-    h = render_rich(pdf, segs, width, x_offset, pdf.y, Align.CENTER, 1.0)
+    segs = [RichSegment(text=text, family=family, mode=mode, size=size_pt, color=color,
+      bind_single_letters=self.style.bind_single_letters)]
+    h = render_rich(pdf, RichText(segs, width, Align.CENTER, 1.0), x_offset, pdf.y)
     return h or (size_pt / MM_TO_PT)
 
-  def _meta_rows(self, author:str|None, x_offset:float, width:float):
-    """`created` alone at the right, then `author` at the left and `updated` at the right."""
+  def _meta_rows(self, x_offset:float, width:float):
+    """
+    `created` alone at the right, then the author's names at the left and `updated` at the right,
+    the row as tall as the names wrap.
+    """
     pdf = self.pdf
     s = self.style
     line_h = s.banner_meta_size / MM_TO_PT * 1.3
@@ -256,19 +280,16 @@ class Banner:
       y = pdf.y
       segs = [RichSegment(text=f"{s.banner_label_created}: {self.created}", family=s.font_body,
         mode=s.body_mode, size=s.banner_meta_size, color=s.muted_color)]
-      render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3)
+      render_rich(pdf, RichText(segs, width, Align.RIGHT, 1.3), x_offset, y)
       pdf.cursor(x_offset, y + line_h)
-    if author or self.updated:
+    if self.author or self.updated:
       y = pdf.y
-      if author:
-        segs = [RichSegment(text=f"{s.banner_label_author}: {author}",
-          family=s.font_body, mode=s.body_mode,
-          size=s.banner_meta_size, color=s.body_color)]
-        render_rich(pdf, segs, width, x_offset, y, Align.LEFT, 1.3)
+      author = self._author_text(width)
+      if author: line_h = max(line_h, render_rich(pdf, author, x_offset, y))
       if self.updated:
         segs = [RichSegment(text=f"{s.banner_label_updated}: {self.updated}", family=s.font_body,
           mode=s.body_mode, size=s.banner_meta_size, color=s.muted_color)]
-        render_rich(pdf, segs, width, x_offset, y, Align.RIGHT, 1.3)
+        render_rich(pdf, RichText(segs, width, Align.RIGHT, 1.3), x_offset, y)
       pdf.cursor(x_offset, y + line_h)
 
   def _rule(self, x_offset:float, width:float):
@@ -387,10 +408,11 @@ class Banner:
       bg_x = x_pt
       text_x_pt = x_pt + pad_x
     bg_y = baseline_y_pt - pad_y - 1
-    c.setFillColor(Color(*s.code_inline_bg[:3]))
+    shaded = s.code_inline_bg is not None # `None` leaves the box unshaded, as inline code
+    if shaded: c.setFillColor(Color(*s.code_inline_bg[:3]))
     c.setStrokeColor(Color(*s.code_block_border[:3]))
     c.setLineWidth(0.3)
-    c.roundRect(bg_x, bg_y, bg_w, bg_h, 1.5, fill=1, stroke=1)
+    c.roundRect(bg_x, bg_y, bg_w, bg_h, 1.5, fill=int(shaded), stroke=1)
     c.setFillColor(Color(*s.code_inline_color[:3]))
     c.setFont(font, size)
     c.drawString(text_x_pt, baseline_y_pt, text)
@@ -398,12 +420,10 @@ class Banner:
   @staticmethod
   def _fit_text(c, text:str, font:str, size:float, max_w:float) -> str:
     """Return text trimmed with ellipsis to fit within `max_w` pt."""
-    if c.stringWidth(text, font, size) <= max_w:
-      return text
+    if c.stringWidth(text, font, size) <= max_w: return text
     ellipsis = "..."
     ell_w = c.stringWidth(ellipsis, font, size)
-    if ell_w >= max_w:
-      return ""
+    if ell_w >= max_w: return ""
     # Binary search for fitting prefix
     lo, hi = 0, len(text)
     while lo < hi:

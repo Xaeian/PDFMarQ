@@ -9,7 +9,7 @@ Showcases:
   - custom TTF fonts loaded from `./fonts/`
   - `link_root` for cross-document references in the rendered PDF
   - `base_dir` so relative image paths in the markdown resolve correctly
-  - YAML frontmatter → page-1 banner (content only; chrome comes from `style`)
+  - YAML frontmatter → page-1 banner (content only, chrome comes from `style`)
   - Ghostscript post-process for a smaller, distribution-ready PDF
 """
 import sys

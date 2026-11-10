@@ -1,6 +1,7 @@
 # pdfmarq/md/md_fonts.py
 
-"""Font auto-registration for `MarkdownRenderer`.
+"""
+Font auto-registration for `MarkdownRenderer`.
 
 Tries DejaVu Sans/Mono from common system paths (Linux, Homebrew, Windows),
 then the copy matplotlib ships, which the `[md]` extra installs.
@@ -37,13 +38,15 @@ def _font_dirs() -> list[str]:
 #--------------------------------------------------------------------------------------- FontsMixin
 
 class FontsMixin:
-  """Font auto-registration mixin for `MarkdownRenderer`.
-  Loads body/heading/mono families before the first draw."""
+  """
+  Font auto-registration mixin for `MarkdownRenderer`.
+  Loads body/heading/mono families before the first draw.
+  """
   _FONT_FILES = _FONT_FILES
   _FONT_DIRS = _FONT_DIRS
 
   def _ensure_default_font(self):
-    """Register DejaVu sans + mono TTFs (Polish/Latin-Ext coverage); fall back to Vera."""
+    """Register DejaVu sans and mono TTFs, which cover Polish and Latin-Ext, or else Vera."""
     def family_paths(family:str, base:str) -> dict:
       return {
         mode: os.path.join(base, tmpl.format(family=family))
@@ -81,12 +84,11 @@ class FontsMixin:
       return {}
 
   def _try_register_family(self, candidates:list) -> str|None:
-    """Register first candidate where Regular exists; return family name or None."""
+    """Register the first candidate whose Regular exists, and return its family or `None`."""
     fm = self.pdf.fonts
     for family_name, mode_paths in candidates:
       reg_path = mode_paths.get("Regular")
-      if not reg_path or not os.path.exists(reg_path):
-        continue
+      if not reg_path or not os.path.exists(reg_path): continue
       registered_any = False
       for mode, path in mode_paths.items():
         try:
@@ -94,6 +96,5 @@ class FontsMixin:
           registered_any = True
         except Exception:
           pass
-      if registered_any:
-        return family_name
+      if registered_any: return family_name
     return None

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from ..core import PDF
 from ..constants import Align
 from ..graphics import image_aspect
-from ..inline import RichSegment, render_rich, measure_extent, wrap_line_heights
+from ..inline import RichSegment, RichText, render_rich, measure_extent, measure_rich
 from ..utils import format_date
 from .style import LegalStyle
 
@@ -74,7 +74,7 @@ def _lines(
   for i, line in enumerate(lines):
     if i: segs.append(_seg(style, "\n"))
     segs += [_seg(style, line)] if isinstance(line, str) else line
-  return render_rich(pdf, segs, width, x, y, align, style.line_height)
+  return render_rich(pdf, RichText(segs, width, align, style.line_height), x, y)
 
 #------------------------------------------------------------------------------------------- Header
 
@@ -139,7 +139,7 @@ def draw_header(
 
 def _title(pdf:PDF, segs:list[RichSegment], x:float, y:float, width:float) -> float:
   """Title centred in the `width` from `x`. Returns its height (mm)."""
-  return render_rich(pdf, segs, width, x, y, Align.CENTER, 1.2)
+  return render_rich(pdf, RichText(segs, width, Align.CENTER, 1.2), x, y)
 
 def _title_segments(pdf:PDF, style:LegalStyle, lines:list[str]) -> list[RichSegment]:
   """
@@ -154,7 +154,7 @@ def _title_segments(pdf:PDF, style:LegalStyle, lines:list[str]) -> list[RichSegm
     if small and drawn: face = drawn
     elif small: size, space = size * _SMALL_CAPS, size * _SMALL_CAPS * _SMALL_CAPS_SPACE
     return RichSegment(text, family=face, mode=style.head_mode, size=size,
-      color=style.head_color, char_space=space)
+      color=style.head_color, char_space=space, bind_single_letters=style.bind_single_letters)
   segs: list[RichSegment] = []
   for i, line in enumerate(lines):
     if i: segs.append(seg("\n", False))
@@ -189,23 +189,21 @@ def _draw_logo(
 
 #-------------------------------------------------------------------------------------- Attachments
 
-def _attachment_segments(style:LegalStyle, items:list[str]) -> list[RichSegment]:
-  """The label in bold, then one numbered line per attachment."""
+def _attachments(pdf:PDF, style:LegalStyle, items:list[str]) -> RichText:
+  """The label in bold, then one numbered line per attachment, across the frame."""
   segs = [_seg(style, f"{style.attachments_label}:", style.bold_mode)]
   for i, item in enumerate(items, 1):
     segs += [_seg(style, "\n"), _seg(style, f"{i}. {item}")]
-  return segs
+  return RichText(segs, pdf.content_width, line_gap=style.line_height)
 
 def attachments_height(pdf:PDF, style:LegalStyle, items:list[str]) -> float:
   """Height (mm) `draw_attachments` takes in the current frame, the gap above included."""
   if not items: return 0.0
-  segs = _attachment_segments(style, items)
-  return _LIST_GAP_MM + sum(wrap_line_heights(pdf, segs, pdf.content_width, style.line_height))
+  return _LIST_GAP_MM + measure_rich(pdf, _attachments(pdf, style, items))
 
 def draw_attachments(pdf:PDF, style:LegalStyle, items:list[str]):
   """Attachment list at the cursor: its label, then the items numbered. Cursor left below it."""
   if not items: return
   y = pdf.y + _LIST_GAP_MM
-  h = render_rich(pdf, _attachment_segments(style, items), pdf.content_width, 0, y,
-    Align.LEFT, style.line_height)
+  h = render_rich(pdf, _attachments(pdf, style, items), 0, y)
   pdf.cursor(0, y + h)

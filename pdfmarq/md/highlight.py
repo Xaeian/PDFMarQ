@@ -1,6 +1,7 @@
 # pdfmarq/md/highlight.py
 
-"""Syntax highlighting for code blocks via `pygments`.
+"""
+Syntax highlighting for code blocks via `pygments`.
 
 Converts a source string + language hint into a list of lines,
 where each line is a list of `RichSegment` with colors/weights from a pygments style.
@@ -19,7 +20,7 @@ __extras__ = ("highlight", ["Pygments"])
 
 import re
 from ..inline import RichSegment
-from .._warn import warn_missing
+from ..warn import warn_missing
 
 try:
   from pygments import lex
@@ -35,8 +36,7 @@ except ImportError:
 def _hex_to_rgb(hex_str:str) -> tuple[float, float, float]:
   """Parse 6-char hex color to (r, g, b) 0-1."""
   hex_str = hex_str.lstrip("#")
-  if len(hex_str) != 6:
-    return (0, 0, 0)
+  if len(hex_str) != 6: return (0, 0, 0)
   r = int(hex_str[0:2], 16) / 255
   g = int(hex_str[2:4], 16) / 255
   b = int(hex_str[4:6], 16) / 255
@@ -76,7 +76,7 @@ def _highlight_md(
   default_color:tuple,
 ) -> list[list[RichSegment]]:
   """Regex-based markdown highlighter - correct, simple, no pygments dependency."""
-  def seg(text:str, color:tuple, bold:bool = False) -> RichSegment:
+  def seg(text:str, color:tuple, bold:bool=False) -> RichSegment:
     return RichSegment(
       text=text, family=family, mode=bold_mode if bold else mode,
       size=size, color=color,
@@ -96,7 +96,8 @@ def _highlight_md(
       lines_out.append(line_segs)
       continue
     if in_fence:
-      # Inside a fence the language is not markdown; leave it plain.
+      # Inside a fence the language is not markdown;
+      # leave it plain.
       line_segs.append(seg(rest or " ", default_color))
       lines_out.append(line_segs)
       continue
@@ -105,8 +106,7 @@ def _highlight_md(
     # Match first block-level pattern (if any)
     for pat, color_key, marker_mode in _MD_BLOCKS:
       m = pat.match(rest)
-      if not m:
-        continue
+      if not m: continue
       color = _MD_COLORS[color_key]
       if marker_mode == "full_line":
         line_segs.append(seg(rest, color))
@@ -132,7 +132,8 @@ def _highlight_md(
 
 # Inline tokens: `code`, **bold**, *italic*, ~~strike~~, [text](url)
 # Each alternative's group index → (color_key, bold).
-# `code`/`link` use their own colors; others use the surrounding `base_color`.
+# `code`/`link` use their own colors;
+# others use the surrounding `base_color`.
 _MD_INLINE_PAT = re.compile(
   r"(`+)([^`]*?)\1" # 1: code
   r"|(\*\*)([^*]+?)\*\*" # 3: **bold**
@@ -158,7 +159,7 @@ def _tokenize_md_inline(
 ):
   """Parse inline markdown into colored segments."""
   base_color = _MD_COLORS["quote"] if quote else default_color
-  def seg(t:str, c:tuple, bold:bool = False) -> RichSegment:
+  def seg(t:str, c:tuple, bold:bool=False) -> RichSegment:
     return RichSegment(
       text=t, family=family, mode=bold_mode if bold else mode,
       size=size, color=c,
@@ -188,7 +189,8 @@ def highlight_code(
   default_color:tuple = (0.13, 0.13, 0.13),
   theme:str = "default",
 ) -> list[list[RichSegment]] | None:
-  """Tokenize and style `code` using pygments. Return list of styled lines.
+  """
+  Tokenize and style `code` using pygments. Return list of styled lines.
 
   Args:
     code: Source code string.
@@ -204,8 +206,7 @@ def highlight_code(
     `list[list[RichSegment]]` - outer = source lines, inner = colored spans;
     or `None` if pygments is unavailable or the language is unknown.
   """
-  if not lang:
-    return None
+  if not lang: return None
   # Pygments md lexer is buggy (see `_MD_BLOCKS`/`_highlight_md` above).
   if lang in ("md", "markdown"):
     return _highlight_md(
@@ -226,8 +227,7 @@ def highlight_code(
     style = get_style_by_name("default")
   lines: list[list[RichSegment]] = [[]]
   for token_type, text in lex(code, lexer):
-    if not text:
-      continue
+    if not text: continue
     try:
       tstyle = style.style_for_token(token_type)
     except KeyError:

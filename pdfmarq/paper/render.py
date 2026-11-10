@@ -66,7 +66,8 @@ def md_into(
   Write markdown into `pdf` from the cursor as `md_to_pdf` writes a new file:
   metadata, banner, compact banner, page number, content and signing lines.
 
-  For a document that opens with pages of its own, as a cover; the caller saves it.
+  For a document that opens with pages of its own, as a cover;
+  the caller saves it.
   Once per `PDF`: each call adds page furniture of its own.
   The compact banner starts on the page after the one `md_into` starts on,
   and the page number counts every page, the cover's too.

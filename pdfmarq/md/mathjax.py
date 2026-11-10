@@ -61,7 +61,8 @@ def _package(font:str) -> str:
 
 @functools.cache
 def _driver_key() -> str:
-  """Fingerprint of the render driver.
+  """
+  Fingerprint of the render driver.
 
   Part of every cache key, because the driver decides the shape of what the cache holds:
   editing it has to retire the entries it wrote.
@@ -72,10 +73,12 @@ def _driver_key() -> str:
     return "0"
 
 def _cache_path(tex:str, display:bool, font:str) -> Path:
-  """Cache file for one formula.
+  """
+  Cache file for one formula.
   Font size is not part of the key:
   the SVG is measured in em-relative units and scaled when it is drawn.
-  The typeface is, since it decides the glyphs."""
+  The typeface is, since it decides the glyphs.
+  """
   payload = f"{_driver_key()}\x00{font}\x00{display}\x00{tex}".encode("utf-8")
   key = hashlib.sha1(payload).hexdigest()[:16]
   _CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,21 +90,20 @@ _ROOT: str|None = None
 _CHECKED = False
 
 def node_modules_root() -> str|None:
-  """Directory holding the global `mathjax` package, or `None`.
+  """
+  Directory holding the global `mathjax` package, or `None`.
 
   `PDFMARQ_NODE_MODULES` wins when set.
   Asking npm costs about a second, so a deployment that already knows the path can say so.
   """
   global _ROOT, _CHECKED
-  if _CHECKED:
-    return _ROOT
+  if _CHECKED: return _ROOT
   _CHECKED = True
   override = os.environ.get("PDFMARQ_NODE_MODULES")
   if override and (Path(override) / "mathjax").is_dir():
     _ROOT = override
     return _ROOT
-  if not shutil.which("node"):
-    return None
+  if not shutil.which("node"): return None
   try:
     result = subprocess.run(
       ["npm", "root", "-g"], capture_output=True, text=True, timeout=30,
@@ -119,30 +121,29 @@ def available() -> bool:
   return node_modules_root() is not None and _DRIVER.is_file()
 
 def installed_fonts() -> tuple[str, ...]:
-  """Fonts from `FONTS` whose npm package is actually present.
+  """
+  Fonts from `FONTS` whose npm package is actually present.
 
   What a service can offer: a name outside this list renders in the default
   instead of the typeface that was asked for.
   """
   root = node_modules_root()
-  if root is None:
-    return ()
+  if root is None: return ()
   return tuple(f for f in FONTS if (Path(root) / _package(f)).is_dir())
 
 _WARNED: set = set()
 
 def resolve_font(font:str|None) -> str:
-  """The font to render with: the one asked for when its package is there.
+  """
+  The font to render with: the one asked for when its package is there.
 
   An unknown name or a package that is not installed falls back to the default and warns once:
   a formula silently set in the wrong typeface is the kind of thing nobody notices until print.
   """
   font = (font or DEFAULT_FONT).strip()
   fonts = installed_fonts()
-  if not fonts:
-    return DEFAULT_FONT
-  if font in fonts:
-    return font
+  if not fonts: return DEFAULT_FONT
+  if font in fonts: return font
   if font not in _WARNED:
     _WARNED.add(font)
     if font in FONTS:
@@ -163,11 +164,12 @@ def resolve_font(font:str|None) -> str:
 _GAP_RE = re.compile(r"<text\b")
 
 def _render(jobs:list[tuple[str, bool]], font:str) -> dict[tuple[str, bool], str]:
-  """One Node process for the whole list: startup costs more than the formulas do.
-  Results are cached on disk as they arrive."""
+  """
+  One Node process for the whole list: startup costs more than the formulas do.
+  Results are cached on disk as they arrive.
+  """
   root = node_modules_root()
-  if root is None:
-    return {}
+  if root is None: return {}
   payload = "\n".join(
     json.dumps({"tex": tex, "display": display}) for tex, display in jobs)
   try:
@@ -185,8 +187,7 @@ def _render(jobs:list[tuple[str, bool]], font:str) -> dict[tuple[str, bool], str
       svg = json.loads(line).get("svg")
     except ValueError:
       continue
-    if not svg:
-      continue
+    if not svg: continue
     out[job] = svg
     try:
       _cache_path(*job, font).write_text(svg, encoding="utf-8")
@@ -198,7 +199,8 @@ def render_batch(
   jobs:list[tuple[str, bool]],
   font:str|None = None,
 ) -> dict[tuple[str, bool], str]:
-  """Render `(tex, display)` pairs to SVG, returning what succeeded.
+  """
+  Render `(tex, display)` pairs to SVG, returning what succeeded.
 
   A formula holding a character the chosen font lacks is rendered again in the default,
   which covers the whole range:
@@ -219,19 +221,16 @@ def render_batch(
     missing.append(job)
   if missing:
     out.update(_render(missing, font))
-  if font == DEFAULT_FONT:
-    return out
+  if font == DEFAULT_FONT: return out
   gaps = [job for job, svg in out.items() if _GAP_RE.search(svg)]
-  if not gaps:
-    return out
+  if not gaps: return out
   _warn_gap(font, len(gaps))
   out.update(render_batch(gaps, DEFAULT_FONT))
   return out
 
 def _warn_gap(font:str, count:int) -> None:
   """Say once per font that formulas moved to the default typeface."""
-  if font in _WARNED_GAP:
-    return
+  if font in _WARNED_GAP: return
   _WARNED_GAP.add(font)
   warnings.warn(
     f"math_font={font!r} has no glyph for {count} formula(s); "
@@ -250,7 +249,8 @@ _VIEWBOX_RE = re.compile(
   r'viewBox="\s*([-\d.]+)[ ,]+([-\d.]+)[ ,]+([-\d.]+)[ ,]+([-\d.]+)')
 
 def geometry(svg:str, fontsize:float) -> tuple[float, float, float]|None:
-  """`(width_pt, height_pt, baseline_from_bottom_pt)` for `svg` at `fontsize`.
+  """
+  `(width_pt, height_pt, baseline_from_bottom_pt)` for `svg` at `fontsize`.
 
   The depth below the baseline is `minY + height`:
   both are layout units and the baseline sits at y=0 between them.
@@ -258,8 +258,7 @@ def geometry(svg:str, fontsize:float) -> tuple[float, float, float]|None:
   # The first viewBox in the fragment is the outermost SVG's;
   # a nested one would describe a glyph assembly, not the formula.
   match = _VIEWBOX_RE.search(svg)
-  if not match:
-    return None
+  if not match: return None
   _, min_y, width, height = (float(v) for v in match.groups())
   scale = fontsize / _UNITS_PER_EM
   return width * scale, height * scale, (min_y + height) * scale
@@ -270,7 +269,8 @@ def _hex(color:tuple) -> str:
   return f"#{r:02x}{g:02x}{b:02x}"
 
 def to_drawing(svg:str, fontsize:float, color:tuple=(0, 0, 0)):
-  """Turn MathJax SVG into `(drawing, baseline_from_bottom_pt)`.
+  """
+  Turn MathJax SVG into `(drawing, baseline_from_bottom_pt)`.
 
   The root's `ex`-based width and height become points,
   because svglib has no notion of `ex` and would guess.
@@ -278,8 +278,7 @@ def to_drawing(svg:str, fontsize:float, color:tuple=(0, 0, 0)):
   there is no cascade here to inherit from.
   """
   measured = geometry(svg, fontsize)
-  if measured is None:
-    return None, 0
+  if measured is None: return None, 0
   width_pt, height_pt, baseline_pt = measured
   svg = flatten(svg) or svg
   svg = re.sub(r'(<svg\b[^>]*?)\swidth="[^"]*"', r"\1", svg, count=1)
@@ -292,6 +291,5 @@ def to_drawing(svg:str, fontsize:float, color:tuple=(0, 0, 0)):
     drawing = svg2rlg(io.BytesIO(svg.encode("utf-8")))
   except Exception:
     return None, 0
-  if drawing is None:
-    return None, 0
+  if drawing is None: return None, 0
   return drawing, baseline_pt

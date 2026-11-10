@@ -2,7 +2,7 @@
 
 """Style of a documentation PDF: the markdown style plus banner, footer and signing lines."""
 from dataclasses import dataclass, field
-from ..md import MarkdownStyle
+from ..md import MarkdownStyle, people
 from ..parts import sign_labels, default_sign_labels
 
 #----------------------------------------------------------------------------------- Status palette
@@ -28,7 +28,8 @@ UNKNOWN_STATUS = ((0.93, 0.93, 0.95), (0.40, 0.44, 0.50))
 @dataclass
 class PaperStyle(MarkdownStyle):
   """`MarkdownStyle` plus the frontmatter banner, compact banner, page number and signatures."""
-  # Frontmatter is drawn as a header on page 1; `False` reads it and draws no header.
+  # Frontmatter is drawn as a header on page 1;
+  # `False` reads it and draws no header.
   banner: bool = True
   # Drop a leading `# title` repeating the frontmatter title, when the banner shows it.
   skip_dup_title: bool = True
@@ -36,7 +37,8 @@ class PaperStyle(MarkdownStyle):
   banner_compact: bool = True
   # strftime syntax. ISO `%Y-%m-%d` (default), PL `%d.%m.%Y`, long `%d %B %Y`.
   date_format: str = "%Y-%m-%d"
-  # Page number prefix; `None` draws no page number.
+  # Page number prefix;
+  # `None` draws no page number.
   page_number_label: str|None = "Page"
   # `Page X/Y` vs just `Page X`.
   page_number_total: bool = True
@@ -48,7 +50,7 @@ class PaperStyle(MarkdownStyle):
   banner_pad_top: float = 0 # mm above header block (start near top)
   banner_pad_bot: float = 3 # mm below header block before body
   banner_logo_max_h: float = 50 # mm - cap on logo height (page 1, big left column)
-  banner_logo_max_w: float = 60 # mm - cap on logo width; overrides height if aspect wide
+  banner_logo_max_w: float = 60 # mm - cap on logo width, winning over the height for a wide logo
   banner_title_size: float = 20 # pt - main title
   banner_id_size: float = 9 # pt - document id
   banner_version_size: float = 9 # pt - version
@@ -61,7 +63,8 @@ class PaperStyle(MarkdownStyle):
   banner_compact_top: float = 12 # mm - distance from page top
   banner_compact_gap: float = 8 # mm - gap between compact-banner line and content
   # Signing lines at the very end, independent of `banner`.
-  # `True` or a `sign_labels` scenario draws its labels; a list draws custom ones verbatim.
+  # `True` or a `sign_labels` scenario draws its labels;
+  # a list draws custom ones verbatim.
   sign: bool|str|list = False
   sign_labels: dict = field(default_factory=default_sign_labels)
   sign_gap: float = 25 # mm - blank space above the line, for the handwriting
@@ -71,9 +74,14 @@ class PaperStyle(MarkdownStyle):
   banner_status_colors: dict = field(default_factory=_default_status_colors)
   # Frontmatter labels, shown as `"{label}: {value}"`. Override for localization.
   banner_label_author: str = "Author"
+  banner_label_authors: str = "Authors" # when `author` names more than one person
   banner_label_created: str = "Created"
   banner_label_updated: str = "Updated"
 
   def sign_lines(self) -> list[str]:
     """Labels to draw: a scenario from `sign_labels`, or a list verbatim."""
     return sign_labels(self.sign, self.sign_labels)
+
+  def author_label(self, author) -> str:
+    """The label of an `author` frontmatter value, plural when it names more than one person."""
+    return self.banner_label_authors if len(people(author)) > 1 else self.banner_label_author

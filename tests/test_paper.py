@@ -9,8 +9,9 @@ from pdfmarq import PDF, MM_TO_PT, RichSegment
 from pdfmarq.constants import A4
 from pdfmarq.parts import signatures, signatures_height, sign_labels, page_number
 from pdfmarq.paper import md_to_pdf, md_into, PaperStyle, lang_style
-from pdfmarq.md import MarkdownRenderer, MarkdownStyle, top_blocks, metadata_from_frontmatter
-from conftest import needs_fitz, pdf_words, pdf_faces, pdf_page_words
+from pdfmarq.md import (MarkdownRenderer, MarkdownStyle, top_blocks, metadata_from_frontmatter,
+  people, byline)
+from conftest import needs_fitz, pdf_words, pdf_faces, pdf_page_words, pdf_text
 
 # Style fields md2paper sets by name from request options (its `_STYLE` and `pdf_style`).
 MD2PAPER_FIELDS = {
@@ -190,3 +191,72 @@ def repeated_title_drops_only_when_nothing_else_goes_with_it(tmp_path, heading, 
   from pdfmarq.paper.render import _skip_matching_h1
   tokens = MarkdownRenderer(PDF(str(tmp_path / "t.pdf"))).parse(heading + "\n\nBody.\n")
   assert (len(_skip_matching_h1(tokens, title)) < len(tokens)) == dropped
+
+@needs_fitz
+def people_show_by_name_in_the_banner_and_the_metadata(tmp_path):
+  import fitz
+  path = str(tmp_path / "p.pdf")
+  md_to_pdf("---\ntitle: T\nauthor:\n  - name: Anna Nowak\n    orcid: 0000-0001\n"
+    "  - Jan Kowalski\n---\n\nBody.\n", path)
+  text = pdf_text(path)
+  assert "Authors: Anna Nowak, Jan Kowalski" in text and "orcid" not in text
+  with fitz.open(path) as doc:
+    assert doc.metadata["author"] == "Anna Nowak, Jan Kowalski"
+
+def the_author_label_agrees_with_the_names():
+  style = lang_style("pl")
+  assert style.author_label("Anna Nowak") == "Autor"
+  assert style.author_label("Anna Nowak, Jan Kowalski") == "Autorzy"
+  assert style.author_label([{"name": "Anna Nowak"}, "Jan Kowalski"]) == "Autorzy"
+
+def a_string_author_stays_as_written_and_a_nameless_person_warns():
+  assert byline("Walker, Texas Ranger") == "Walker, Texas Ranger"
+  with pytest.warns(RuntimeWarning, match="no name"):
+    assert people([{"orcid": "0000-0001"}, "Ann"]) == [{"name": "Ann"}]
+
+def a_group_with_options_is_one_block(renderer):
+  tokens = renderer.parse("<!-- group wide -->\n\nOne.\n\nTwo.\n\n<!-- /group -->\n\nThree.\n")
+  assert len(top_blocks(tokens)) == 2
+
+def details_in_a_string_join_the_name_before_them():
+  value = ["Anna Nowak, 0000-0002-1825-0097, a.nowak@example.com", "Jan Kowalski, j.k@example.com"]
+  assert byline(value) == "Anna Nowak, Jan Kowalski"
+  assert byline("Anna Nowak, a.nowak@example.com, Jan Kowalski") == "Anna Nowak, Jan Kowalski"
+  assert byline("Anna Nowak a.nowak@example.com") == "Anna Nowak" # a comma left out
+  with pytest.warns(RuntimeWarning, match="follows no name"):
+    assert people("a.nowak@example.com, Anna") == [{"name": "Anna"}]
+  with pytest.warns(RuntimeWarning, match="follows no name"): # nor shown in the banner
+    assert byline("a.nowak@example.com, Anna") == "Anna"
+  with pytest.warns(RuntimeWarning, match="a second email of Anna Nowak"):
+    assert people("Anna Nowak, a@example.com, b@example.com") == [
+      {"name": "Anna Nowak", "email": "a@example.com"}]
+  assert byline("Jan Kowalski, 1950-2020") == "Jan Kowalski, 1950-2020" # no detail, as written
+
+def a_bound_byline_breaks_only_after_a_comma():
+  nbsp = "\u00a0"
+  bound = byline(["Anna Maria Nowak", "Jan  Kowalski"], bind=True)
+  assert bound == f"Anna{nbsp}Maria{nbsp}Nowak, Jan{nbsp}Kowalski"
+  assert byline("Walker, Texas Ranger", bind=True) == f"Walker, Texas{nbsp}Ranger"
+  team = "Department of Marine Electronics"
+  assert byline(team, bind=True) == team # a single name breaks as any text does
+
+def a_banner_sets_its_codes_unshaded_with_code_inline_bg_none(tmp_path):
+  md = "---\ntitle: Report\nid: MD-001\nversion: 1.2\n---\n\nBody.\n"
+  md_to_pdf(md, str(tmp_path / "b.pdf"), style=PaperStyle(code_inline_bg=None))
+  assert (tmp_path / "b.pdf").stat().st_size > 0
+
+@needs_fitz
+def a_long_author_row_wraps_beside_the_date_and_pushes_the_text_down(tmp_path):
+  path = str(tmp_path / "authors.pdf")
+  authors = "".join(f"  - Author Number{k} Longsurname\n" for k in range(8))
+  md_to_pdf(f"---\ntitle: Report\nauthor:\n{authors}updated: 2026-02-02\n---\n\nBodymark.\n", path)
+  words = pdf_page_words(path)[0]
+  names = [w for w in words if w[4].startswith("Longsurname")]
+  date = next(w for w in words if w[4].startswith("Updated"))
+  body = next(w for w in words if w[4] == "Bodymark.")
+  assert len({round(w[1]) for w in names}) > 1 # the names wrap
+  assert max(w[2] for w in names) < date[0] # never under the date
+  assert max(w[3] for w in names) < body[1] # and the text starts below them
+  people = [w for w in words if w[4].startswith(("Author", "Number", "Longsurname"))][1:]
+  for first, middle, last in zip(people[0::3], people[1::3], people[2::3]):
+    assert round(first[1]) == round(middle[1]) == round(last[1]) # a name never breaks

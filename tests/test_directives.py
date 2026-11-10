@@ -16,7 +16,7 @@ try:
     is_group_open_directive as docx_is_go,
     is_group_close_directive as docx_is_gc,
   )
-except ImportError: # the twin ships separately; `needs_twin` skips what needs it
+except ImportError: # the twin ships separately, and `needs_twin` skips what needs it
   md_to_docx = docx_is_pb = docx_is_go = docx_is_gc = None
 
 #------------------------------------------------------------------------------ Directive detectors
@@ -41,6 +41,8 @@ def pagebreak_detector_matches_both_libs(content, expected):
   ("<!--  group  -->\n", True),
   ("<!-- /group -->\n", False),
   ("<!-- group xxx -->\n", False),
+  ("<!-- group wide -->\n", True),
+  ("<!-- group these later -->\n", False),
 ])
 @needs_twin
 def group_open_detector_matches_both_libs(content, expected):
@@ -75,7 +77,7 @@ def pagebreak_docx_produces_valid_doc(tmp_path):
   assert_valid_docx(path)
 
 def pagebreak_at_top_does_not_double_break(tmp_path):
-  # directive at cursor y≈0 is a no-op (already at page top); avoids empty first page
+  # at the top of a page the directive does nothing, so no empty first page comes before it
   src = "<!-- pagebreak -->\n\nContent."
   path = tmp_path / "pb_top.pdf"
   pdf = md_to_pdf(src, str(path))
@@ -178,7 +180,8 @@ def unclosed_group_warns_and_renders_to_end(tmp_path):
   assert_valid_pdf(path)
 
 def nested_group_collapses(tmp_path):
-  # inner `<!-- group -->` is a silent depth marker; outer close matches outer open
+  # inner `<!-- group -->` is a silent depth marker;
+  # outer close matches outer open
   src = (
     "<!-- group -->\n\nOuter A.\n\n"
     "<!-- group -->\n\nInner.\n\n<!-- /group -->\n\n"

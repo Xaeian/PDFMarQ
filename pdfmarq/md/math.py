@@ -1,6 +1,7 @@
 # pdfmarq/md/math.py
 
-"""Math rendering: matplotlib.mathtext → SVG → reportlab vector `Drawing`.
+"""
+Math rendering: matplotlib.mathtext → SVG → reportlab vector `Drawing`.
 
 Renders LaTeX-subset formulas as true vector graphics (no bitmaps), sharp at any zoom.
 `render_math_svg_with_baseline` renders and reports where the text baseline falls in the drawing,
@@ -19,7 +20,7 @@ import io, re, warnings
 from dataclasses import dataclass
 from pathlib import Path
 from svglib.svglib import svg2rlg
-from .._warn import warn_missing
+from ..warn import warn_missing
 from ..fonts import is_builtin
 from . import mathjax
 
@@ -40,7 +41,8 @@ _PRESETS = {"stix", "stixsans", "cm", "dejavusans", "dejavuserif"}
 
 @dataclass
 class MathFontConfig:
-  """Per-renderer matplotlib mathtext settings.
+  """
+  Per-renderer matplotlib mathtext settings.
 
   matplotlib's `rcParams` are process-global,
   so two `MarkdownRenderer` instances with different `math_fontset` would clobber each other
@@ -59,8 +61,7 @@ class MathFontConfig:
 
   def apply(self) -> None:
     """Write this config into matplotlib's rcParams."""
-    if not _HAS_MATPLOTLIB:
-      return
+    if not _HAS_MATPLOTLIB: return
     matplotlib.rcParams["mathtext.fontset"] = self.fontset
     if self.fontset == "custom":
       for key, val in (("mathtext.rm", self.rm), ("mathtext.it", self.it),
@@ -74,7 +75,8 @@ def configure_math_fonts(
   fontset:str = "stixsans",
   font_dir:str|None = None,
 ) -> MathFontConfig:
-  """Build a `MathFontConfig` for the given fontset.
+  """
+  Build a `MathFontConfig` for the given fontset.
 
   Args:
     fontset: Either a matplotlib preset or a font family name.
@@ -90,12 +92,11 @@ def configure_math_fonts(
   Custom-font TTFs ARE registered with matplotlib at this point - a one-time global side-effect -
   but the `rcParams` assignment happens lazily inside `MathFontConfig.apply()`.
   """
-  if not _HAS_MATPLOTLIB:
-    return MathFontConfig(fontset="stixsans")
-  if fontset in _PRESETS:
-    return MathFontConfig(fontset=fontset)
+  if not _HAS_MATPLOTLIB: return MathFontConfig(fontset="stixsans")
+  if fontset in _PRESETS: return MathFontConfig(fontset=fontset)
   if is_builtin(fontset):
-    # Serif text keeps serif math; everything else goes sans.
+    # Serif text keeps serif math;
+    # everything else goes sans.
     serif = fontset.startswith("Times")
     return MathFontConfig(fontset="stix" if serif else "stixsans")
   if not font_dir:
@@ -118,7 +119,8 @@ def configure_math_fonts(
   )
 
 def _warn_fallback(fontset:str, reason:str) -> None:
-  """Say that a requested family did not load.
+  """
+  Say that a requested family did not load.
 
   The fallback is a different typeface from the document body,
   which is obvious in the output and impossible to explain without this line.
@@ -135,7 +137,8 @@ def _face_spec(
   base:"Path", family:str, mode:str, style:str,
   fallback:str,
 ) -> str:
-  """Registered face as matplotlib's `family:style` selector.
+  """
+  Registered face as matplotlib's `family:style` selector.
 
   Every face of a family reports the same `family_name`, so the style has to be spelled out,
   or matplotlib serves the regular cut for italic and bold alike.
@@ -146,14 +149,14 @@ def _face_spec(
   return f"{name}:{style}" if name else fallback
 
 def _register_ttf(path:"Path") -> str|None:
-  """Register a TTF with matplotlib and return its real family name.
+  """
+  Register a TTF with matplotlib and return its real family name.
   Returns `None` if the file doesn't exist.
   matplotlib's `mathtext.*` keys expect a font NAME (resolved via `font_manager`),
   not a filesystem path.
   Passing a Windows path with `C:` breaks the `rcParams` parser.
   """
-  if not path.exists():
-    return None
+  if not path.exists(): return None
   font_manager.fontManager.addfont(str(path))
   try:
     return FT2Font(str(path)).family_name
@@ -186,7 +189,8 @@ _ALIASES = {
 }
 
 def _apply_aliases(formula:str) -> str:
-  """Swap unsupported command spellings for supported ones.
+  """
+  Swap unsupported command spellings for supported ones.
 
   Matching whole command names keeps `\\leq`, `\\left` and `\\leftarrow` clear of the `\\le` entry.
   """
@@ -194,7 +198,8 @@ def _apply_aliases(formula:str) -> str:
     lambda m: _ALIASES.get("\\" + m.group(1), m.group(0)), formula)
 
 def _preprocess_formula(formula:str) -> str:
-  """Rewrite bold commands to produce bold italic (vector notation).
+  """
+  Rewrite bold commands to produce bold italic (vector notation).
 
   matplotlib's mathtext renders `\\mathbf{F}` as bold UPRIGHT (LaTeX default)
   but physics/engineering convention in Europe is bold ITALIC for vectors.
@@ -250,15 +255,16 @@ _CROP_PAD_IN = 0.005
 _TAG_SPLIT_RE = re.compile(r"\\tag(\*?)\{([^{}]*)\}")
 
 def pop_tag(formula:str) -> tuple[str, str|None]:
-  r"""Split a `\tag{...}` out of a display formula.
+  r"""
+  Split a `\tag{...}` out of a display formula.
 
   Returns `(formula_without_tag, label)` - `label` is `(X1.1)` for `\tag`,
   bare for `\tag*`, `None` when there is no tag.
-  Neither engine typesets `\tag`; the renderer prints the label where the equation number goes.
+  Neither engine typesets `\tag`;
+  the renderer prints the label where the equation number goes.
   """
   m = _TAG_SPLIT_RE.search(formula)
-  if m is None:
-    return formula, None
+  if m is None: return formula, None
   label = m.group(2).strip()
   if not m.group(1):
     label = f"({label})"
@@ -272,7 +278,8 @@ def render_math_svg(
   engine:str = "auto",
   font:str|None = None,
 ):
-  """Render a math formula as a reportlab `Drawing` (vector).
+  """
+  Render a math formula as a reportlab `Drawing` (vector).
 
   For block formulas, where the drawing is placed as a whole
   and no text baseline has to line up with it.
@@ -305,18 +312,17 @@ def render_with_mathjax(
   display:bool = False,
   font:str|None = None,
 ):
-  """`(drawing, baseline_from_bottom_pt)` from MathJax, or `(None, 0)`.
+  """
+  `(drawing, baseline_from_bottom_pt)` from MathJax, or `(None, 0)`.
 
   MathJax sets formulas in New Computer Modern and covers the LaTeX that mathtext does not:
   `\\underbrace` with its label, `\\begin{cases}`, stretchable delimiters.
   Returns `(None, 0)` when Node or the packages are missing,
   which leaves the caller on the mathtext path.
   """
-  if not mathjax.available():
-    return None, 0
+  if not mathjax.available(): return None, 0
   svg = mathjax.render(formula.strip(), display=display, font=font)
-  if not svg:
-    return None, 0
+  if not svg: return None, 0
   # Scaled so the formula's x-height matches the text it sits in.
   return mathjax.to_drawing(svg, fontsize * mathjax.OPTICAL_SCALE, color)
 
@@ -329,7 +335,8 @@ def render_math_svg_with_baseline(
   display:bool = False,
   font:str|None = None,
 ):
-  """Render math and return `(drawing, baseline_from_bottom_pt)`.
+  """
+  Render math and return `(drawing, baseline_from_bottom_pt)`.
 
   Baseline offset = distance from the BOTTOM of the drawing to the text baseline, in points.
   For inline alignment: `drawing.bottom = text_baseline - baseline_from_bottom_pt`.
@@ -338,15 +345,15 @@ def render_math_svg_with_baseline(
 
   `engine` picks the renderer: `"auto"` uses MathJax when it is installed and mathtext otherwise,
   `"mathtext"` stays with matplotlib, `"mathjax"` refuses to fall back.
-  MathJax understands more LaTeX; mathtext needs no Node and runs in-process.
+  MathJax understands more LaTeX;
+  mathtext needs no Node and runs in-process.
 
   Returns `(drawing, baseline_from_bottom_pt)` or `(None, 0)` on failure.
   """
   if engine in ("auto", "mathjax"):
     drawing, baseline = render_with_mathjax(
       formula, fontsize=fontsize, color=color, display=display, font=font)
-    if drawing is not None or engine == "mathjax":
-      return drawing, baseline
+    if drawing is not None or engine == "mathjax": return drawing, baseline
   if not _HAS_MATPLOTLIB:
     warn_missing("matplotlib", "matplotlib", "math formulas without MathJax")
     return None, 0
@@ -382,4 +389,4 @@ def render_math_svg_with_baseline(
     drawing = svg2rlg(buf)
     return drawing, baseline_from_bottom_pt
   except Exception:
-    return None, 0 # math is optional; caller falls back to plain text
+    return None, 0 # math is optional: the caller falls back to plain text

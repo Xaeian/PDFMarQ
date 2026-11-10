@@ -1,13 +1,15 @@
 # pdfmarq/md/md_estimate.py
 
-"""Block height estimation for heading keep-with-next lookahead.
+"""
+Block height estimation for heading keep-with-next lookahead.
 
 `_estimate_next_block` returns an approximate minimum height (mm) for the block after a heading,
-so `_render_heading` can reserve enough space to keep them on the same page."""
+so `_render_heading` can reserve enough space to keep them on the same page.
+"""
 
 from markdown_it.token import Token
 from ..constants import MM_TO_PT
-from ..inline import measure_rich
+from ..inline import RichText, measure_rich
 from .md_images import parse_image_dsl
 
 #------------------------------------------------------------------------------------ EstimateMixin
@@ -19,8 +21,7 @@ class EstimateMixin:
   """
   def _estimate_next_block(self, tokens:list[Token], start:int) -> float:
     """Estimate minimum height (mm) of next block - used by heading lookahead."""
-    if start >= len(tokens):
-      return 0
+    if start >= len(tokens): return 0
     s = self.style
     body_line_mm = s.line_mm(s.body_size)
     t = tokens[start]
@@ -30,11 +31,11 @@ class EstimateMixin:
       if start + 1 < len(tokens) and tokens[start+1].type == "inline":
         inline = tokens[start+1]
         try:
-          segs = self._inline_to_segments(inline, self._body_base())
+          segs = self.segments(inline, self._body_base())
           width = self.pdf.content_width - self._indent_mm
           page_avail = self.pdf.content_height
-          h = measure_rich(self.pdf, segs, width, line_gap=s.line_height,
-            align=self._para_align())
+          text = RichText(segs, width, self._para_align(), s.line_height, self._first_indent())
+          h = measure_rich(self.pdf, text)
           # Capped: a paragraph that splits anyway must not force a heading break.
           return max(min(h, page_avail * 0.9), body_line_mm * 2)
         except Exception:
@@ -46,8 +47,7 @@ class EstimateMixin:
       list_h = self._estimate_list_height(tokens, start, end)
       page_avail = self.pdf.content_height
       # Giant lists split anyway, so they must not force a heading break.
-      if list_h <= page_avail * 0.9:
-        return list_h
+      if list_h <= page_avail * 0.9: return list_h
       return body_line_mm * 3
     if ttype == "table_open":
       end = self._find_close(tokens, start, "table_open", "table_close")
@@ -58,7 +58,7 @@ class EstimateMixin:
       lang = parts[0] if parts else ""
       info_rest = parts[1] if len(parts) > 1 else ""
       if lang == "mermaid":
-        if info_rest: # DSL `h` / `max_h` override; falls back to `image_max_h`
+        if info_rest: # DSL `h` / `max_h` override, else `image_max_h`
           dsl = parse_image_dsl(info_rest)
           if dsl.is_dsl:
             if dsl.exact_h_mm is not None: return dsl.exact_h_mm
@@ -79,7 +79,8 @@ class EstimateMixin:
     return body_line_mm * 2
 
   def _estimate_list_height(self, tokens:list[Token], start:int, end:int) -> float:
-    """Sum estimated height of each list item for heading-lookahead break planning.
+    """
+    Sum estimated height of each list item for heading-lookahead break planning.
     First paragraph per item is measured via `measure_rich`;
     nested blocks fall back to a 2-line approximation.
     """
@@ -91,13 +92,12 @@ class EstimateMixin:
     j = start + 1
     while j < end:
       if tokens[j].type == "list_item_open":
-        item_h = body_line_mm # first inline drives the estimate; fallback = 1 line
+        item_h = body_line_mm # the first inline drives the estimate, one line without it
         for k in range(j + 1, min(j + 6, end)):
           if tokens[k].type == "inline":
             try:
-              segs = self._inline_to_segments(tokens[k], base)
-              h = measure_rich(self.pdf, segs, width, line_gap=s.line_height,
-                align=self._para_align())
+              segs = self.segments(tokens[k], base)
+              h = measure_rich(self.pdf, RichText(segs, width, self._para_align(), s.line_height))
               item_h = max(h, body_line_mm)
             except Exception:
               pass

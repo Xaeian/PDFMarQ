@@ -28,11 +28,13 @@ class TOCEntry:
 
 @dataclass
 class Metadata:
-  """PDF document metadata.
+  """
+  PDF document metadata.
 
   `comments` and `category` are accepted and stored but NOT applied to the PDF /Info dictionary,
   because reportlab's `Canvas` has no native setter for them.
-  Round-tripping through the dataclass works; the resulting PDF file won't carry those fields.
+  Round-tripping through the dataclass works;
+  the resulting PDF file won't carry those fields.
   """
   title: str|None = None
   author: str|None = None
@@ -44,10 +46,14 @@ class Metadata:
   producer: str|None = None
 
   def apply(self, canvas):
-    """Write available metadata fields to the canvas /Info dictionary."""
-    if self.title: canvas.setTitle(self.title)
-    if self.author: canvas.setAuthor(self.author)
-    if self.subject: canvas.setSubject(self.subject)
+    """
+    Write the metadata to the canvas /Info dictionary.
+    A title, author or subject not given stays empty,
+    rather than reportlab's `untitled`, `anonymous` or `unspecified`.
+    """
+    canvas.setTitle(self.title or "")
+    canvas.setAuthor(self.author or "")
+    canvas.setSubject(self.subject or "")
     if self.keywords: canvas.setKeywords(self.keywords)
     if self.creator: canvas.setCreator(self.creator)
     if self.producer: canvas.setProducer(self.producer)
@@ -55,7 +61,8 @@ class Metadata:
 #---------------------------------------------------------------------------------- BookmarkManager
 
 class BookmarkManager:
-  """Manages PDF bookmarks/outlines.
+  """
+  Manages PDF bookmarks/outlines.
 
   Call order: `apply_page` during each page render,
   then `apply_outline` once before `canvas.save()`.
@@ -71,7 +78,8 @@ class BookmarkManager:
     return key
 
   def apply_page(self, canvas, page:int):
-    """Register anchors for all bookmarks on this page. Canvas must be on that page.
+    """
+    Register anchors for all bookmarks on this page. Canvas must be on that page.
 
     Each destination carries its entry's own height,
     so following the outline scrolls to the heading rather than fitting the whole page.
@@ -113,8 +121,7 @@ class LinkManager:
   def apply(self, canvas, page_height:float, current_page:int=1):
     """Apply links for current page."""
     for link in self._links:
-      if link["page"] != current_page:
-        continue
+      if link["page"] != current_page: continue
       x = link["x"] * RL_MM
       y = (page_height - link["y"] - link["height"]) * RL_MM
       w = link["width"] * RL_MM

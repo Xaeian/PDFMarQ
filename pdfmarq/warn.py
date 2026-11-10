@@ -1,10 +1,10 @@
-# pdfmarq/_warn.py
+# pdfmarq/warn.py
 
 """
 Warnings of the library, pointing at the user's line however deep the library called.
 A missing optional package or a missing glyph warns once per process.
 
->>> from ._warn import warn_missing
+>>> from .warn import warn_missing
 >>> warn_missing("matplotlib", "matplotlib", "math formulas")
 RuntimeWarning: math formulas disabled, install with: pip install matplotlib
 """

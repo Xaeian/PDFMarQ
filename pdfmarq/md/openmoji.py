@@ -42,7 +42,8 @@ _MIN_SVG_COUNT = 1000
 _DOWNLOAD_WARNED = False
 
 def allow_download(enabled:bool=True) -> None:
-  """Enable or disable the one-time OpenMoji clone at runtime.
+  """
+  Enable or disable the one-time OpenMoji clone at runtime.
 
   Equivalent to the `PDFMARQ_NO_EMOJI_DOWNLOAD` environment variable.
   With downloads off, emoji fall back to the text glyph of the font.
@@ -56,11 +57,12 @@ def _download_blocked() -> bool:
   return os.environ.get("PDFMARQ_NO_EMOJI_DOWNLOAD", "").strip() not in ("", "0")
 
 def _warn_download_once() -> None:
-  """Announce the clone before it starts.
-  It is large, and it is a network fetch that the caller never explicitly asked for."""
+  """
+  Announce the clone before it starts.
+  It is large, and it is a network fetch that the caller never explicitly asked for.
+  """
   global _DOWNLOAD_WARNED
-  if _DOWNLOAD_WARNED:
-    return
+  if _DOWNLOAD_WARNED: return
   _DOWNLOAD_WARNED = True
   warnings.warn(
     f"openmoji: downloading the colour emoji set (~150 MB, git clone of "
@@ -71,22 +73,23 @@ def _warn_download_once() -> None:
   )
 
 def _has_enough_svgs(svg_dir:Path) -> bool:
-  """True when the checkout looks complete.
-  Counting stops at the threshold, so this stays cheap on a full ~4500-file directory."""
-  if not svg_dir.is_dir():
-    return False
+  """
+  True when the checkout looks complete.
+  Counting stops at the threshold, so this stays cheap on a full ~4500-file directory.
+  """
+  if not svg_dir.is_dir(): return False
   n = 0
   try:
     for _ in svg_dir.glob("*.svg"):
       n += 1
-      if n >= _MIN_SVG_COUNT:
-        return True
+      if n >= _MIN_SVG_COUNT: return True
   except OSError:
     return False
   return False
 
 def _ensure_openmoji() -> Path|None:
-  """Return path to OpenMoji `color/svg/` directory, cloning repo if needed.
+  """
+  Return path to OpenMoji `color/svg/` directory, cloning repo if needed.
 
   First call may take a minute (git clone ~150 MB, pinned to tag `_REPO_TAG`)
   and warns once before starting.
@@ -94,14 +97,12 @@ def _ensure_openmoji() -> Path|None:
   Returns `None` when the download is disabled or fails (no network, no git, interrupted clone).
   """
   global _SVG_DIR_CACHE, _CLONE_ATTEMPTED
-  if _SVG_DIR_CACHE is not None:
-    return _SVG_DIR_CACHE
+  if _SVG_DIR_CACHE is not None: return _SVG_DIR_CACHE
   svg_dir = _CACHE_DIR / "color" / "svg"
   if _has_enough_svgs(svg_dir):
     _SVG_DIR_CACHE = svg_dir
     return svg_dir
-  if _CLONE_ATTEMPTED or _download_blocked():
-    return None
+  if _CLONE_ATTEMPTED or _download_blocked(): return None
   _CLONE_ATTEMPTED = True
   _warn_download_once()
   try:
@@ -143,10 +144,10 @@ _EMOJI_RANGES = [
   (0x1F900, 0x1F9FF),  # Supplemental Symbols and Pictographs
   (0x1FA00, 0x1FA6F),  # Chess Symbols
   (0x1FA70, 0x1FAFF),  # Symbols and Pictographs Extended-A
-  (0x2600,  0x26FF),  # Misc Symbols
-  (0x2700,  0x27BF),  # Dingbats
-  (0x2B00,  0x2BFF),  # Misc Symbols and Arrows
-  (0x24C2,  0x24C2),  # Circled M (Ⓜ)
+  (0x2600, 0x26FF),    # Misc Symbols
+  (0x2700, 0x27BF),    # Dingbats
+  (0x2B00, 0x2BFF),    # Misc Symbols and Arrows
+  (0x24C2, 0x24C2),    # Circled M (Ⓜ)
 ]
 
 def is_emoji(ch:str) -> bool:
@@ -156,7 +157,8 @@ def is_emoji(ch:str) -> bool:
   return any(lo <= code <= hi for lo, hi in _EMOJI_RANGES)
 
 def split_text_by_emoji(text:str) -> list[tuple[str, bool]]:
-  """Split text into runs of (fragment, is_emoji).
+  """
+  Split text into runs of (fragment, is_emoji).
 
   Groups consecutive non-emoji chars into a single text run.
   Each emoji char becomes its own run.
@@ -165,8 +167,7 @@ def split_text_by_emoji(text:str) -> list[tuple[str, bool]]:
   they are modifiers, not standalone glyphs,
   and emitting them would produce a second drawing next to the base emoji.
   """
-  if not text:
-    return []
+  if not text: return []
   runs: list[tuple[str, bool]] = []
   buf_text: list[str] = []
   for ch in text:
@@ -175,8 +176,7 @@ def split_text_by_emoji(text:str) -> list[tuple[str, bool]]:
     # None of them stands alone,
     # and the skin tones sit inside the Misc-Pictographs range that `is_emoji` accepts,
     # so they are dropped here and only the base codepoint is rendered.
-    if code in (0xFE0F, 0xFE0E, 0x200D) or 0x1F3FB <= code <= 0x1F3FF:
-      continue
+    if code in (0xFE0F, 0xFE0E, 0x200D) or 0x1F3FB <= code <= 0x1F3FF: continue
     if is_emoji(ch):
       if buf_text:
         runs.append(("".join(buf_text), False))
@@ -191,15 +191,15 @@ def split_text_by_emoji(text:str) -> list[tuple[str, bool]]:
 #------------------------------------------------------------------------------------------ Drawing
 
 def get_emoji_drawing(codepoint:int, fontsize_pt:float):
-  """Return a reportlab `Drawing` for an emoji codepoint, scaled to approximately the font size.
+  """
+  Return a reportlab `Drawing` for an emoji codepoint, scaled to approximately the font size.
   Returns `None` on any failure (missing SVG, clone not attempted, svglib error).
 
   Scaling: drawing is sized so its height matches `fontsize_pt * 1.32`,
   which places the emoji roughly the same height as cap-height letters.
   """
   key = (codepoint, round(fontsize_pt, 2))
-  if key in _DRAWING_CACHE:
-    return _DRAWING_CACHE[key]
+  if key in _DRAWING_CACHE: return _DRAWING_CACHE[key]
   svg_dir = _ensure_openmoji()
   if svg_dir is None:
     _DRAWING_CACHE[key] = None

@@ -1,6 +1,7 @@
 # pdfmarq/svgfonts.py
 
-"""Bridge from registered reportlab faces to svglib's font map.
+"""
+Bridge from registered reportlab faces to svglib's font map.
 
 Text inside an SVG is drawn by svglib, which resolves fonts through a registry of its own
 and falls back to Helvetica, losing the typeface and every glyph outside Latin-1.
@@ -42,7 +43,8 @@ _PUBLISHED: set[tuple[str, str]] = set()
 _LOCK = threading.Lock()
 
 def publish(family:str, source:str, resolve:Resolve) -> None:
-  """Map `family` onto svglib's font map, once per `(source, family)`.
+  """
+  Map `family` onto svglib's font map, once per `(source, family)`.
 
   `resolve` is asked for each mode in `MODES` and may answer `None`.
   It runs on the first publish only, so repeat calls cost nothing.
@@ -55,15 +57,13 @@ def publish(family:str, source:str, resolve:Resolve) -> None:
 
   Silent without svglib: SVG text then draws in svglib's own default.
   """
-  if (source, family) in _PUBLISHED:
-    return
+  if (source, family) in _PUBLISHED: return
   try:
     from svglib.fonts import get_global_font_map
   except ImportError:
     return
   with _LOCK:
-    if (source, family) in _PUBLISHED:
-      return
+    if (source, family) in _PUBLISHED: return
     font_map = get_global_font_map()
     faces = {mode: resolve(mode) for mode in MODES}
     for weight, weight_mode in _WEIGHTS.items():

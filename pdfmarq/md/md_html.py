@@ -1,8 +1,10 @@
 # pdfmarq/md/md_html.py
 
-"""HTML whitelist for `MarkdownRenderer`.
+"""
+HTML whitelist for `MarkdownRenderer`.
 
-Only a small subset of raw HTML is recognized; everything else is dropped silently.
+Only a small subset of raw HTML is recognized;
+everything else is dropped silently.
 
 Block:
   `<hr>`                 - horizontal rule
@@ -17,7 +19,8 @@ Inline (paired):
 Inline (self-closing):
   `<br>`, `<hr>`    - hard line break
 
-Tags matched case-insensitively; whitespace-tolerant for self-closing form.
+Tags matched case-insensitively;
+whitespace-tolerant for self-closing form.
 Attributes disqualify a tag (`<b class="x">` is dropped, not styled).
 Directives reject extra tokens: `<!-- pagebreak xxx -->` is a plain comment.
 """
@@ -34,16 +37,25 @@ def is_hr_block(content:str) -> bool:
 #--------------------------------------------------------------------------------------- Directives
 
 _PAGEBREAK_RE = re.compile(r"\s*<!--\s*pagebreak\s*-->\s*", re.IGNORECASE)
-_GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group\s*-->\s*", re.IGNORECASE)
+# `wide`, the one option a group takes, spans it across columns where a package sets them
+_GROUP_OPEN_RE = re.compile(r"\s*<!--\s*group(\s+wide)?\s*-->\s*", re.IGNORECASE)
 _GROUP_CLOSE_RE = re.compile(r"\s*<!--\s*/\s*group\s*-->\s*", re.IGNORECASE)
 
 def is_pagebreak_directive(content:str) -> bool:
-  """True for `<!-- pagebreak -->` directive; extra tokens disqualify."""
+  """True for `<!-- pagebreak -->` `html_block` content."""
   return bool(_PAGEBREAK_RE.fullmatch(content))
 
 def is_group_open_directive(content:str) -> bool:
-  """True for `<!-- group -->` opening directive."""
+  """True for `<!-- group -->` opening directive, or `<!-- group wide -->`."""
   return bool(_GROUP_OPEN_RE.fullmatch(content))
+
+def group_options(content:str) -> list[str]:
+  """
+  Options of a group opening: `["wide"]` of `<!-- group wide -->`, `[]` of a plain group.
+  The engine sets every group alike, and the options are for a package that lays groups out.
+  """
+  match = _GROUP_OPEN_RE.fullmatch(content)
+  return (match[1] or "").lower().split() if match else []
 
 def is_group_close_directive(content:str) -> bool:
   """True for `<!-- /group -->` closing directive."""

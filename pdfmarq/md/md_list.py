@@ -1,19 +1,20 @@
 # pdfmarq/md/md_list.py
 
-"""List rendering - bullet and ordered, with keep-together for top-level lists
-and custom bullet glyphs drawn via `canvas.circle`."""
+"""
+List rendering - bullet and ordered, with keep-together for top-level lists
+and custom bullet glyphs drawn via `canvas.circle`.
+"""
 
 from markdown_it.token import Token
 from reportlab.lib.colors import Color
 from reportlab.lib.units import mm as _mm
-from ..inline import RichSegment, render_rich, measure_extent, wrap_line_heights
-from ..constants import Align
+from ..inline import RichSegment, RichText, render_rich, measure_extent, wrap_line_heights
 from .md_blocks import LIST_LEAD_MM, flow_head
 
 #----------------------------------------------------------------------------------- Item numbering
 
 def _item_ranges(tokens:list[Token], start:int, end:int) -> list[tuple[int, int]]:
-  """`(open, close)` index pair per direct child item; nested items skipped."""
+  """`(open, close)` index pair per direct child item, nested items skipped."""
   items = []
   j = start + 1
   while j < end:
@@ -32,22 +33,23 @@ def _item_ranges(tokens:list[Token], start:int, end:int) -> list[tuple[int, int]
   return items
 
 def _first_number(raw:str|int|None) -> int:
-  """`start` attribute as int; 1 when absent or malformed."""
+  """`start` attribute as int, 1 when absent or malformed."""
   try: return int(raw)
   except (TypeError, ValueError): return 1
 
 def _author_numbers(item_tokens:list[Token], first:int) -> list[int]:
-  """Markers to print.
+  """
+  Markers to print.
   Author's own numbers when strictly increasing, so `1. 2. 4.` stays `1 2 4`.
-  Otherwise count from `first`, which keeps the lazy `1. 1. 1.` idiom rendering as `1 2 3`."""
+  Otherwise count from `first`, which keeps the lazy `1. 1. 1.` idiom rendering as `1 2 3`.
+  """
   typed = []
   for t in item_tokens:
     info = (t.info or "").strip()
     if not info.isdigit(): break
     typed.append(int(info))
   n = len(item_tokens)
-  if len(typed) == n and all(typed[i] < typed[i+1] for i in range(n - 1)):
-    return typed
+  if len(typed) == n and all(typed[i] < typed[i+1] for i in range(n - 1)): return typed
   return [first + i for i in range(n)]
 
 def _marker_column_mm(pdf, style, numbers:list[int], delim:str) -> float:
@@ -140,10 +142,8 @@ class ListMixin:
         text=prefix, family=s.font_body, mode=s.body_mode,
         size=s.body_size, color=s.body_color,
       )
-      render_rich(
-        self.pdf, [prefix_seg], column, x_prefix, y_item,
-        Align.LEFT, s.line_height,
-      )
+      marker = RichText([prefix_seg], column, line_gap=s.line_height)
+      render_rich(self.pdf, marker, x_prefix, y_item)
     old_indent = self._indent_mm
     self._indent_mm = old_indent + column
     self.pdf.cursor(self._indent_mm, y_item)
@@ -176,10 +176,10 @@ class ListMixin:
         inline = item_tokens[j + 1]
         if inline.type == "inline":
           try:
-            segs = self._inline_to_segments(inline, self._body_base())
+            segs = self.segments(inline, self._body_base())
             width = self.pdf.content_width - self._indent_mm - column
-            line_h = wrap_line_heights(self.pdf, segs, width, line_gap=s.line_height,
-              align=self._para_align())
+            text = RichText(segs, width, self._para_align(), s.line_height)
+            line_h = wrap_line_heights(self.pdf, text)
             if not s.keep_together: line_h = flow_head(line_h)
             return max(sum(line_h), body_line_mm)
           except Exception:
@@ -187,6 +187,5 @@ class ListMixin:
         break
       # Each non-paragraph leading block (nested list, fence, etc.) has its own keep logic;
       # reserve two lines as a minimum here.
-      if t.type not in ("paragraph_close",):
-        break
+      if t.type not in ("paragraph_close",): break
     return body_line_mm * 2

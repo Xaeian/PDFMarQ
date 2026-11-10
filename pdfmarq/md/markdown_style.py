@@ -4,10 +4,13 @@
 from dataclasses import dataclass, field
 from ..constants import MM_TO_PT
 
+TABLE_RULES = ("grid", "rows", "head") # values of `MarkdownStyle.table_rules`
+
 #-------------------------------------------------------------------------- Callout palette default
 
 def _default_callout_colors() -> dict:
-  """GitHub-style callout colors per type (border, text/icon).
+  """
+  GitHub-style callout colors per type (border, text/icon).
   Each entry: lowercase type → `(border_rgb, text_rgb)` in 0..1 range.
   """
   return {
@@ -22,7 +25,8 @@ def _default_callout_colors() -> dict:
 
 @dataclass
 class MarkdownStyle:
-  """Visual style for markdown rendering, matching GitHub light theme.
+  """
+  Visual style for markdown rendering, matching GitHub light theme.
 
   The renderer swaps default families for DejaVu Sans and DejaVu Sans Mono,
   found in the system or in matplotlib, which the `[md]` extra installs.
@@ -33,6 +37,8 @@ class MarkdownStyle:
   font_body: str = "Vera"
   font_head: str = "Vera"
   font_mono: str = "Courier" # PDF core 14, no TTF needed
+  # Inert: emoji are drawn as pictures, and the field lets a docmarq style carry over.
+  emoji_font: str|None = "Segoe UI Emoji"
 
   # Modes (Vera has dedicated Italic / BoldItalic TTFs)
   body_mode: str = "Regular"
@@ -64,12 +70,12 @@ class MarkdownStyle:
   muted_color: tuple = (0.40, 0.44, 0.50)
   link_color: tuple = (0.03, 0.41, 0.85) # #0969da
   code_inline_color: tuple = (0.09, 0.11, 0.13)
-  code_inline_bg: tuple = (0.96, 0.97, 0.98) # same as code_block_bg
+  code_inline_bg: tuple|None = (0.96, 0.97, 0.98) # same as code_block_bg, `None` unshaded
   code_block_bg: tuple = (0.96, 0.97, 0.98) # #f6f8fa
   code_block_border: tuple = (0.82, 0.84, 0.87) # #d0d7de GitHub border
   quote_border: tuple = (0.82, 0.84, 0.87)
   hr_color: tuple = (0.82, 0.84, 0.87)
-  table_header_bg: tuple = (0.96, 0.97, 0.98)
+  table_header_bg: tuple|None = (0.96, 0.97, 0.98) # `None` leaves the header row unshaded
   table_border: tuple = (0.82, 0.84, 0.87)
   table_zebra_bg: tuple = (0.985, 0.99, 0.995) # very subtle - lighter than header_bg
   # `==text==` highlight background.
@@ -80,6 +86,9 @@ class MarkdownStyle:
   # Spacing (mm) - tightened for GitHub feel
   line_height: float = 1.4 # ratio of font size
   para_gap: float = 3 # mm between paragraphs
+  # mm the first line of a body paragraph starts in, as books and journals set text.
+  # A paragraph of a list, a quote or a footnote keeps flush.
+  first_indent: float = 0
   head_gap_top: float = 3 # mm above headings
   head_gap_bot: float = 1.5 # mm below headings
   list_indent: float = 6 # mm per list level
@@ -92,7 +101,7 @@ class MarkdownStyle:
   # Image sizing rules - see `size_block`, `size_inline` and `size_cell` for the full algorithm
   image_max_h: float = 120 # mm - cap image height (block + table cells)
   image_dpi: int = 96 # fallback DPI for rasters without metadata
-  image_min_dpi: int = 150 # block raster fills page width down to this; 0 = always
+  image_min_dpi: int = 150 # block raster fills page width down to this, 0 = always
   inline_image_max_h: float = 5.5 # mm - cap inline icons, at `body_size`
   cell_image_max_w: float = 60 # mm - absolute cap on col_max
   cell_image_scale: float = 0.5 # render image cells at this fraction of natural
@@ -144,22 +153,29 @@ class MarkdownStyle:
   # Each needs its own npm package installed: `@mathjax/mathjax-<font>-font`.
   # Ignored by the mathtext engine, which reads `math_fontset` instead.
   math_font: str = "newcm"
-  math_block_gap: float = 3.5  # mm below a block equation; above, the previous block's gap counts
+  math_block_gap: float = 3.5  # mm below a block equation, and above it the previous block's gap
   math_numbering: bool = True  # auto (1), (2), (3) for block math
 
   # Layout flags
   h1_underline: bool = True
   h2_underline: bool = True
   table_zebra: bool = True
+  # Rules of a table: `grid` around every cell, `rows` the same without vertical rules,
+  # `head` above and below the table and under its header, as journals rule them.
+  table_rules: str = "grid"
+  # The rules above and below a table drawn double, as IEEE journals draw them.
+  table_double: bool = False
   # Paragraphs set flush to both edges, spaces tightening to take one more word where they can.
   # The last line and a line a hard break ends stay left.
   justify: bool = False
   # Language whose hyphenation patterns split words at the end of a paragraph line, as `pl`.
   # `None` keeps words whole. Needs `pyphen`.
   hyphenate: str|None = None
-  # A one-letter word of a paragraph keeps to the word after it, so no line ends with `w` or `i`,
-  # as Polish typesetting asks. The text copies out with its plain spaces.
-  bind_single_letters: bool = False
+  # One-letter words that keep to the word after them, so no line ends with `w` or `i`,
+  # as Polish typesetting asks: `aiouwz` for Polish, in capitals only where a sentence starts.
+  # A number keeps to its unit then too, `5 V`: in a paragraph, a heading, a table cell, a title.
+  # The text copies out with its plain spaces. `lang_style` sets it for `pl`, `cs` and `sk`.
+  bind_single_letters: str = ""
   # Kern letter pairs of TrueType text, as `AV` and `Ty` want, through `PDF.kerning`.
   # The renderer sets it on the PDF it draws into, over what `PDF.kerning` set before,
   # so text is measured as it is drawn.

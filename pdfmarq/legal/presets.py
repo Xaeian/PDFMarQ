@@ -14,7 +14,8 @@ from .style import LegalStyle
 
 #------------------------------------------------------------------------------------------ Presets
 
-# Labels of the end of a letter per language; English is the `LegalStyle` default.
+# Labels of the end of a letter per language;
+# English is the `LegalStyle` default.
 _LABELS: dict[str, dict] = {
   "pl": {"attachments_label": "Załączniki", "ref_label": "Sygn. akt",
     "date_format": "%d.%m.%Y r."},

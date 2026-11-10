@@ -1,6 +1,7 @@
 # pdfmarq/md/mermaid.py
 
-"""Mermaid diagram rendering with hybrid backends.
+"""
+Mermaid diagram rendering with hybrid backends.
 
 Backends tried in priority order:
   1. mermaid-cli (mmdc) - local subprocess, best quality, fully offline.
@@ -8,7 +9,8 @@ Backends tried in priority order:
      **sends the diagram source to a third party**.
      Warns once per process.
      Disable entirely with `MarkdownStyle(mermaid_remote=False)` / `render_mermaid(remote=False)`.
-  3. `None` - both failed; caller falls back to a plain code block.
+  3. `None` - both failed:
+     the caller falls back to a plain code block.
 
 Output cached to `~/.cache/marq/mermaid/{hash}.png`,
 keyed on everything that affects the pixels (source, theme, background, scale, font, cli),
@@ -52,7 +54,8 @@ def _cache_key(
   code:str, theme:str, background:str, scale:float,
   font_family:str = "", font_dir:str = "", cli:str = "",
 ) -> str:
-  """SHA-1 over every input that affects rendering.
+  """
+  SHA-1 over every input that affects rendering.
   Different theme, bg, scale, font or cli must produce a different cache file.
   Font means family *and* directory: the same family name can resolve to a different TTF.
 
@@ -67,13 +70,11 @@ def _cache_get(key:str):
   """Cached result, `None` for a fresh failure, `_MISS` when unknown."""
   hit = _RENDER_CACHE.get(key)
   if hit is not None:
-    if Path(hit[0]).exists():
-      return hit
+    if Path(hit[0]).exists(): return hit
     del _RENDER_CACHE[key] # cache file disappeared underneath us
   failed_at = _FAIL_CACHE.get(key)
   if failed_at is not None:
-    if time.monotonic() - failed_at < _FAIL_TTL_S:
-      return None
+    if time.monotonic() - failed_at < _FAIL_TTL_S: return None
     del _FAIL_CACHE[key]
   return _MISS
 
@@ -81,16 +82,19 @@ def _cache_fail(key:str) -> None:
   _FAIL_CACHE[key] = time.monotonic()
 
 def _tmp_path(out_path:Path) -> Path:
-  """Unique sibling temp path.
+  """
+  Unique sibling temp path.
   Rendering straight into the cache name would leave a truncated PNG behind
-  on a crash or a killed subprocess."""
+  on a crash or a killed subprocess.
+  """
   return out_path.with_name(f"{out_path.stem}.{os.getpid()}.tmp{out_path.suffix}")
 
 def _valid_png(path:Path) -> bool:
-  """True when `path` holds a PNG that decodes.
-  A corrupt or half-written leftover has to be re-rendered rather than served from cache."""
-  if not path.exists() or path.stat().st_size == 0:
-    return False
+  """
+  True when `path` holds a PNG that decodes.
+  A corrupt or half-written leftover has to be re-rendered rather than served from cache.
+  """
+  if not path.exists() or path.stat().st_size == 0: return False
   try:
     with Image.open(path) as im:
       im.verify()
@@ -102,7 +106,8 @@ def _scale_sidecar(out_path:Path) -> Path:
   return out_path.with_suffix(".scale")
 
 def _write_scale(out_path:Path, eff_scale:float) -> None:
-  """Record the scale the PNG was actually rendered at.
+  """
+  Record the scale the PNG was actually rendered at.
 
   The pt-per-pixel math needs the effective scale
   and the mermaid.ink backend ignores the requested one,
@@ -154,9 +159,11 @@ def _try_mmdc(
   background:str, scale:float,
   font_family:str|None = None, font_dir:str|None = None,
 ) -> bool:
-  """Render via local mermaid-cli. Returns `True` on success.
+  """
+  Render via local mermaid-cli. Returns `True` on success.
   When `font_family`+`font_dir` are set and a matching TTF is found,
-  a temp CSS file with `@font-face` is injected via `--cssFile`."""
+  a temp CSS file with `@font-face` is injected via `--cssFile`.
+  """
   mmdc = shutil.which(cli)
   if not mmdc: return False
   in_path = out_path.with_suffix(".mmd")
@@ -192,8 +199,7 @@ _INK_WARNED = False
 def _warn_remote_once() -> None:
   """Warn once per process before any diagram source leaves the machine."""
   global _INK_WARNED
-  if _INK_WARNED:
-    return
+  if _INK_WARNED: return
   _INK_WARNED = True
   warnings.warn(
     "mermaid: local `mmdc` not found, falling back to the mermaid.ink public "
@@ -207,8 +213,10 @@ def _try_mermaid_ink(
   code:str, out_path:Path, *, theme:str,
   background:str,
 ) -> bool:
-  """Render via mermaid.ink HTTP service. Returns `True` on success.
-  Internal `scale` is capped at 3 by the API regardless of mmdc setting."""
+  """
+  Render via mermaid.ink HTTP service. Returns `True` on success.
+  Internal `scale` is capped at 3 by the API regardless of mmdc setting.
+  """
   _warn_remote_once()
   try:
     payload = json.dumps({"code": code, "mermaid": {"theme": theme}})
@@ -242,7 +250,8 @@ def render_mermaid(
   font_family:str|None = None, font_dir:str|None = None,
   remote:bool = True,
 ) -> tuple[str, float, float]|None:
-  """Render a mermaid diagram to a PNG file.
+  """
+  Render a mermaid diagram to a PNG file.
 
   Args:
     code: Mermaid source (the content of a ```mermaid fenced block).
@@ -270,8 +279,7 @@ def render_mermaid(
   key = _cache_key(code, theme, background, scale,
     font_family or "", font_dir or "", cli)
   cached = _cache_get(key)
-  if cached is not _MISS:
-    return cached
+  if cached is not _MISS: return cached
   cache_dir = _ensure_cache()
   out_path = cache_dir / f"{key}.png"
   if _valid_png(out_path):

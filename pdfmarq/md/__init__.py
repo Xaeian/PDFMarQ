@@ -1,6 +1,7 @@
 # pdfmarq/md/__init__.py
 
-"""Markdown engine for `pdfmarq`: markdown content drawn into the current frame of a `PDF`.
+"""
+Markdown engine for `pdfmarq`: markdown content drawn into the current frame of a `PDF`.
 
 Pages around the content - banner, footer, signing lines - belong to the packages built on it:
 `pdfmarq.paper` for documentation, `pdfmarq.legal` for letters and contracts.
@@ -14,12 +15,11 @@ Bundled (pip):
   - Pygments           # fenced code syntax highlighting
   - matplotlib         # math formula rendering ($x^2$)
   - emoji              # :smile: shortcode resolution
-  - mdit-py-emoji      # emoji parser plugin
   - pyphen             # hyphenation patterns
   - fonttools          # small capitals from a font's own glyphs
 
 Optional system tool (not pip-installable):
-  - mermaid-cli (npm)  # ```mermaid``` blocks; auto-detected at runtime
+  - mermaid-cli (npm) # ```mermaid``` blocks, auto-detected at runtime
 
 Example:
   >>> from pdfmarq import PDF
@@ -31,8 +31,8 @@ Example:
 
 #----------------------------------------------------------------------------- Extras for auto-toml
 
-# Declares the `pdfmarq[md]` extra; all packages are required so partial
-# installs never produce silent feature gaps.
+# Declares the `pdfmarq[md]` extra.
+# Every package is required, so a partial install never leaves a feature silently missing.
 __extras__ = ("md", [
   "markdown-it-py",
   "mdit-py-plugins",
@@ -40,7 +40,6 @@ __extras__ = ("md", [
   "Pygments",
   "matplotlib",
   "emoji",
-  "mdit-py-emoji",
   "pyphen",
   "fonttools",
 ])
@@ -50,9 +49,9 @@ __extras__ = ("md", [
 from .markdown_style import MarkdownStyle
 from .markdown import MarkdownRenderer, top_blocks
 from .md_frontmatter import (split_frontmatter, peek_frontmatter, metadata_from_frontmatter,
-  pdf_metadata, read_yaml)
+  pdf_metadata, read_yaml, people, byline)
 from .presets import lang_style, LANG_PRESETS
-from .md_html import is_pagebreak_directive, is_group_open_directive
+from .md_html import is_pagebreak_directive, is_group_open_directive, group_options
 
 __all__ = [
   "MarkdownStyle",
@@ -63,8 +62,11 @@ __all__ = [
   "read_yaml",
   "metadata_from_frontmatter",
   "pdf_metadata",
+  "people",
+  "byline",
   "lang_style",
   "LANG_PRESETS",
   "is_pagebreak_directive",
   "is_group_open_directive",
+  "group_options",
 ]
