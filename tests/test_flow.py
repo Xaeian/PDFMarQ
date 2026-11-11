@@ -415,15 +415,20 @@ def html_code_stays_whole_in_hyphenated_text(tmp_path):
   code = next(s for s in segs if "konstantynopolitanczykowianeczka" in s.text)
   assert code.code # code, as in backticks, shaded or not
 
-def code_keeps_its_words_whole_and_its_spaces_unstretched(tmp_path):
+def code_keeps_its_words_whole(tmp_path):
   pytest.importorskip("pyphen")
-  path = str(tmp_path / "code.pdf")
-  pdf = PDF(path)
+  pdf = PDF(str(tmp_path / "code.pdf"))
   face = dict(family="Helvetica", size=11, hyphenate="pl")
   word = "konstantynopolitanczykowianeczka"
   width = pdf.metrics.text_width(f"aaa {word}", "Helvetica", "Regular", 11) / MM_TO_PT - 5
   whole = RichText([RichSegment("aaa ", **face), RichSegment(word, code=True, **face)], width)
   assert "".join(s.text for s in split_rich(pdf, whole, 1)) == word # moved on, not hyphenated
+
+@needs_fitz
+def code_keeps_its_spaces_unstretched(tmp_path):
+  path = str(tmp_path / "code.pdf")
+  pdf = PDF(path)
+  face = dict(family="Helvetica", size=11)
   segs = [RichSegment("words then ", **face), RichSegment("a b", family="Courier", size=11,
     code=True), RichSegment(" and more words to fill a justified line well enough", **face)]
   render_rich(pdf, RichText(segs, 60, Align.JUSTIFY), 0, 0)
