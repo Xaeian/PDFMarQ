@@ -94,12 +94,20 @@ style = lang_style("pl", # banner/footer labels
   mermaid_theme="default", syntax_theme="default",
 )
 md_to_pdf(md, "out.pdf", style=style,
-  page=A4, margin=25, gutter=0, base_dir=".", font_dir="./fonts")
+  page=A4, margin=25, gutter=0, two_sided=False, base_dir=".", font_dir="./fonts")
 ```
+
+`gutter` widens the left margin for binding, and `two_sided=True` prints on both sides of the sheet: even pages mirror the margins, the gutter at the bound edge.
 
 `sign` takes `True` for one line, a `sign_labels` scenario or a list of custom labels.
 Scenarios: `signature`, `approval` and `contract`, localized by the language preset.
 Several lines sit side by side, sharing the content width.
+
+`columns=2` sets the text in two columns, its last page balanced with the signing lines under it.
+`floats` is on in `PaperStyle`: pictures, tables and groups setting them wait for the top of the next column instead of leaving gaps, while groups of text stay where written.
+`<!-- group wide -->`, or a table no column holds, waits for the top of the next page, above its columns, or goes under the columns where they end first.
+Text before the first `##` spans the page.
+The compact banner's room on later pages is `pdf.headroom`, so the columns measure their pages as they draw them.
 
 `page` is a `PageSize` in mm: `A4`, `A4.landscape()`, `page_size("a3")` for a preset name (`A4`/`A3`/`A5`/`LETTER`/`LEGAL`, raises on anything else), or `PageSize(200, 250)` for a custom sheet.
 
@@ -119,7 +127,7 @@ PaperStyle(
 )
 ```
 
-The engine's fields - fonts, sizes, `h1_page_break`, `justify`, `keep_together` - are there too, since `PaperStyle` extends `MarkdownStyle`.
+The engine's fields (fonts, sizes, `h1_page_break`, `justify`, `keep_together`) are there too, since `PaperStyle` extends `MarkdownStyle`.
 
 A paper titles its bibliography unasked: the footnotes collected at the end go under a level-2 heading in the style's language, `Literatura` in `pl`, `References` in `en`.
 A document that ends with a heading of its own has titled them already, as `### Literatura` at the very end, and gets no second title.

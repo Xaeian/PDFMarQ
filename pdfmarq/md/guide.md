@@ -117,7 +117,7 @@ It fills text width as far as its resolution allows, stops at 120mm tall and sit
 PDF and DOCX land on the same box.
 
 Images alone in a paragraph share that width: two side by side become two half-width figures, eight become two rows of four.
-An image on the same line as text stays inline at line height, in both formats - so put caption in the next paragraph, never beside the picture.
+An image on the same line as text stays inline at line height, in both formats, so put caption in the next paragraph, never beside the picture.
 
 The title slot sizes a figure by hand when automatic size is wrong:
 
@@ -196,7 +196,8 @@ A block that must stay together.
 `pagebreak` forces a break at that point.
 `group` keeps its content on one page, breaking pre-emptively when the block would fit on the next; a group larger than a page flows normally.
 Both must stand alone in the comment, so `<!-- pagebreak now -->` is an ordinary comment and does nothing.
-The one word `group` takes is `wide`: `<!-- group wide -->` spans the group across columns where a package sets them, and here it is an ordinary group.
+The one word `group` takes is `wide`: with `columns=2` in the style `<!-- group wide -->` spans the page between runs of columns, with `floats` at the top of the next page, and in one column it is an ordinary group.
+With `floats`, groups setting pictures, tables or listings under captions, without headings, wait for the top of the next column when they miss this one, while groups of text stay where written.
 
 ## Templates
 

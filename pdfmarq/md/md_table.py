@@ -11,16 +11,19 @@ Minimums wider than the page cap the widest columns, so short cells stay whole.
 A table longer than a page splits, repeating the header on each continuation page.
 The header needs at least 2 body rows beside it, or it moves to a new page first.
 """
+import warnings
 from typing import NamedTuple
 from markdown_it.token import Token
 from ..inline import RichSegment, RichText, render_rich, measure_rich, measure_extent
 from ..constants import Align, MM_TO_PT
 from ..utils import smaller_size
+from ..warn import caller_level
 from .md_images import (
   load_image_info, size_cell, cell_intrinsic_w_mm, ImageInfo,
 )
 
 _DOUBLE_RULE_GAP = 0.5 # mm between the two lines of a double rule
+_SQUEEZE_SLACK_MM = 0.5 # a table this much narrower than its longest words still holds them
 
 #------------------------------------------------------------------------------------------ Helpers
 
@@ -292,11 +295,12 @@ class TableMixin:
     v_pad = s.table_pad
     # One typographic ladder step below body keeps table text lighter than prose
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
+    face = s.font_table or s.font_body
 
     # Text sits between the pads, its capitals in the middle and descenders hanging below,
     # as `PDF.table` sets it: centring descenders with the capitals lifts a cell of digits
     def drop_mm(mode:str) -> float:
-      _, below = pdf.metrics.letter_span(s.font_body, mode, cell_size)
+      _, below = pdf.metrics.letter_span(face, mode, cell_size)
       return below / MM_TO_PT / 2
 
     def cell_data(inline_token:Token|None, bold:bool) -> dict:
@@ -310,12 +314,12 @@ class TableMixin:
       if img is not None: return {"type": "image", "info": img}
       mode = s.bold_mode if bold else s.body_mode
       fallback = [RichSegment(
-        text=" ", family=s.font_body, mode=mode,
+        text=" ", family=face, mode=mode,
         size=cell_size, color=s.body_color,
       )]
       if inline_token is None: return {"type": "text", "segs": fallback, "drop": drop_mm(mode)}
       base = RichSegment(
-        text="", family=s.font_body, mode=mode,
+        text="", family=face, mode=mode,
         size=cell_size, color=s.body_color, bind_single_letters=s.bind_single_letters,
       )
       segs = self.segments(inline_token, base) or fallback
@@ -401,8 +405,8 @@ class TableMixin:
         # All remaining rows fit - render final chunk
         pass
       elif fit_count < min_rows and not tried_new_page:
-        # Can't fit minimum rows - page break, try again with full page
-        pdf.next_frame()
+        # Can't fit minimum rows: on to a frame that holds the header with them, past short columns
+        pdf.keep(header_h + 2 * double + sum(body_heights[row_idx:row_idx + min_rows]))
         tried_new_page = True
         continue
       # else: fresh page already tried, render what we can (at least 1 row)
@@ -463,6 +467,15 @@ class TableMixin:
     rows = [[ask(cd) for cd in cells] for cells in every]
     cell_size = s.table_size if s.table_size is not None else smaller_size(s.body_size)
     line_h = s.line_mm(cell_size)
+    words = sum(max((r[i].low for r in rows if i < len(r) and not r[i].image), default=0)
+      + 2 * h_pad for i in range(ncols))
+    # One text whether measured off the page or drawn, so it reads once
+    if words > total_w + _SQUEEZE_SLACK_MM:
+      self._squeezed = True
+      warnings.warn(f"a table {words:.0f}mm wide at its longest words gets {total_w:.0f}mm, "
+        "so words break inside its cells; "
+        "in columns `<!-- group wide -->` sets it across the page",
+        RuntimeWarning, stacklevel=caller_level())
     return _layout_columns(rows, ncols, total_w, h_pad, line_h, s.cell_image_balance_bias)
 
   #--------------------------------------------------------------------------------- Chunk renderer

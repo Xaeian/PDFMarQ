@@ -6,7 +6,7 @@ import inspect, re
 import pytest
 from pdfmarq import MM_TO_PT, PDF
 from pdfmarq.legal import md_parallel_to_pdf, md_to_pdf, lang_style
-from conftest import needs_fitz, pdf_page_words, pdf_images
+from conftest import needs_pymupdf, pdf_page_words, pdf_images
 
 LEFT = """---
 title: Left title
@@ -51,7 +51,7 @@ def render(tmp_path):
 
 #--------------------------------------------------------------------------------------------- Rows
 
-@needs_fitz
+@needs_pymupdf
 def rows_start_level_across_columns(render, word):
   words = pdf_page_words(render(LEFT, RIGHT))[0]
   for mark in ("Firstmark", "Secondmark"):
@@ -60,21 +60,21 @@ def rows_start_level_across_columns(render, word):
     assert left[1] == pytest.approx(right[1], abs=0.5)
   assert word(words, "Left")[2] < 105 * MM_TO_PT < word(words, "Right")[0] # a title each
 
-@needs_fitz
+@needs_pymupdf
 def next_row_waits_for_the_taller_side(render):
   words = pdf_page_words(render(LEFT, RIGHT))[0]
   longer = max(w[3] for w in words if w[4] in ("wraps", "below", "starts."))
   second = min(w[1] for w in words if w[4] == "Secondmark")
   assert second > longer
 
-@needs_fitz
+@needs_pymupdf
 def pagebreak_row_breaks_once_for_all_columns(render, word):
   pages = pdf_page_words(render("One.\n\n<!-- pagebreak -->\n\nTwo.\n",
     "First.\n\n<!-- pagebreak -->\n\nSecond.\n"))
   assert len(pages) == 2
   assert word(pages[1], "Two.") and word(pages[1], "Second.")
 
-@needs_fitz
+@needs_pymupdf
 def rows_never_cross_the_page_bottom(render):
   body = "\n\n".join(f"## Head{i}\n\nText{i} " + "with words " * 30 for i in range(14))
   pages = pdf_page_words(render(body, body))
@@ -86,7 +86,7 @@ def rows_never_cross_the_page_bottom(render):
   page_of = {w[4]: n for n, page in enumerate(pages) for w in page}
   assert all(page_of[f"Head{i}"] == page_of[f"Text{i}"] for i in range(14))
 
-@needs_fitz
+@needs_pymupdf
 def group_is_one_row(render, word):
   pages = pdf_page_words(render(
     "<!-- group -->\n\nAlpha.\n\nBeta.\n\n<!-- /group -->\n\nAfter.\n",
@@ -94,7 +94,7 @@ def group_is_one_row(render, word):
   words = pages[0]
   assert word(words, "After.")[1] == pytest.approx(word(words, "Afterwards.")[1], abs=0.5)
 
-@needs_fitz
+@needs_pymupdf
 def same_headings_in_both_versions_render(render):
   words = pdf_page_words(render("## Same\n\nA.\n", "## Same\n\nB.\n"))[0]
   assert len([w for w in words if w[4] == "Same"]) == 2
@@ -105,7 +105,7 @@ def footnotes_pair_up_as_one_row(render):
 
 #---------------------------------------------------------------------------------------------- End
 
-@needs_fitz
+@needs_pymupdf
 def signatures_span_and_attachments_stay_in_columns(tmp_path, word):
   path = str(tmp_path / "end.pdf")
   md_parallel_to_pdf([LEFT, RIGHT], path, styles=[
@@ -143,7 +143,7 @@ def page_breaks_inside_rows_are_refused(tmp_path, render):
   with pytest.raises(ValueError, match="pagebreak"):
     render(quote, quote)
 
-@needs_fitz
+@needs_pymupdf
 def sender_goes_under_a_stamp_too_wide_to_share_its_line(render, word):
   text = "---\nplace: A very long place name that fills a column\nfrom: Sendermark\n---\n\nText.\n"
   words = pdf_page_words(render(text, text, text))[0]
@@ -164,7 +164,7 @@ def signature_matches_md_to_pdf():
 
 #--------------------------------------------------------------------------------------------- Logo
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.usefixtures("logo")
 def logo_keeps_a_row_of_its_own(tmp_path):
   text = "---\ntitle: Titlemark\nlogo: logo.png\n---\n\n## Head\n\nText.\n"
@@ -186,3 +186,8 @@ def versions_keep_their_anchors_apart(tmp_path, monkeypatch):
   text = "## Scope\n\nSee [scope](#scope).\n"
   md_parallel_to_pdf([text, text], out, styles=[lang_style("pl"), lang_style("en")])
   assert names == ["scope", "v2-scope"]
+
+def versions_refuse_columns_of_their_own(tmp_path):
+  with pytest.raises(ValueError, match="columns would split the column of a version"):
+    md_parallel_to_pdf(["First.", "Second."], str(tmp_path / "p.pdf"),
+      styles=[lang_style("pl", columns=2), lang_style("en")])

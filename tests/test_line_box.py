@@ -8,7 +8,7 @@ Blocks drawn around lines keep their letters in the middle too.
 
 import io
 import pytest
-from conftest import needs_fitz, pdf_ink, pdf_strokes, pdf_words, render_md
+from conftest import needs_pymupdf, pdf_ink, pdf_strokes, pdf_words, render_md
 from pdfmarq import PDF, MM_TO_PT, RichSegment, RichText, TableStyle, render_rich
 from pdfmarq.inline import measure_rich, wrap_line_heights
 from pdfmarq.md import MarkdownStyle
@@ -56,7 +56,7 @@ def tall_font(tmp_path) -> str:
 
 #--------------------------------------------------------------------------------------------- Line
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("family", ["Helvetica", "Tall"])
 def letters_sit_in_the_middle_of_their_line(tmp_path, tall_font, family):
   # Tall keeps 300 units above its capitals for accents, which must not push its letters down
@@ -68,7 +68,7 @@ def letters_sit_in_the_middle_of_their_line(tmp_path, tall_font, family):
   line = (TOP_PT, TOP_PT + height * MM_TO_PT)
   assert sum(pdf_ink(path, (0, 0, 595, PAGE_H))) / 2 == pytest.approx(sum(line) / 2, abs=0.5)
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("family", ["Helvetica", "Tall"])
 def text_box_holds_its_lines_in_the_middle(tmp_path, tall_font, family):
   # `text` centres three lines in a box as each line centres its letters
@@ -94,14 +94,15 @@ def empty_line_is_as_tall_as_its_text():
 
 #------------------------------------------------------------------------------------------- Blocks
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("md", [
-  "```\nHp\nHp\n```\n",
+  "```\nHx\nHx\n```\n", # no descenders: the ink ends on the baseline
   "> Hp\n",
   "> [!NOTE]\n> Hp\n", # the title is the first line
 ], ids=["code", "quote", "callout"])
 def block_keeps_its_letters_in_the_middle(tmp_path, md):
-  # as much room above the capitals as below the descenders, between borders or beside a bar
+  # As much room above the capitals as below the descenders, between borders or beside a bar,
+  # and in a frame of code as below the last baseline, which the eye measures there
   path = str(tmp_path / "block.pdf")
   render_md(path, md)
   words = pdf_words(path)
@@ -112,7 +113,28 @@ def block_keeps_its_letters_in_the_middle(tmp_path, md):
   # its capitals sit up to a point low, in whatever face the viewer draws it
   assert top - frame.y0 == pytest.approx(frame.y1 - bottom, abs=1.2)
 
-@needs_fitz
+@needs_pymupdf
+def a_long_line_of_code_runs_on_two_characters_in(tmp_path):
+  # So it reads as one line of code wrapped, not as two lines
+  path = str(tmp_path / "code.pdf")
+  render_md(path, "```\n" + "word" * 50 + "\n```\n")
+  first, second = sorted(pdf_words(path), key=lambda w: w[1])[:2]
+  style = MarkdownStyle()
+  two = 2 * PDF(io.BytesIO()).metrics.text_width("x", style.font_mono, style.mono_mode,
+    style.code_block_size)
+  assert second[0] - first[0] == pytest.approx(two, abs=0.5)
+
+@needs_pymupdf
+def a_code_block_keeps_its_gap_above_where_paragraphs_keep_none(tmp_path):
+  # Its frame would touch the descenders of the line above it, with its gap only under it
+  path = str(tmp_path / "code.pdf")
+  style = MarkdownStyle(para_gap=0)
+  render_md(path, "Text above the code.\n\n```\nHx\n```\n", style)
+  text = max(w[3] for w in pdf_words(path) if w[4] == "code.")
+  frame = min(d["rect"].y0 for d in pdf_strokes(path)[0] if d["rect"].height > 2)
+  assert frame - text >= style.code_block_gap * MM_TO_PT
+
+@needs_pymupdf
 def table_text_sits_between_its_pads(tmp_path):
   # the table is as tall as before, only its letters move: half the difference of the pads
   def draw(name:str, top:float, bot:float) -> tuple[float, float]:
@@ -126,7 +148,7 @@ def table_text_sits_between_its_pads(tmp_path):
   assert pushed_end == pytest.approx(level_end)
   assert pushed - level == pytest.approx(0.5 * MM_TO_PT, abs=0.3)
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("markdown", [False, True], ids=["table", "markdown"])
 def table_cell_centres_its_capitals(tmp_path, markdown):
   # capitals and digits sit level in a cell: descenders would hang into the bottom pad
@@ -141,7 +163,7 @@ def table_cell_centres_its_capitals(tmp_path, markdown):
     and d["rect"].y0 <= top and d["rect"].y1 >= bottom), key=lambda rect: rect.height)
   assert top - cell.y0 == pytest.approx(cell.y1 - bottom, abs=0.5)
 
-@needs_fitz
+@needs_pymupdf
 def bullet_sits_mid_lowercase(tmp_path):
   path = str(tmp_path / "list.pdf")
   render_md(path, "- xxx\n")
@@ -150,7 +172,7 @@ def bullet_sits_mid_lowercase(tmp_path):
   letters = pdf_ink(path, (word[0], 0, word[2], PAGE_H))
   assert (disc.y0 + disc.y1) / 2 == pytest.approx(sum(letters) / 2, abs=0.5)
 
-@needs_fitz
+@needs_pymupdf
 def equation_number_sits_mid_formula(tmp_path):
   pytest.importorskip("matplotlib")
   path = str(tmp_path / "math.pdf")

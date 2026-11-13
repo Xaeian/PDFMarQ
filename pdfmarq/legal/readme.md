@@ -19,10 +19,10 @@ The arguments match `pdfmarq.paper.md_to_pdf`: `style`, `page`, `margin`, `gutte
 The library lays out what the author wrote.
 It numbers no paragraphs, detects no language, translates nothing and writes no legal wording of its own.
 
-- **Markdown body**: the text - paragraphs, headings, lists, tables.
+- **Markdown body**: the text (paragraphs, headings, lists, tables).
   Paragraph signs are typed by the author.
-- **Frontmatter**: the facts of this document - `title`, `place`, `date`, `from`, `to`, `ref`, `logo`, `attachments`.
-- **`LegalStyle`**: the look - columns, justification, signing lines, fonts, sizes, labels.
+- **Frontmatter**: the facts of this document (`title`, `place`, `date`, `from`, `to`, `ref`, `logo`, `attachments`).
+- **`LegalStyle`**: the look (columns, justification, signing lines, fonts, sizes, labels).
 
 ## Header
 
@@ -95,7 +95,8 @@ Without any `##` the whole text flows in columns.
 With fewer than three lines left on the page, the columns start on the next one.
 
 A region that fits its page together with the signing lines and attachments gets balanced columns, so a one-page contract stays one page.
-A longer region flows over the pages, its last page balanced when the signing lines and attachments fit below it.
+A longer region flows over the pages, its last page balanced too.
+Signing lines and attachments that do not fit under it go to the next page.
 
 ## Parallel versions
 

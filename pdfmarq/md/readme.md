@@ -4,7 +4,7 @@ Markdown engine: markdown content drawn into the current frame of a `PDF`.
 Requires `pip install pdfmarq[md]`.
 
 The engine draws content only.
-The page around it - banner, header, footer, signing lines - belongs to a document package:
+The page around it (banner, header, footer, signing lines) belongs to a document package:
 
 - [`pdfmarq.paper`](../paper/readme.md): documentation with a frontmatter banner, `md_to_pdf` and `md_into`
 - [`pdfmarq.legal`](../legal/readme.md): letters, statements, contracts, parallel versions, `md_to_pdf` and `md_parallel_to_pdf`
@@ -29,6 +29,7 @@ A package that lays out the page itself works in steps:
   `index(tokens, prefix="v2-")` keeps the anchors of one of several documents in a file apart from those of the others
 - `renderer.render_tokens(tokens[a:b])` draws any slice into the current frame
 - `renderer.render_tokens(part, style)` sets that part in a style of its own; heading slugs and equation numbers run on across parts
+- `renderer.render_tokens(part, below=mm)` keeps `mm` free under the last page of a part in columns, for signing lines; each call opens and balances columns of its own
 - `MarkdownRenderer.off_page(width, style, base_dir, font_dir)` is the engine on an off-page sheet, measuring a part before it is drawn
 - `renderer.segments(inline, base)` gives the `RichSegment`s of an inline token grown from `base`, for text a package draws itself, as a caption
 - `renderer.resolve_path(src)` resolves a path against `base_dir`
@@ -37,11 +38,12 @@ A package that lays out the page itself works in steps:
 Functions of `pdfmarq.md` go with them:
 
 - `top_blocks(tokens)` gives `(start, end)` of each top-level block, a `<!-- group -->` counting as one
-- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which the engine sets as any group and a package spans across columns
+- `first_section(tokens)` gives where the first `##` starts, and `closing_breaks(tokens)` where the page breaks that end them start, which a file ending there leaves out
+- `group_options(content)` gives `["wide"]` for `<!-- group wide -->`, the one option a group takes, which spans the page between runs of columns
 - `split_frontmatter(text)`, `metadata_from_frontmatter(fm)` and `pdf_metadata(fm, overrides)` read frontmatter, which the engine itself never draws
 - `people(value)` reads an `author`-like value as persons, each a mapping with `name` first, an ORCID or e-mail written after a name joining it, and `byline(value)` gives their names on one line
 
-Inside `pdf.columns(...)` content width, margins and page breaks follow the current column, so every block - tables, lists, images, formulas - flows through columns unchanged.
+Inside `pdf.columns(...)` content width, margins and page breaks follow the current column, so every block (tables, lists, images, formulas) flows through columns unchanged.
 
 ## Flowing text
 
@@ -70,10 +72,23 @@ MarkdownStyle(justify=True, hyphenate="pl", keep_together=False, h2_size=None)
   Quotes, callouts and groups always stay whole.
 - A heading size of `None` follows `body_size`.
 - `first_indent` sets the first line of a body paragraph in by that many mm, as books and journals do.
-  A paragraph of a list, a quote or a footnote keeps flush.
+  A paragraph of a list, a quote or a footnote keeps flush,
+  and so does one opening in lowercase right under a formula, going on with its sentence: `where x is ...`.
 - An ordered list keeps its delimiter, `1.` or `1)`, and the author's numbers when they increase.
 
-The defaults - `justify=False`, `hyphenate=None`, `keep_together=True`, sizes 20/16/13/11 - give the classic documentation look.
+The defaults (`justify=False`, `hyphenate=None`, `keep_together=None`, sizes 20/16/13/11) give the classic documentation look.
+`keep_together=None` keeps paragraphs and lists whole in one column and lets them flow in columns.
+
+`columns=2` sets the text in two columns `column_gap` mm apart, the last page balanced.
+With `floats`, pictures, tables and groups setting them under captions, without headings, wait for the top of the next column when they miss the rest of this one, text filling it meanwhile, one block at each column's top.
+Groups of text, and whatever stands in lists, quotes or definitions, stay where written.
+Wide groups, and tables whose words no column holds, stand across the page where written, under the text before them balanced, when that page holds them, and otherwise wait for the top of the next page; those no page holds stand where written.
+Blocks keep their order, and those still waiting where a run of columns ends stand right after it, as without `floats`.
+A run ends at a page break, `#` with `h1_page_break` included.
+A block still waiting as the bibliography begins takes the top of a column or page among its entries.
+Where its entries end before such a frame opens, a narrow block stands right before them instead, with entries beside or under it.
+A bibliography parts from its text where waiting blocks fit under that text, or a wide one would follow its last entry: wide blocks then stand across the page between them, and one narrow figure or group behind them opens its columns, while a table, which parts by its rows, or two blocks keep columns of their own.
+Text before the first `##` spans the page, and without `floats` `<!-- group wide -->` sets its blocks across the page between runs of columns.
 
 ## Math
 
@@ -90,7 +105,7 @@ npm install -g mathjax @mathjax/mathjax-newcm-font
 ```
 
 `math_font` picks typeface, from font packages MathJax ships.
-Each was measured against 230 TeX symbols a technical document reaches for - Greek, operators, relations, arrows, set and logic notation, blackboard, script and fraktur alphabets, stretchable delimiters, accents, `cases`, `substack`, matrices, and Polish and German diacritics inside `\text{}`:
+Each was measured against 230 TeX symbols a technical document reaches for: Greek, operators, relations, arrows, set and logic notation, blackboard, script and fraktur alphabets, stretchable delimiters, accents, `cases`, `substack`, matrices, and Polish and German diacritics inside `\text{}`.
 
 | `math_font` | Face | Coverage |
 | ----------- | ---- | -------- |
@@ -115,8 +130,8 @@ Asking for one that is not installed warns and falls back to `newcm`.
 `math_fontset` belongs to mathtext and MathJax ignores it.
 MathJax output is scaled so formula x-height matches body text, and rendered SVG is cached in `~/.cache/marq/mathjax/`.
 
-`PDFMARQ_NODE_MODULES` names the global `node_modules` directory when asking
-`npm root -g` for it is too slow - a deployment usually knows the path.
+`PDFMARQ_NODE_MODULES` names the global `node_modules` directory when asking `npm root -g` for it is too slow.
+A deployment usually knows the path.
 
 On the mathtext path, spellings it rejects are rewritten to ones it accepts (`\le` to `\leq`, `\underbrace` to `\underline`), and `math_fontset` takes a matplotlib preset _(`stix`, `stixsans`, `cm`, `dejavusans`, `dejavuserif`)_ or a font family from `font_dir`, so formulas can carry document typeface.
 A family that cannot be loaded warns and falls back to `stixsans`.
@@ -141,7 +156,7 @@ Footnote refs `[^1]` jump to their definitions the same way.
 
 ## Local links
 
-Paths without a scheme _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get link style _(blue + underline)_ but no clickable action by default - a PDF can't follow a filesystem link.
+Paths without a scheme _(`[x](file.md)`, `[x](folder/doc)`, `[x](/absolute/path)`)_ get link style _(blue + underline)_ but no clickable action by default, since a PDF can't follow a filesystem link.
 Set `link_root` to make them real URLs:
 
 ```py
@@ -165,6 +180,8 @@ MarkdownStyle(
   table_header_bg=None, # the header row unshaded
   table_rules="grid", # `rows` without vertical rules, `head` above, below and under the header
   table_double=False, # the rules above and below the table drawn double, as IEEE journals do
+  font_table=None, # a face of its own for table cells, as a journal's narrower one
+  math_number_left=False, # equation numbers at the left edge, as some journals set them
   footnote_label=None, # a rule above the footnotes, True a title in the style's language
 )
 ```

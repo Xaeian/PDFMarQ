@@ -97,6 +97,15 @@ class FontManager:
       f"Font not found: {family}-{mode} in {self.font_dir} (no fallback worked)",
     )
 
+  def adopt(self, other:"FontManager") -> "FontManager":
+    """
+    Take over the faces `other` has registered, those from files of any folder included,
+    so a page drawn only to measure sets its text in the same faces.
+    """
+    self._registered |= other._registered
+    self._paths.update(other._paths)
+    return self
+
   def register_file(self, family:str, mode:str, path:str) -> str:
     """
     Register the TrueType file `path` as the `mode` face of `family`, from any folder.

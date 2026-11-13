@@ -10,8 +10,8 @@ from markdown_it.token import Token
 from ..core import PDF
 from ..constants import PageSize, A4
 from ..inline import RichSegment
-from ..parts import signatures, page_number
-from ..md import MarkdownRenderer, split_frontmatter, pdf_metadata
+from ..parts import signatures, signatures_height, page_number
+from ..md import MarkdownRenderer, split_frontmatter, pdf_metadata, closing_breaks
 from .style import PaperStyle
 from .banner import Banner
 
@@ -25,6 +25,7 @@ def md_to_pdf(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -45,12 +46,14 @@ def md_to_pdf(
       `A4.landscape()` flips it, `PageSize(200, 250)` is a custom sheet.
     margin: mm, scalar or CSS-order 1-4 sequence.
     gutter: binding margin in mm, added to the left one, since PDF has no native gutter.
+    two_sided: printed on both sides of the sheet, even pages mirroring the margins,
+      so the left one and the gutter stay at the bound edge.
     base_dir: root for relative image paths. `None` uses cwd.
   """
   style = _checked(style or PaperStyle())
   pdf = PDF(output_path, width=page.width, height=page.height,
-    margin=margin, gutter=gutter, font_dir=font_dir or "./fonts")
-  md_into(pdf, md_text, style=style, base_dir=base_dir, metadata=metadata)
+    margin=margin, gutter=gutter, two_sided=two_sided, font_dir=font_dir or "./fonts")
+  _into(pdf, md_text, style, base_dir, metadata, ends=True)
   pdf.save()
   return pdf
 
@@ -71,7 +74,15 @@ def md_into(
   Once per `PDF`: each call adds page furniture of its own.
   The compact banner starts on the page after the one `md_into` starts on,
   and the page number counts every page, the cover's too.
+  A page break that ends `md_text` stays, for what the caller sets after it.
   """
+  _into(pdf, md_text, style, base_dir, metadata, ends=False)
+
+def _into(
+  pdf:PDF, md_text:str, style:PaperStyle|None, base_dir:str|None, metadata:dict|None,
+  ends:bool,
+):
+  """`md_into` once more, and with `ends` the file ends with it: a closing page break goes."""
   style = _checked(style or PaperStyle())
   fm, _ = split_frontmatter(md_text)
   meta = pdf_metadata(fm, metadata)
@@ -81,7 +92,7 @@ def md_into(
   banner = None
   if fm and (style.banner or style.banner_compact):
     banner = Banner(pdf, style, fm, renderer.frontmatter_file(fm, "logo", warn=style.banner))
-  _draw(pdf, renderer, style, md_text, banner)
+  _draw(pdf, renderer, style, md_text, banner, ends)
 
 def _checked(style) -> PaperStyle:
   """`style` when it is a `PaperStyle`. A wrong one fails here, before anything is drawn."""
@@ -89,7 +100,10 @@ def _checked(style) -> PaperStyle:
     raise TypeError("style must be a PaperStyle, build one with pdfmarq.paper.lang_style()")
   return style
 
-def _draw(pdf:PDF, renderer:MarkdownRenderer, style:PaperStyle, md_text:str, banner:Banner|None):
+def _draw(
+  pdf:PDF, renderer:MarkdownRenderer, style:PaperStyle, md_text:str, banner:Banner|None,
+  ends:bool,
+):
   """Banner, page chrome, content and signing lines, in drawing order."""
   first = pdf.page_num
   if banner and style.banner:
@@ -97,10 +111,8 @@ def _draw(pdf:PDF, renderer:MarkdownRenderer, style:PaperStyle, md_text:str, ban
   if banner and style.banner_compact:
     def compact(p:PDF, n:int):
       if n > first: banner.draw_compact()
-    def below_compact(p:PDF, n:int):
-      if n > first: p.enter(style.banner_compact_gap)
     pdf.on_page(compact)
-    pdf.on_new_page(below_compact)
+    pdf.headroom = style.banner_compact_gap # the text of later pages starts under the banner
   if style.page_number_label:
     number_face = RichSegment("", family=style.font_body, mode=style.body_mode,
       size=style.banner_meta_size, color=style.muted_color)
@@ -114,11 +126,15 @@ def _draw(pdf:PDF, renderer:MarkdownRenderer, style:PaperStyle, md_text:str, ban
     tokens = _skip_matching_h1(tokens, str(title))
   # indexed after the drop, so a link to the removed title is plain text
   renderer.index(tokens)
-  renderer.render_tokens(tokens)
-  if style.sign:
-    sign_face = RichSegment("", family=style.font_body, mode=style.italic_mode,
-      size=style.sign_size, color=style.muted_color)
-    signatures(pdf, style.sign_lines(), sign_face,
+  sign_face = RichSegment("", family=style.font_body, mode=style.italic_mode,
+    size=style.sign_size, color=style.muted_color)
+  labels = style.sign_lines() if style.sign else []
+  # In columns the signing lines stay under their last page when they fit there
+  below = signatures_height(pdf, labels, sign_face, gap=style.sign_gap, width=style.sign_w)
+  if ends and not labels: tokens = tokens[:closing_breaks(tokens)] # nothing follows them
+  renderer.render_tokens(tokens, below=below)
+  if labels:
+    signatures(pdf, labels, sign_face,
       gap=style.sign_gap, width=style.sign_w, thick=style.banner_rule)
 
 #------------------------------------------------------------------------------------------ Helpers

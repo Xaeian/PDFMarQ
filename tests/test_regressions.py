@@ -5,7 +5,7 @@ Guards for rendering invariants that are cheap to break.
 
 Every check here answers one question:
 does the document that comes out hold everything that went in, at the size and place it belongs?
-Stdlib `unittest` only. Text-extraction checks need PyMuPDF (`fitz`) and skip without it.
+Stdlib `unittest` only. Text-extraction checks need PyMuPDF (`pymupdf`) and skip without it.
 
   >>> python -m pytest tests/test_regressions.py
 """
@@ -19,13 +19,13 @@ from conftest import (render_md, pdf_text, pdf_pages, pdf_offpage_words,
   has_mathjax)
 
 try:
-  import fitz # PyMuPDF
+  import pymupdf
 except ImportError:
-  fitz = None
+  pymupdf = None
 
 MIDDLE_DOT = "·"
 PILCROW = "¶"
-NEEDS_FITZ = unittest.skipIf(fitz is None, "PyMuPDF not installed")
+NEEDS_PYMUPDF = unittest.skipIf(pymupdf is None, "PyMuPDF not installed")
 NEEDS_MATHJAX = unittest.skipUnless(has_mathjax(), "MathJax not installed")
 
 class TempPDFCase(unittest.TestCase):
@@ -51,7 +51,7 @@ class TestMiddleDot(TempPDFCase):
     self.assertIn(MIDDLE_DOT, result.text)
     self.assertNotIn(PILCROW, result.text)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_table_cell_keeps_middle_dot(self):
     p = self.path()
     with PDF(p) as pdf:
@@ -88,7 +88,7 @@ class TestBlockSplitting(TempPDFCase):
   """
   LINES = 200
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_long_code_block_stays_on_pages(self):
     code = "\n".join(f"line_{i} = compute(value_{i})" for i in range(self.LINES))
     p = self.path()
@@ -98,7 +98,7 @@ class TestBlockSplitting(TempPDFCase):
     for i in (0, self.LINES // 2, self.LINES - 1):
       self.assertIn(f"line_{i}", body)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_long_paragraph_stays_on_pages(self):
     para = " ".join(f"word{i}" for i in range(3000))
     p = self.path()
@@ -113,7 +113,7 @@ class TestBlockSplitting(TempPDFCase):
     pdf = render_md(self.path(), "```\n" + code + "\n```\n")
     self.assertLessEqual(pdf.y, pdf.content_height)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_block_that_fits_is_left_whole(self):
     """Splitting is for oversized blocks only - a short document stays on one page."""
     p = self.path()
@@ -135,7 +135,7 @@ class TestMultiBlockFootnote(TempPDFCase):
     "    - LISTITEMB\n"
   )
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_all_blocks_rendered(self):
     p = self.path()
     render_md(p, self.MD)
@@ -143,7 +143,7 @@ class TestMultiBlockFootnote(TempPDFCase):
     for token in ("FIRSTBLOCK", "SECONDBLOCK", "LISTITEMA", "LISTITEMB"):
       self.assertIn(token, body)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_body_style_survives_the_footnote(self):
     style = MarkdownStyle()
     size, color = style.body_size, style.body_color
@@ -200,7 +200,7 @@ class TestPageChrome(TempPDFCase):
     self.assertEqual([], pdf._new_page_callbacks)
     self.assertEqual([], pdf._canvas._final_page_callbacks)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_single_footer_per_page(self):
     p = self.path()
     md_to_pdf("# One\n\nAlpha.\n\n# Two\n\nBeta.\n", p)
@@ -291,11 +291,11 @@ class TestAnchors(TempPDFCase):
   MD = ("## Ustawienia\n\nPierwsza.\n\n## Ustawienia\n\nDruga.\n\n"
     "[pierwsza](#ustawienia) [druga](#ustawienia-1) [brak](#nie-ma-takiego)\n")
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_links_carry_a_position(self):
     p = self.path()
     render_md(p, self.MD)
-    doc = fitz.open(p)
+    doc = pymupdf.open(p)
     try:
       links = [l for page in doc for l in page.get_links()]
       self.assertEqual(2, len(links), "unknown anchors must not linkify")
@@ -311,14 +311,14 @@ class TestAnchors(TempPDFCase):
     pdf.save()
     self.assertEqual({"ustawienia", "ustawienia-1"}, renderer._known_slugs)
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_outline_entry_carries_a_position(self):
     p = self.path()
     pdf = PDF(p)
     pdf.text("Rozdzial 1").bookmark("Rozdzial 1")
     pdf.enter(120).text("Rozdzial 2").bookmark("Rozdzial 2")
     pdf.save()
-    doc = fitz.open(p)
+    doc = pymupdf.open(p)
     try:
       tops = [entry[3]["to"].y for entry in doc.get_toc(simple=False)]
       self.assertEqual(2, len(tops))
@@ -731,7 +731,7 @@ class TestMathBlockWidth(TempPDFCase):
   WIDE = "$$\n" + " + ".join(r"\frac{V_{%d}}{R_{%d}}" % (i, i) for i in range(22)) + "\n$$\n"
 
   def ink_outside_page(self, path:str) -> int:
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     try:
       outside = 0
       for page in doc:
@@ -744,7 +744,7 @@ class TestMathBlockWidth(TempPDFCase):
     finally:
       doc.close()
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_overlong_formula_is_scaled_onto_the_page(self):
     p = self.path()
     with warnings.catch_warnings(record=True) as caught:
@@ -753,7 +753,7 @@ class TestMathBlockWidth(TempPDFCase):
     self.assertEqual(0, self.ink_outside_page(p), "formula ink passes the page edge")
     self.assertTrue(any("scaled to fit" in str(w.message) for w in caught))
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_multiline_block_needs_no_scaling(self):
     """
     A `$$` block written across source lines is an ordinary formula once the breaks collapse,
@@ -770,7 +770,7 @@ class TestMathBlockWidth(TempPDFCase):
     self.assertEqual(0, self.ink_outside_page(p))
     self.assertEqual([], [w for w in caught if "scaled to fit" in str(w.message)])
 
-  @NEEDS_FITZ
+  @NEEDS_PYMUPDF
   def test_ordinary_formula_is_not_scaled(self):
     p = self.path()
     with warnings.catch_warnings(record=True) as caught:

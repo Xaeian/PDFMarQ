@@ -11,7 +11,7 @@ from pdfmarq.parts import signatures, signatures_height, sign_labels, page_numbe
 from pdfmarq.paper import md_to_pdf, md_into, PaperStyle, lang_style
 from pdfmarq.md import (MarkdownRenderer, MarkdownStyle, top_blocks, metadata_from_frontmatter,
   people, byline)
-from conftest import needs_fitz, pdf_words, pdf_faces, pdf_page_words, pdf_text
+from conftest import needs_pymupdf, pdf_words, pdf_faces, pdf_page_words, pdf_text
 
 # Style fields md2paper sets by name from request options (its `_STYLE` and `pdf_style`).
 MD2PAPER_FIELDS = {
@@ -37,9 +37,9 @@ def style_carries_every_md2paper_field():
 def md_to_pdf_signature_is_stable():
   params = inspect.signature(md_to_pdf).parameters
   assert list(params) == ["md_text", "output_path", "style", "page", "margin", "gutter",
-    "base_dir", "font_dir", "metadata"]
-  assert (params["page"].default, params["margin"].default, params["gutter"].default) \
-    == (A4, 20, 0)
+    "two_sided", "base_dir", "font_dir", "metadata"]
+  assert (params["page"].default, params["margin"].default, params["gutter"].default,
+    params["two_sided"].default) == (A4, 20, 0, False)
 
 def lang_style_layers_engine_and_document_labels():
   style = lang_style("de")
@@ -81,7 +81,7 @@ def top_blocks_tile_the_document(renderer):
   kinds = [tokens[start].type for start, _ in blocks]
   assert kinds == ["heading_open", "paragraph_open", "bullet_list_open", "html_block", "hr"]
 
-@needs_fitz
+@needs_pymupdf
 def slices_render_like_the_whole(tmp_path):
   src = "# Alpha\n\nOne line with a [link](#beta).\n\n## Beta\n\nTwo.\n"
   whole = str(tmp_path / "whole.pdf")
@@ -100,7 +100,7 @@ def slices_render_like_the_whole(tmp_path):
 
 #-------------------------------------------------------------------------------------------- Parts
 
-@needs_fitz
+@needs_pymupdf
 def one_signature_sits_at_the_right_margin(tmp_path):
   path = str(tmp_path / "sign.pdf")
   pdf = PDF(path)
@@ -130,7 +130,7 @@ def page_number_of_a_missing_font_raises(pdf):
   with pytest.raises(FileNotFoundError):
     page_number(pdf, "Page", 1, 1, RichSegment("", family="NoSuchFace"), show_total=True)
 
-@needs_fitz
+@needs_pymupdf
 def page_number_keeps_its_face_beside_signatures(tmp_path):
   path = str(tmp_path / "chrome.pdf")
   md_to_pdf("# One\n\nText.\n", path, style=PaperStyle(sign=True))
@@ -139,7 +139,7 @@ def page_number_keeps_its_face_beside_signatures(tmp_path):
 
 #------------------------------------------------------------------------------------------ md_into
 
-@needs_fitz
+@needs_pymupdf
 def md_into_writes_after_a_cover(tmp_path):
   path = str(tmp_path / "cover.pdf")
   pdf = PDF(path)
@@ -173,7 +173,7 @@ def status_given_as_a_number_is_a_badge(tmp_path):
 
 #-------------------------------------------------------------------------------------- Frontmatter
 
-@needs_fitz
+@needs_pymupdf
 def banner_prints_id_and_version_as_written(tmp_path):
   path = str(tmp_path / "v.pdf")
   md_to_pdf("---\ntitle: T\nid: 0012\nversion: 1.10\n---\n\nBody.\n", path)
@@ -192,15 +192,15 @@ def repeated_title_drops_only_when_nothing_else_goes_with_it(tmp_path, heading, 
   tokens = MarkdownRenderer(PDF(str(tmp_path / "t.pdf"))).parse(heading + "\n\nBody.\n")
   assert (len(_skip_matching_h1(tokens, title)) < len(tokens)) == dropped
 
-@needs_fitz
+@needs_pymupdf
 def people_show_by_name_in_the_banner_and_the_metadata(tmp_path):
-  import fitz
+  import pymupdf
   path = str(tmp_path / "p.pdf")
   md_to_pdf("---\ntitle: T\nauthor:\n  - name: Anna Nowak\n    orcid: 0000-0001\n"
     "  - Jan Kowalski\n---\n\nBody.\n", path)
   text = pdf_text(path)
   assert "Authors: Anna Nowak, Jan Kowalski" in text and "orcid" not in text
-  with fitz.open(path) as doc:
+  with pymupdf.open(path) as doc:
     assert doc.metadata["author"] == "Anna Nowak, Jan Kowalski"
 
 def the_author_label_agrees_with_the_names():
@@ -245,7 +245,7 @@ def a_banner_sets_its_codes_unshaded_with_code_inline_bg_none(tmp_path):
   md_to_pdf(md, str(tmp_path / "b.pdf"), style=PaperStyle(code_inline_bg=None))
   assert (tmp_path / "b.pdf").stat().st_size > 0
 
-@needs_fitz
+@needs_pymupdf
 def a_long_author_row_wraps_beside_the_date_and_pushes_the_text_down(tmp_path):
   path = str(tmp_path / "authors.pdf")
   authors = "".join(f"  - Author Number{k} Longsurname\n" for k in range(8))
@@ -260,3 +260,59 @@ def a_long_author_row_wraps_beside_the_date_and_pushes_the_text_down(tmp_path):
   people = [w for w in words if w[4].startswith(("Author", "Number", "Longsurname"))][1:]
   for first, middle, last in zip(people[0::3], people[1::3], people[2::3]):
     assert round(first[1]) == round(middle[1]) == round(last[1]) # a name never breaks
+
+def two_page_breaks_under_the_compact_banner_leave_no_blank_page(tmp_path):
+  md = "---\ntitle: Test\n---\n\nBefore.\n\n<!-- pagebreak -->\n\n<!-- pagebreak -->\n\nAfter.\n"
+  assert md_to_pdf(md, str(tmp_path / "x.pdf"), style=PaperStyle()).page_num == 2
+
+@needs_pymupdf
+def a_paper_in_columns_balances_its_last_page_under_the_banner(tmp_path):
+  # The compact banner starts the text of later pages lower, and the measure counts from there
+  import warnings
+  sentence = "Words that fill the columns of several pages. "
+  md = "---\ntitle: Test\n---\n\n" + "\n\n".join([sentence * 30] * 9)
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", RuntimeWarning)
+    path = str(tmp_path / "x.pdf")
+    md_to_pdf(md, path, style=PaperStyle(columns=2))
+  pages = pdf_page_words(path)
+  assert len(pages) == 4
+  text = [w for w in pages[-1] if w[4] in sentence.split()]
+  left = max(w[3] for w in text if w[0] < 105 * MM_TO_PT)
+  right = max(w[3] for w in text if w[0] > 105 * MM_TO_PT)
+  assert abs(left - right) <= 2 * 11 * 1.5 # paragraphs split, so two lines at most part them
+
+def a_paper_in_columns_caps_its_last_page_from_under_the_banner(tmp_path, monkeypatch):
+  # The same without PyMuPDF: the last page's cap holds about half of what that page carries
+  calls = []
+  columns = PDF.columns
+  def recorded(self, count, *args, **kwargs):
+    calls.append((self, count, kwargs.get("height")))
+    return columns(self, count, *args, **kwargs)
+  monkeypatch.setattr(PDF, "columns", recorded)
+  sentence = "Words that fill the columns of several pages. "
+  md = "---\ntitle: Test\n---\n\n" + "\n\n".join([sentence * 30] * 9)
+  pdf = md_to_pdf(md, str(tmp_path / "x.pdf"), style=PaperStyle(columns=2))
+  caps = next(height for owner, count, height in calls if owner is pdf and count == 2)
+  assert caps[-1] < 0.75 * (pdf.content_height - pdf.headroom)
+
+#------------------------------------------------------------------------------------ Closing break
+
+ENDING = "---\ntitle: Test\n---\n\nText of the paper.\n\n<!-- pagebreak -->\n"
+
+def a_closing_page_break_opens_no_page_of_chrome(tmp_path):
+  pdf = md_to_pdf(ENDING, str(tmp_path / "end.pdf"))
+  assert pdf.page_num == 1 # a page holding the compact banner and its number alone is gone
+
+def a_closing_page_break_goes_with_a_comment_after_it(tmp_path):
+  pdf = md_to_pdf(ENDING + "\n<!-- the end -->\n", str(tmp_path / "end.pdf"))
+  assert pdf.page_num == 1
+
+def a_closing_page_break_moves_the_signing_lines_on(tmp_path):
+  pdf = md_to_pdf(ENDING, str(tmp_path / "end.pdf"), style=PaperStyle(sign=True))
+  assert pdf.page_num == 2 # the break before them is the author's
+
+def a_closing_page_break_stays_for_what_the_caller_sets_after(tmp_path):
+  pdf = PDF(str(tmp_path / "end.pdf"))
+  md_into(pdf, ENDING)
+  assert pdf.page_num == 2 # `md_into` leaves the file to the caller

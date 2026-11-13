@@ -47,7 +47,7 @@ __extras__ = ("md", [
 #--------------------------------------------------------------------------------------- Public API
 
 from .markdown_style import MarkdownStyle
-from .markdown import MarkdownRenderer, top_blocks
+from .markdown import MarkdownRenderer, top_blocks, first_section, closing_breaks
 from .md_frontmatter import (split_frontmatter, peek_frontmatter, metadata_from_frontmatter,
   pdf_metadata, read_yaml, people, byline)
 from .presets import lang_style, LANG_PRESETS
@@ -57,6 +57,7 @@ __all__ = [
   "MarkdownStyle",
   "MarkdownRenderer",
   "top_blocks",
+  "first_section", "closing_breaks",
   "split_frontmatter",
   "peek_frontmatter",
   "read_yaml",

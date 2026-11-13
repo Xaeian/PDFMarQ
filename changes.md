@@ -1,11 +1,24 @@
 # Changes `pdfmarq`
 
+## `0.7.1` Columns & floats
+
+- Two columns in any document, the last page balanced, `<!-- group wide -->` across the page
+- Pictures and tables float to the next column instead of leaving a gap
+- A table too narrow for its words says so
+- Tables in a face of their own, equation numbers on the left: `font_table`, `math_number_left`
+- Printing on both sides, even pages mirrored for binding: `two_sided`
+- A code line too long goes on indented
+- Fixes across hyphenation, links, formulas, bibliography and page breaks
+
 ## `0.7.0` Slides & articles
 
-- Slides: 16:9 pages, boxes laid out as pages, kerned text with the `[kerning]` extra
+- Slides: 16:9 pages, boxes laid out as pages
+- Kerned text with the `[kerning]` extra
 - Articles: indented paragraphs, ruled and double-ruled tables, columns of their own heights, drop caps
 - No line ends with a lone `w` or `i`, and no unit leaves its number
-- Authors with ORCID and e-mail, a titled bibliography, a Portuguese preset
+- Authors with ORCID and e-mail
+- Titled bibliography
+- Portuguese preset
 - Text a package sets itself, flowing across columns and pages
 - Fix: text sat high in lines, cells and callouts
 - Fixes across `text()`, code blocks, dashes and metadata

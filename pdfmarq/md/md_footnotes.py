@@ -10,8 +10,9 @@ Definition list: `Term` (bold) above `: definition` (indented).
 """
 
 from markdown_it.token import Token
-from ..inline import RichSegment, RichText, render_rich
+from ..inline import RichSegment, RichText, render_rich, measure_rich, flow_rich
 from ..utils import smaller_size
+from .md_blocks import FLOW_MIN_LINES
 
 #----------------------------------------------------------------------------------- FootnotesMixin
 
@@ -25,17 +26,26 @@ class FootnotesMixin:
     `True` in the style's language, as `footnote_word` gives it,
     or its own word, as `"Bibliografia"`.
     `None` draws a thin HR instead, the smaller font signalling reference matter on its own.
+    Either keeps with the first entry, never alone at the foot of a column or page.
     A document that ends with a heading has titled the section itself,
     so the entries follow that heading as a paragraph would, with no second title and no rule.
     """
     s = self.style
     end = self._find_close(tokens, start, "footnote_block_open", "footnote_block_close")
+    # One typographic ladder step below body,
+    # so the bibliography reads at the same relative weight in both formats.
+    biblio_pt = smaller_size(s.body_size)
+    first = next((k for k in range(start + 1, end) if tokens[k].type == "footnote_open"), None)
+    entry = None if first is None else self._entry(tokens, first, end, biblio_pt)[1]
+    lead = 0 if entry is None else measure_rich(self.pdf, entry) # the first entry
     if start > 0 and tokens[start - 1].type == "heading_close":
       pass # the author's own title, its level and its word, right above the entries
     elif s.footnote_label:
       title = s.footnote_word if s.footnote_label is True else s.footnote_label
-      self._render_heading(2, self._md.parseInline(title)[0])
+      self._render_heading(2, self._md.parseInline(title)[0], lookahead_mm=lead)
     else:
+      rule = 2 * s.para_gap + lead
+      if rule <= self.pdf.fresh_height: self.pdf.keep(rule)
       self.pdf.enter(s.para_gap)
       # Full-width HR separator.
       x = self._indent_mm
@@ -45,52 +55,65 @@ class FootnotesMixin:
       self.pdf.line(w, 0, s.hr_thick)
       self._reset_stroke()
       self.pdf.enter(s.para_gap)
-    # One typographic ladder step below body,
-    # so the bibliography reads at the same relative weight in both formats.
-    biblio_pt = smaller_size(s.body_size)
     i = start + 1
     while i < end:
       t = tokens[i]
       if t.type == "footnote_open":
-        label = (t.meta or {}).get("label", "?")
-        j = i + 1
-        while j < end and tokens[j].type != "footnote_close":
-          j += 1
-        # `footnote_anchor` is the back-reference marker, nothing to draw.
-        body = [tk for tk in tokens[i+1:j] if tk.type != "footnote_anchor"]
-        # The first paragraph shares its line with the `[n]` label.
-        # Any further blocks (more paragraphs, lists, code) are rendered recursively below it.
-        first_inline: Token|None = None
-        rest: list[Token] = body
-        if (len(body) >= 3 and body[0].type == "paragraph_open"
-            and body[1].type == "inline" and body[2].type == "paragraph_close"):
-          first_inline = body[1]
-          rest = body[3:]
-        base = RichSegment(
-          text="", family=s.font_body, mode=s.body_mode,
-          size=biblio_pt, color=s.muted_color, hyphenate=s.hyphenate,
-          bind_single_letters=s.bind_single_letters,
-        )
-        prefix = RichSegment(
-          text=f"[{label}] ", family=s.font_body, mode=s.bold_mode,
-          size=biblio_pt, color=s.body_color,
-        )
-        segs: list[RichSegment] = [prefix]
-        if first_inline is not None:
-          segs.extend(self.segments(first_inline, base))
+        label, entry, rest, j = self._entry(tokens, i, end, biblio_pt)
         x = self._indent_mm
-        width = self.pdf.content_width - x
-        self.pdf.keep(s.line_mm(biblio_pt))
+        tall = measure_rich(self.pdf, entry)
+        if tall <= self.pdf.fresh_height: self.pdf.keep(tall) # kept whole where a frame holds it
         y = self.pdf.y
         self.pdf.cursor(x, y)
         self.pdf.anchor(f"{self._anchors}fn_{label}") # [^label] refs navigate here
-        h = render_rich(self.pdf, RichText(segs, width, self._para_align(), s.line_height), x, y)
-        self.pdf.cursor(x, y + h + s.list_gap)
+        if tall > self.pdf.fresh_height: # taller than any frame: it flows on, a line at a time
+          flow_rich(self.pdf, entry, x, min_lines=FLOW_MIN_LINES)
+          self.pdf.cursor(x, self.pdf.y + s.list_gap)
+        else:
+          h = render_rich(self.pdf, entry, x, y)
+          self.pdf.cursor(x, y + h + s.list_gap)
         if rest:
           self._render_footnote_rest(rest, biblio_pt)
         i = j
       i += 1
     return end + 1
+
+  def _entry(self, tokens:list[Token], i:int, end:int, size_pt:float) -> tuple:
+    """
+    The footnote opening at `i` as the bibliography sets it:
+    its label, its first paragraph after the `[n]` label as one text in this frame's width,
+    the blocks after that paragraph and the index of its close.
+    """
+    s = self.style
+    t = tokens[i]
+    label = (t.meta or {}).get("label", "?")
+    j = i + 1
+    while j < end and tokens[j].type != "footnote_close":
+      j += 1
+    # `footnote_anchor` is the back-reference marker, nothing to draw.
+    body = [tk for tk in tokens[i+1:j] if tk.type != "footnote_anchor"]
+    # The first paragraph shares its line with the `[n]` label.
+    # Any further blocks (more paragraphs, lists, code) are rendered recursively below it.
+    first_inline: Token|None = None
+    rest: list[Token] = body
+    if (len(body) >= 3 and body[0].type == "paragraph_open"
+        and body[1].type == "inline" and body[2].type == "paragraph_close"):
+      first_inline = body[1]
+      rest = body[3:]
+    base = RichSegment(
+      text="", family=s.font_body, mode=s.body_mode,
+      size=size_pt, color=s.muted_color, hyphenate=s.hyphenate,
+      bind_single_letters=s.bind_single_letters,
+    )
+    prefix = RichSegment(
+      text=f"[{label}] ", family=s.font_body, mode=s.bold_mode,
+      size=size_pt, color=s.body_color,
+    )
+    segs: list[RichSegment] = [prefix]
+    if first_inline is not None:
+      segs.extend(self.segments(first_inline, base))
+    width = self.pdf.content_width - self._indent_mm
+    return label, RichText(segs, width, self._para_align(), s.line_height), rest, j
 
   def _render_footnote_rest(self, tokens:list[Token], size_pt:float):
     """
@@ -136,9 +159,10 @@ class FootnotesMixin:
           segs = self.segments(inline_token, base)
           x = self._indent_mm
           width = self.pdf.content_width - x
-          self.pdf.keep(s.line_mm(s.body_size))
+          term = RichText(segs, width, line_gap=s.line_height)
+          self.pdf.keep(measure_rich(self.pdf, term)) # drawn at once, so kept whole
           y = self.pdf.y
-          h = render_rich(self.pdf, RichText(segs, width, line_gap=s.line_height), x, y)
+          h = render_rich(self.pdf, term, x, y)
           self.pdf.cursor(x, y + h + s.list_gap)
         i = j + 1
       elif t.type == "dd_open":

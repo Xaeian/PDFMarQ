@@ -9,7 +9,7 @@ import io, os, warnings
 from importlib.util import find_spec
 import pytest
 import reportlab
-from conftest import needs_fitz, pdf_chars, pdf_text, pdf_words, render_md
+from conftest import needs_pymupdf, pdf_chars, pdf_text, pdf_words, render_md
 from pdfmarq import PDF, MM_TO_PT, RichSegment, RichText, render_rich
 from pdfmarq.inline import measure_extent
 from pdfmarq.md import MarkdownStyle
@@ -39,7 +39,7 @@ def kerning_tightens_pairs_where_measured(vera_pdf):
   assert plain - kerned == pytest.approx(11.33 / MM_TO_PT, abs=0.05) # `AV`, `VA`, `AT` and `TA`
 
 @needs_harfbuzz
-@needs_fitz
+@needs_pymupdf
 def kerned_text_is_drawn_as_measured(vera_pdf, tmp_path):
   def span(kern:bool) -> float:
     """Distance (pt) between the first and the last glyph of `AVATAR`, as drawn."""
@@ -51,7 +51,7 @@ def kerned_text_is_drawn_as_measured(vera_pdf, tmp_path):
   assert span(False) - span(True) == pytest.approx(11.33, abs=0.1)
 
 @needs_harfbuzz
-@needs_fitz
+@needs_pymupdf
 def kerned_text_copies_out_unchanged(vera_pdf, tmp_path):
   # ligatures stay off: `ffi` would otherwise copy out as the one letter `ﬃ`
   text = "office affluent AVATAR Type"
@@ -62,7 +62,7 @@ def kerned_text_copies_out_unchanged(vera_pdf, tmp_path):
   assert pdf_text(str(tmp_path / "kern.pdf")).split("\n")[:2] == [text, text]
 
 @needs_harfbuzz
-@needs_fitz
+@needs_pymupdf
 def markdown_style_kerns_its_text(tmp_path):
   def width(kerning:bool) -> float:
     path = str(tmp_path / f"md{kerning}.pdf")

@@ -4,7 +4,7 @@
 
 import warnings
 import pytest
-from conftest import assert_valid_pdf, assert_valid_docx, needs_twin, needs_fitz
+from conftest import assert_valid_pdf, assert_valid_docx, needs_twin, needs_pymupdf
 from pdfmarq.paper import md_to_pdf
 from pdfmarq.md.md_html import (
   is_pagebreak_directive, is_group_open_directive, is_group_close_directive,
@@ -112,11 +112,11 @@ def group_oversized_renders_without_break(tmp_path):
   assert pdf.page_num >= 2
   assert_valid_pdf(path)
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("block", ["table", "code"])
 def group_keeps_a_long_block_with_its_caption(tmp_path, block):
   # measured whole, not by its first rows: the caption never stays behind, nor moves for nothing
-  import fitz
+  import pymupdf
   if block == "table":
     lines, last = ["| A | B |", "|---|---|", *(f"| row {i} | x |" for i in range(1, 16))], "row 15"
   else:
@@ -127,7 +127,7 @@ def group_keeps_a_long_block_with_its_caption(tmp_path, block):
       for i in range(count))
     path = str(tmp_path / f"{block}-{count}.pdf")
     md_to_pdf(f"{text}\n\n<!-- group -->\nCaption.\n\n{body}\n<!-- /group -->\n", path)
-    pages = [page.get_text() for page in fitz.open(path)]
+    pages = [page.get_text() for page in pymupdf.open(path)]
     caption = next(n for n, text in enumerate(pages) if "Caption." in text)
     end = next(n for n, text in enumerate(pages) if last in text)
     assert caption == end, f"{block} after {count} paragraphs: caption on {caption}, end on {end}"

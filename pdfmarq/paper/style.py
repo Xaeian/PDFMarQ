@@ -28,6 +28,8 @@ UNKNOWN_STATUS = ((0.93, 0.93, 0.95), (0.40, 0.44, 0.50))
 @dataclass
 class PaperStyle(MarkdownStyle):
   """`MarkdownStyle` plus the frontmatter banner, compact banner, page number and signatures."""
+  # In columns tables, pictures and groups float to the top of a column, wide groups of a page.
+  floats: bool = True
   # Frontmatter is drawn as a header on page 1;
   # `False` reads it and draws no header.
   banner: bool = True

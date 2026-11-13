@@ -12,7 +12,7 @@ Table columns never squeeze short codes.
 import re, warnings
 import pytest
 from reportlab.graphics.shapes import Drawing
-from conftest import render_md, pdf_words, pdf_glyphs_past, needs_fitz
+from conftest import render_md, pdf_words, pdf_glyphs_past, needs_pymupdf
 from pdfmarq import PDF
 from pdfmarq.constants import MM_TO_PT
 from pdfmarq.fonts import FontManager
@@ -133,14 +133,14 @@ def inline_code_padding_counts_toward_line(pdf):
   for line in _wrap(_tokenize(segs, pdf._metrics), width, pdf._metrics).lines:
     assert _line_width_pt(line) <= width + FIT_EPS_PT
 
-@needs_fitz
+@needs_pymupdf
 def paragraph_with_inline_code_stays_in_margin(tmp_path):
   path = str(tmp_path / "code.pdf")
   pdf = render_md(path, " ".join(f"word `code{i}`" for i in range(60)))
   right = (pdf._page.width - pdf._page.margin_right) * MM_TO_PT
   assert pdf_glyphs_past(path, right) == []
 
-@needs_fitz
+@needs_pymupdf
 def right_aligned_code_column_stays_in_table(tmp_path):
   path = str(tmp_path / "right.pdf")
   cells = " ".join(f"`0x{i:04X}`" for i in range(8))
@@ -163,7 +163,7 @@ def repeated_drawing_is_its_own_run(pdf):
 
 #------------------------------------------------------------------------------------------- Tables
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("cell", ["PP-1", "**PP**-1", "`PP`-1", "[PP](https://x.pl)-1"])
 def short_code_cell_stays_whole(tmp_path, joined, cell):
   path = tmp_path / "cell.pdf"
@@ -171,12 +171,13 @@ def short_code_cell_stays_whole(tmp_path, joined, cell):
   render_md(str(path), "| Code | Description |\n|---|---|\n" + row * 2)
   assert joined(path, "PP", "-1")
 
-@needs_fitz
+@needs_pymupdf
 def long_url_does_not_squeeze_other_columns(tmp_path, joined):
   # column minimums overflow the page: only the URL columns may give way
   path = tmp_path / "urls.pdf"
   url = "https://example.com/very/long/path/to/some/resource/file.pdf"
-  render_md(str(path), f"| A | B | C | D |\n|---|---|---|---|\n| PP-1 | {url} | {url} | OK |\n")
+  with pytest.warns(RuntimeWarning, match="words break inside its cells"):
+    render_md(str(path), f"| A | B | C | D |\n|---|---|---|---|\n| PP-1 | {url} | {url} | OK |\n")
   assert joined(path, "PP", "-1") and joined(path, "O", "K")
 
 def cap_widths_cuts_only_the_widest():

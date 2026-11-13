@@ -90,7 +90,10 @@ It covers a language preset, custom TTF fonts from `./fonts/`, `link_root` for c
 - YAML frontmatter rendered as a styled banner _(logo, status badge, version, dates)_ by `pdfmarq.paper`
 - Letters, statements and contracts by `pdfmarq.legal`: letter header from frontmatter, justified text that flows, two balanced columns, language versions side by side _(see [`legal/guide`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/legal/guide.md))_
 - Mail merge by `pdfmarq.merge`: placeholders, conditions, loops and included clauses, every record checked before the first document _(see [`merge/readme`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/merge/readme.md))_
+- Two columns in any document by `columns=2` in the style, the last page balanced, `<!-- group wide -->` across the page between them
 - Columns in the core API: `pdf.columns(2)`, and everything markdown draws flows through them
+- Page flow in the core API: `pdf.keep(h)` moves on until a frame holds `h`, `pdf.page_break()` starts a page unless nothing is on this one, `pdf.headroom` leaves room above the text of new pages, `pdf.in_columns` tells an open region
+- Pages drawn only to measure: `PDF(..., pictures=False)` leaves the room of images empty, and `lowest_fit(fits, low, high, step)` finds the lowest height that holds balanced columns
 - Page geometry, fonts, banner toggles and locale come from caller's `style=`, never from the document _(see [`md/guide`](https://github.com/Xaeian/PDFMarQ/blob/main/pdfmarq/md/guide.md))_
 - Mini-banner on continuation pages with aspect-aware logo _(width + height caps)_
 - Page numbering `Page N/M` via deferred canvas rendering _(configurable)_

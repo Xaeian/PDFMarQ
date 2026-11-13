@@ -4,15 +4,14 @@
 
 import dataclasses, inspect, io, warnings
 import pytest
-from pdfmarq import PDF, MM_TO_PT
+import pdfmarq.md.markdown as engine
+from pdfmarq import PDF, MM_TO_PT, lowest_fit
 from pdfmarq.paper import md_to_pdf as paper_md_to_pdf
 from pdfmarq.graphics import image_aspect
 from pdfmarq.legal import md_to_pdf, LegalStyle, lang_style
 from pdfmarq.legal.header import _title_segments
-from pdfmarq.legal.measure import Probe, Region
-from pdfmarq.legal.render import _clauses
-from pdfmarq.md import MarkdownRenderer, MarkdownStyle
-from conftest import (needs_fitz, pdf_page_words, pdf_pages, pdf_faces, pdf_images,
+from pdfmarq.md import MarkdownRenderer, MarkdownStyle, first_section
+from conftest import (needs_pymupdf, pdf_page_words, pdf_pages, pdf_faces, pdf_images,
   pdf_strokes, pdf_chars)
 
 LETTER = """---
@@ -73,6 +72,16 @@ def slack() -> float:
   return 2 * s.body_size + (s.head_gap_top + s.para_gap) * MM_TO_PT \
     + 3 * s.body_size * s.line_height + 1
 
+@pytest.fixture
+def clauses():
+  """A preamble and `count` clauses of two paragraphs, each long enough to wrap a few times."""
+  lengthy = ("Sectionmark text that runs long enough to fill a few lines of a narrow column "
+    "and then some more, so a section holds a paragraph of real length. ")
+  def make(count:int) -> str:
+    return "Preamble naming the parties.\n\n" + "\n\n".join(
+      f"## §{i}. Clause {i}\n\n" + lengthy * 2 for i in range(1, count + 1))
+  return make
+
 #-------------------------------------------------------------------------------- md2paper contract
 
 def md_to_pdf_matches_the_paper_signature():
@@ -117,23 +126,31 @@ def columns_must_be_a_whole_number(tmp_path):
 def clauses_start_at_a_top_level_heading(tmp_path):
   renderer = MarkdownRenderer(PDF(str(tmp_path / "x.pdf")), LegalStyle())
   tokens = renderer.parse("Preamble.\n\n> ## Quoted\n> text\n\n## §1. Clause\n\nText.\n")
-  start = _clauses(tokens)
+  start = first_section(tokens)
   assert tokens[start].type == "heading_open" and tokens[start].level == 0
 
+def balancing_takes_few_probes(render, monkeypatch):
+  flows = []
+  flow = MarkdownRenderer._column_flow
+  def counted(self, *args, **kwargs):
+    flows.append(args)
+    return flow(self, *args, **kwargs)
+  monkeypatch.setattr(MarkdownRenderer, "_column_flow", counted)
+  render(SHORT_CONTRACT, columns=2, sign="contract")
+  assert len(flows) <= 3 # the even share, the limit, a step up
+
 def balancing_counts_the_gap_after_the_last_block(tmp_path):
-  style = LegalStyle()
-  pdf = PDF(str(tmp_path / "x.pdf"))
-  tokens = MarkdownRenderer(pdf, style).parse("Text that fills a few lines. " * 6)
-  probe = Probe(pdf, style, tokens, None)
-  drawn = probe.height(tokens, 80) # the lines and the paragraph gap after them
-  lines = drawn - style.para_gap
-  region = Region(tokens, 80, 1, 0)
-  assert probe.fits(region, drawn)
-  assert not probe.fits(region, (lines + drawn) / 2) # room for the lines only
+  renderer = MarkdownRenderer(PDF(str(tmp_path / "x.pdf")), LegalStyle(columns=2))
+  tokens = renderer.parse("Text that fills a few lines. " * 6)
+  # The lines and the gap after them
+  _, drawn, _, _ = renderer._column_flow(tokens, 200, 0, None)
+  lines = drawn - renderer.style.para_gap
+  _, end, _, _ = renderer._column_flow(tokens, 200, 0, (lines + drawn) / 2)
+  assert end == pytest.approx(drawn) # room for the lines only: the gap still overruns it
 
 #------------------------------------------------------------------------------------------- Header
 
-@needs_fitz
+@needs_pymupdf
 def header_rows_follow_the_frontmatter(render, word):
   words = pdf_page_words(render(LETTER, sign=["Sender Name"]))[0]
   sender, date, recipient, title = (word(words, t) for t in
@@ -145,14 +162,14 @@ def header_rows_follow_the_frontmatter(render, word):
   assert all(word(words, t)[2] == pytest.approx(RIGHT_PT, abs=0.5) for t in ("Ltd", "Avenue"))
   assert title[1] > recipient[3] # title below the rows
 
-@needs_fitz
+@needs_pymupdf
 def recipient_moves_to_the_left_margin(render, word):
   words = pdf_page_words(render(LETTER, to_align="L"))[0]
   sender, recipient = word(words, "Sender"), word(words, "Recipient")
   assert recipient[0] == pytest.approx(20 * MM_TO_PT, abs=0.5)
   assert recipient[1] > sender[3] # still its own row, below the sender
 
-@needs_fitz
+@needs_pymupdf
 def ref_is_bold_under_the_recipient(render, word):
   path = render(LETTER.replace("to: [", "ref: VI P 7/25\nto: ["))
   words = pdf_page_words(path)[0]
@@ -162,12 +179,12 @@ def ref_is_bold_under_the_recipient(render, word):
   assert case[1] > word(words, "Avenue")[3] # below the recipient
   assert case[2] == pytest.approx(RIGHT_PT, abs=0.5) # flush right, like it
 
-@needs_fitz
+@needs_pymupdf
 def header_skips_missing_keys(render, word):
   words = pdf_page_words(render("---\ntitle: Statement\n---\n\nI state this.\n"))[0]
   assert word(words, "Statement")[1] == pytest.approx(20 * MM_TO_PT, abs=2) # at the very top
 
-@needs_fitz
+@needs_pymupdf
 def yaml_lists_print_as_lines_and_commas(render, word):
   md = ("---\ntitle: [Service contract, No 7]\nplace: [Gdynia, Poland]\n"
     "to:\n  - Recipient Ltd\n  -\n---\n\nText.\n")
@@ -180,7 +197,7 @@ def yaml_mapping_is_refused(render):
   with pytest.raises(ValueError, match="mapping"):
     render("---\ntitle:\n  name: Contract\n---\n\nText.\n")
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.usefixtures("logo")
 def title_without_room_beside_the_logo_goes_under_it(render, word):
   md = "---\ntitle: Service contract\nlogo: logo.png\n---\n\nText.\n"
@@ -188,7 +205,7 @@ def title_without_room_beside_the_logo_goes_under_it(render, word):
   bottom = pdf_images(path)[0][0][3]
   assert word(pdf_page_words(path)[0], "Service")[1] > bottom
 
-@needs_fitz
+@needs_pymupdf
 def missing_logo_warns_and_renders(render):
   with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
@@ -219,7 +236,7 @@ def title_caps_take_the_font_small_capitals(small_caps_font):
   assert (width("A", "TestSC"), width("A", "TestSC.sc")) == pytest.approx((14, 12)) # `A`, `a.sc`
   assert width("B", "TestSC.sc") == pytest.approx(13) # no small capital: the capital stays
 
-@needs_fitz
+@needs_pymupdf
 def small_capitals_are_drawn(tmp_path, small_caps_font):
   path = str(tmp_path / "caps.pdf")
   md_to_pdf("---\ntitle: Aab\n---\n\nText.\n", path, font_dir=small_caps_font,
@@ -236,14 +253,14 @@ def logo_aspect_follows_the_drawing(tmp_path):
     '<rect x="0" y="0" width="40" height="10"/></svg>', encoding="utf-8")
   assert image_aspect(svg) == pytest.approx(4)
 
-@needs_fitz
+@needs_pymupdf
 def header_font_sets_the_page_around_the_text(render):
   md = "---\ntitle: Contract\n---\n\nPreamble here.\n\n## §1. Subject\n\nClause text.\n"
   faces = pdf_faces(render(md, header_font="Courier", sign=["Signer"]))
   assert all(faces[t][0].startswith("Courier") for t in ("Contract", "Preamble", "Signer"))
   assert not faces["Clause"][0].startswith("Courier")
 
-@needs_fitz
+@needs_pymupdf
 def preamble_takes_its_own_size_and_spacing(render, word):
   md = "First party.\n\nSecond party.\n\n## §1. Subject\n\nClause text.\n"
   def tops(**style) -> tuple:
@@ -259,7 +276,7 @@ def preamble_takes_its_own_size_and_spacing(render, word):
   assert faces["First"][1] == pytest.approx(14)
   assert faces["Clause"][1] == pytest.approx(s.body_size)
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.usefixtures("logo")
 @pytest.mark.parametrize("align, columns", [("R", 2), ("L", 1)])
 def preamble_runs_beside_a_side_logo(render, align, columns):
@@ -273,7 +290,7 @@ def preamble_runs_beside_a_side_logo(render, align, columns):
   clauses = [w for w in words if w[4] == "Sectionmark"]
   assert clauses and all(w[1] > bottom for w in clauses) # the clauses below it
 
-@needs_fitz
+@needs_pymupdf
 def signing_lines_are_dotted(render):
   strokes = pdf_strokes(render(LETTER, sign="contract"))[0]
   lines = [d for d in strokes if d["rect"].height < 1 and d["rect"].width > 100]
@@ -281,7 +298,7 @@ def signing_lines_are_dotted(render):
 
 #---------------------------------------------------------------------------------------------- End
 
-@needs_fitz
+@needs_pymupdf
 def one_signature_on_the_right_attachments_below(render, word):
   words = pdf_page_words(render(LETTER, sign=["Sender Name"]))[0]
   signer = [w for w in words if w[4] == "Sender"][-1] # the label, not the header line
@@ -290,7 +307,7 @@ def one_signature_on_the_right_attachments_below(render, word):
   assert listing[1] > signer[3]
   assert word(words, "1.") and word(words, "2.")
 
-@needs_fitz
+@needs_pymupdf
 def sign_bottom_moves_signatures_and_attachments_down(render, word):
   words = pdf_page_words(render(LETTER, sign=["Sender Name"], sign_bottom=True))[0]
   signer = [w for w in words if w[4] == "Sender"][-1]
@@ -299,19 +316,19 @@ def sign_bottom_moves_signatures_and_attachments_down(render, word):
   assert last[3] > (297 - 20 - 15) * MM_TO_PT # the end sits at the bottom margin
   assert word(words, "Attachments:")[1] > signer[1]
 
-@needs_fitz
+@needs_pymupdf
 def single_page_has_no_page_number(render, word):
   words = pdf_page_words(render(LETTER))[0]
   assert not word(words, "Page")
 
-@needs_fitz
+@needs_pymupdf
 def longer_document_is_numbered(render, word):
   pages = pdf_page_words(render(CONTRACT))
   assert len(pages) > 1 and word(pages[0], "Page")
 
 #------------------------------------------------------------------------------------------ Columns
 
-@needs_fitz
+@needs_pymupdf
 def preamble_spans_columns_start_at_first_section(render, word):
   words = pdf_page_words(render(CONTRACT, columns=2))[0]
   preamble = word(words, "Preamble")
@@ -320,20 +337,20 @@ def preamble_spans_columns_start_at_first_section(render, word):
   assert any(w[2] < HALF_PT for w in body) and any(w[0] > HALF_PT for w in body)
   assert all(w[1] > preamble[3] for w in body)
 
-@needs_fitz
+@needs_pymupdf
 def without_sections_everything_flows_in_columns(render):
   md = "\n\n".join([SECTION * 2] * 12)
   words = pdf_page_words(render(md, columns=2))[0]
   assert any(w[0] > HALF_PT for w in words)
   assert all(w[2] < HALF_PT or w[0] > HALF_PT for w in words) # nothing spans the gap
 
-@needs_fitz
+@needs_pymupdf
 def callout_keeps_its_title_in_columns(render, word):
   # balancing measures the clauses off the page first, so drawing must not depend on that
   md = "Preamble.\n\n## §1. Clause\n\n> [!IMPORTANT]\n> Read this.\n"
   assert word(pdf_page_words(render(md, columns=2))[0], "Important")
 
-@needs_fitz
+@needs_pymupdf
 def short_contract_balances_and_keeps_signatures(render, word, column_ends, slack):
   path = render(SHORT_CONTRACT, columns=2, sign="contract")
   assert pdf_pages(path) == 1
@@ -342,14 +359,14 @@ def short_contract_balances_and_keeps_signatures(render, word, column_ends, slac
   assert abs(left - right) <= slack
   assert word(words, "Client")[1] > max(left, right)
 
-@needs_fitz
+@needs_pymupdf
 def long_region_flows_and_signatures_follow(render, word):
   path = render(CONTRACT, columns=2, sign="contract")
   pages = pdf_page_words(path)
   assert len(pages) == 2
   assert word(pages[-1], "Client") and not word(pages[0], "Client")
 
-@needs_fitz
+@needs_pymupdf
 def long_region_balances_its_last_page(render, word, column_ends, slack):
   pages = pdf_page_words(render(CONTRACT, columns=2, sign="contract"))
   first_left, first_right = column_ends(pages[0])
@@ -357,3 +374,37 @@ def long_region_balances_its_last_page(render, word, column_ends, slack):
   left, right = column_ends(pages[-1])
   assert abs(left - right) <= slack
   assert word(pages[-1], "Client")[1] > max(left, right)
+
+@needs_pymupdf
+def text_filling_one_column_balances_and_keeps_its_signatures(render, clauses):
+  # One column all but full misses its cap by the gap after the last block, balanced it fits
+  pages = pdf_page_words(render(clauses(5), columns=2, sign="contract"))
+  assert len(pages) == 1
+  assert any(w[0] > HALF_PT for w in pages[0] if w[4] == "Sectionmark")
+
+@needs_pymupdf
+def last_page_balances_when_the_signing_lines_go_on(render, clauses, word, column_ends, slack):
+  pages = pdf_page_words(render(clauses(8), columns=2, sign="contract"))
+  assert word(pages[-1], "Client") and not any(w[4] == "Sectionmark" for w in pages[-1])
+  left, right = column_ends(pages[-2])
+  assert abs(left - right) <= slack
+
+def a_section_held_whole_splits_to_balance_the_last_page(render, monkeypatch):
+  # A page-tall column holds the section whole, a lower one sends its last clauses on
+  found = []
+  def watched(fits, low, high, step, *rest, **options):
+    height = lowest_fit(fits, low, high, step, *rest, **options)
+    found.append((low, height, step))
+    return height
+  monkeypatch.setattr(engine, "lowest_fit", watched)
+  text = "Words that fill a column of the page for a while. " * 6
+  clauses = "\n\n".join(f"{k}. {text}" for k in range(1, 4))
+  render(f"## One\n\n{text}\n\n## Two\n\n{clauses}\n", columns=2, keep_together=True)
+  (share, height, line), = found
+  assert height - share <= 2 * line # near the even share, not as tall as the section
+
+#------------------------------------------------------------------------------------ Closing break
+
+def a_closing_page_break_without_signatures_opens_no_page(tmp_path):
+  pdf = md_to_pdf("## One\n\nA clause.\n\n<!-- pagebreak -->\n", str(tmp_path / "end.pdf"))
+  assert pdf.page_num == 1 # nothing but the footer would stand on it

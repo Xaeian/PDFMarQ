@@ -37,6 +37,7 @@ class MarkdownStyle:
   font_body: str = "Vera"
   font_head: str = "Vera"
   font_mono: str = "Courier" # PDF core 14, no TTF needed
+  font_table: str|None = None # face of table cells, the body's when `None`
   # Inert: emoji are drawn as pictures, and the field lets a docmarq style carry over.
   emoji_font: str|None = "Segoe UI Emoji"
 
@@ -87,7 +88,8 @@ class MarkdownStyle:
   line_height: float = 1.4 # ratio of font size
   para_gap: float = 3 # mm between paragraphs
   # mm the first line of a body paragraph starts in, as books and journals set text.
-  # A paragraph of a list, a quote or a footnote keeps flush.
+  # A paragraph of a list, a quote or a footnote keeps flush,
+  # and so does one opening in lowercase under a formula, going on with its sentence.
   first_indent: float = 0
   head_gap_top: float = 3 # mm above headings
   head_gap_bot: float = 1.5 # mm below headings
@@ -153,8 +155,10 @@ class MarkdownStyle:
   # Each needs its own npm package installed: `@mathjax/mathjax-<font>-font`.
   # Ignored by the mathtext engine, which reads `math_fontset` instead.
   math_font: str = "newcm"
-  math_block_gap: float = 3.5  # mm below a block equation, and above it the previous block's gap
-  math_numbering: bool = True  # auto (1), (2), (3) for block math
+  # Gap below a block equation in mm, the previous block's gap above it
+  math_block_gap: float = 3.5
+  math_numbering: bool = True     # auto (1), (2), (3) for block math
+  math_number_left: bool = False  # the number at the left edge, as some journals set it
 
   # Layout flags
   h1_underline: bool = True
@@ -185,7 +189,18 @@ class MarkdownStyle:
   # `False` lets text flow, so columns end evenly:
   # a paragraph splits with at least two lines on each side, a list goes item by item,
   # and a heading reserves room only for itself and three lines of the text after it.
-  keep_together: bool = True
+  # `None` keeps them whole in one column and lets them flow in `columns`.
+  keep_together: bool|None = None
+  # `2` sets the text in two columns `column_gap` apart, its last page balanced,
+  # the text before the first `##` across the page, as a contract's preamble or a paper's lead.
+  # A group opened `wide` spans the page between runs of columns, which go on under it.
+  columns: int = 1
+  column_gap: float = 8 # mm
+  # In columns, a table, picture or group that misses the rest of a column waits for the top
+  # of the next one while the text fills this one, their order kept,
+  # and a group opened `wide` waits for the top of the next page.
+  # `False` sets each where it stands, as a contract needs.
+  floats: bool = False
 
   # GitHub callout titles (`> [!NOTE]`, `> [!TIP]`, ...).
   # Override for localization or custom wording. Color + icon stay constant per type.

@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("jinja2")
 from pdfmarq.merge import fill, merge, MergeError
 from pdfmarq.md import split_frontmatter
-from conftest import needs_fitz, pdf_text
+from conftest import needs_pymupdf, pdf_text
 
 LETTER = ('---\ntitle: Contract\ndate: "{{ signed }}"\n'
   'to: ["{{ name }} {{ surname }}", "{{ city }}"]\n---\n\n'
@@ -64,7 +64,7 @@ def same_record_gives_the_same_text():
 
 #------------------------------------------------------------------------------------------- Values
 
-@needs_fitz
+@needs_pymupdf
 def values_print_literally(tmp_path):
   from pdfmarq.paper import md_to_pdf, PaperStyle
   template = "\n\n".join(f"{{{{ v[{i}] }}}}" for i in range(len(VALUES))) + "\n"
@@ -379,7 +379,7 @@ def fields_read_anywhere_count_as_used(tmp_path):
 
 #------------------------------------------------------------------------------------------- Render
 
-@needs_fitz
+@needs_pymupdf
 def filled_contract_prints_its_record_literally(tmp_path):
   from pdfmarq.legal import md_to_pdf, lang_style
   template = ('---\ntitle: Contract\nto: ["{{ company }}"]\n---\n\n| Task | Hours |\n|---|--:|\n'

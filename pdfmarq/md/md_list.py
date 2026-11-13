@@ -75,16 +75,15 @@ class ListMixin:
     end = self._find_close(tokens, start, open_type, close_type)
     # Keep-together: top-level list, if it fits an empty frame but not here → next frame.
     # Flowing text goes item by item instead, each item keeping its own marker.
-    if self._list_depth == 0 and s.keep_together:
+    if self._list_depth == 0 and self._keeps_whole:
       body_line_mm = s.line_mm(s.body_size)
       n_items = sum(
         1 for j in range(start, end + 1)
         if tokens[j].type == "list_item_open"
       )
       list_h = n_items * body_line_mm * 1.2 + s.para_gap
-      page_avail = self.pdf.content_height
-      if list_h <= page_avail * 0.9 and list_h > (page_avail - self.pdf.y):
-        self.pdf.next_frame()
+      if list_h <= self.pdf.fresh_height * 0.9 and list_h > self.pdf.content_height - self.pdf.y:
+        self.pdf.keep(list_h)
     if self._list_depth == 0:
       self.pdf.enter(LIST_LEAD_MM)
     self._list_depth += 1
@@ -180,7 +179,7 @@ class ListMixin:
             width = self.pdf.content_width - self._indent_mm - column
             text = RichText(segs, width, self._para_align(), s.line_height)
             line_h = wrap_line_heights(self.pdf, text)
-            if not s.keep_together: line_h = flow_head(line_h)
+            if not self._keeps_whole: line_h = flow_head(line_h)
             return max(sum(line_h), body_line_mm)
           except Exception:
             pass

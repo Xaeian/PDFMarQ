@@ -39,6 +39,10 @@ def _image_row(inline_token:Token) -> list[Token]|None:
     else: return None
   return imgs or None
 
+def _goes_on(inline:Token) -> bool:
+  """Whether a paragraph goes on with the sentence of a formula above it: it opens in lowercase."""
+  return inline.content.lstrip()[:1].islower()
+
 def _image_ref(img:Token) -> tuple[str, str, dict]:
   """`(src, alt, attrs)` of an image token, whatever shape markdown-it left `attrs` in."""
   attrs = img.attrs if isinstance(img.attrs, dict) else dict(img.attrs or [])
@@ -124,8 +128,8 @@ class BlocksMixin:
     size = self._heading_size(level)
     # h1 page-break is unconditional here:
     # a frontmatter title is drawn by the document package, never through this path.
-    if level == 1 and s.h1_page_break and not self.pdf.at_top:
-      self.pdf.new_page()
+    if level == 1 and s.h1_page_break:
+      self.pdf.page_break()
     elif not self.pdf.at_top:
       self.pdf.enter(s.head_gap_top)
     base = RichSegment(
@@ -139,7 +143,7 @@ class BlocksMixin:
     ruled = (level == 1 and s.h1_underline) or (level == 2 and s.h2_underline)
     # Keep-with-next: reserve the heading and at least 3 body lines.
     min_followup_mm = s.line_mm(s.body_size) * 3
-    if next_kind and not s.keep_together:
+    if next_kind and not self._keeps_whole:
       heading_block_mm = measure_rich(self.pdf, text) \
         + (2 if ruled else 0) + s.head_gap_bot
       followup_mm = min_followup_mm + (LIST_LEAD_MM if next_kind == "list" else 0)
@@ -232,7 +236,11 @@ class BlocksMixin:
     if self._indent_mm or self._list_depth: return 0
     return self.style.first_indent
 
-  def _render_paragraph(self, inline_token:Token):
+  def _render_paragraph(self, inline_token:Token, after_math:bool=False):
+    """
+    A body paragraph, its first line set in by `_first_indent`,
+    unless it goes on with the sentence of a formula right `after_math`: it opens in lowercase.
+    """
     s = self.style
     imgs = _image_row(inline_token)
     if imgs:
@@ -242,7 +250,8 @@ class BlocksMixin:
     x = self._indent_mm
     width = self.pdf.content_width - x
     spacing = s.list_gap if self._list_depth > 0 else s.para_gap
-    text = RichText(segments, width, self._para_align(), s.line_height, self._first_indent())
+    indent = 0 if after_math and _goes_on(inline_token) else self._first_indent()
+    text = RichText(segments, width, self._para_align(), s.line_height, indent)
     body_line_mm = s.line_mm(s.body_size)
     line_h = wrap_line_heights(self.pdf, text)
     para_h = sum(line_h) or body_line_mm
@@ -251,15 +260,19 @@ class BlocksMixin:
     if para_h > room:
       # flowing text splits once its head fits here and as many lines are left for the next frame
       head = flow_head(line_h)
-      flows = not s.keep_together and len(head) < len(line_h) and sum(head) <= room
+      flows = not self._keeps_whole and len(head) < len(line_h) and sum(head) <= room
       if para_h > page_h or flows:
         # Taller than a whole page, or flowing: split it.
         # Otherwise every line past the page bottom is drawn off-page and lost.
-        flow_rich(self.pdf, text, x, min_lines=1 if s.keep_together else FLOW_MIN_LINES)
+        flow_rich(self.pdf, text, x, min_lines=1 if self._keeps_whole else FLOW_MIN_LINES)
         self.pdf.cursor(x, self.pdf.y + spacing)
         return
       # Fits a frame, just not what is left of this one - keep it whole.
       self.pdf.next_frame()
+      if para_h > self.pdf.content_height - self.pdf.y: # blocks waiting there took its top
+        flow_rich(self.pdf, text, x, min_lines=1 if self._keeps_whole else FLOW_MIN_LINES)
+        self.pdf.cursor(x, self.pdf.y + spacing)
+        return
     y = self.pdf.y
     self.pdf.cursor(x, y)
     h = render_rich(self.pdf, text, x, y)
@@ -316,26 +329,32 @@ class BlocksMixin:
     w = self.pdf.content_width - x
     text_width_mm = w - 2 * pad - left_offset
     min_line_h_mm = s.line_mm(s.code_block_size)
-    code_lines = [RichText(line_segs, text_width_mm, line_gap=s.line_height,
-      preserve_leading_space=True) for line_segs in per_line_segs]
+    # A line too long for the block runs on two characters in, so it reads as one line, not two
+    hang = 2 * self.pdf.metrics.text_width("x", s.font_mono, s.mono_mode, s.code_block_size)
+    hang /= MM_TO_PT
+    code_lines = [RichText(line_segs, text_width_mm - hang, line_gap=s.line_height,
+      indent_mm=-hang, preserve_leading_space=True) for line_segs in per_line_segs]
     line_heights_mm = [max(measure_rich(self.pdf, line), min_line_h_mm) for line in code_lines]
     content_h_mm = sum(line_heights_mm)
     frame_h_mm = 2 * pad + v_extra # padding + border, per drawn chunk
     block_h = content_h_mm + frame_h_mm
     radius = s.code_block_radius
-    page_h = self.pdf.content_height
-    # Fits a page but not the rest of this one: move it whole.
-    if block_h > (page_h - self.pdf.y) and block_h <= page_h and not self.pdf.at_top:
-      self.pdf.next_frame()
+    # The gap under it stands above it too, where the paragraph before it leaves less
+    above = max(0.0, s.code_block_gap - s.para_gap)
+    # Whole where a fresh frame holds it: moved on, past a short column too, if this one does not
+    if above + block_h <= self.pdf.fresh_height: self.pdf.keep(above + block_h)
+    if not self.pdf.at_top: self.pdf.cursor(x, self.pdf.y + above)
+    # Lines set as low as half their descenders: as much room from the frame to the capitals
+    # of the first line as from the last baseline to the frame, which the eye measures
+    _, depth = self.pdf.metrics.letter_span(s.font_mono, s.mono_mode, s.code_block_size)
+    sink = depth / 2 / MM_TO_PT
     # A taller block is drawn in chunks, one frame per chunk:
     # lines placed below the page bottom fall outside the MediaBox and are invisible.
     n = len(per_line_segs)
     i = 0
     while i < n:
+      self.pdf.keep(frame_h_mm + line_heights_mm[i]) # room for a line inside the frame at least
       avail = self.pdf.content_height - self.pdf.y
-      if avail < frame_h_mm + line_heights_mm[i] and not self.pdf.at_top:
-        self.pdf.next_frame()
-        avail = self.pdf.content_height - self.pdf.y
       count, used = fit_lines(line_heights_mm, i, avail - frame_h_mm)
       chunk_h = used + frame_h_mm
       y = self.pdf.y
@@ -346,9 +365,9 @@ class BlocksMixin:
       self.pdf.stroke_color(*s.code_block_border[:3])
       self.pdf.round_rect(w, chunk_h, radius, thickness=0.4, fill=False)
       self._reset_stroke()
-      text_y = y + pad + v_extra / 2
+      text_y = y + pad + v_extra / 2 + sink
       for idx in range(i, i + count):
-        render_rich(self.pdf, code_lines[idx], x + pad + left_offset, text_y)
+        render_rich(self.pdf, code_lines[idx], x + pad + left_offset + hang, text_y)
         text_y += line_heights_mm[idx]
       self.pdf.cursor(x, y + chunk_h)
       i += count
@@ -509,7 +528,7 @@ class BlocksMixin:
 
   def _render_math_block(self, formula:str):
     """
-    Render a block-level math formula, centered. Numbered on the right:
+    Render a block-level math formula, centered. Numbered on the right, or the left:
     a `\tag{...}` names the label, otherwise the auto counter does.
     """
     s = self.style
@@ -552,6 +571,7 @@ class BlocksMixin:
       )
       # its line centred on the formula, as a line centres its letters
       num_y = self.pdf.y + (h_mm - s.line_mm(s.body_size)) / 2
-      number = RichText([num_seg], content_w_mm, Align.RIGHT, s.line_height)
+      side = Align.LEFT if s.math_number_left else Align.RIGHT
+      number = RichText([num_seg], content_w_mm, side, s.line_height)
       render_rich(self.pdf, number, self._indent_mm, num_y)
     self.pdf.cursor(self._indent_mm, self.pdf.y + h_mm + s.math_block_gap)

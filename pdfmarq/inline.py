@@ -282,20 +282,24 @@ def _hyphen_split(
 
 def _hyphen_split_unit(
   unit:list[_Word], fits:Callable[[float], bool], prev:_Word|None, metrics,
-) -> tuple[list[_Word], _Word]|None:
+) -> tuple[list[_Word], list[_Word]]|None:
   """
   `unit` cut at a hyphenation point of its last word, as `_hyphen_split` cuts it:
-  the tokens before that word and its head, which still `fit` the line after `prev`, and the rest.
+  the tokens up to the cut, which still `fit` the line after `prev`, and the tokens after it.
   So a one-letter word bound to the word after it stays on its line with the head of that word.
-  A last word spanning segments stays whole.
+  A word spanning segments, as `*word*,` sets the comma apart, splits in its last piece that can,
+  the pieces after it going on with the rest.
   """
-  *lead, last = unit
-  if lead and not lead[-1].is_space: return None
-  lead_pt = _extent_pt(lead, prev)
-  split = _hyphen_split(last, lambda width: fits(lead_pt + width), metrics)
-  if split is None: return None
-  head, rest = split
-  return [*lead, head], rest
+  start = len(unit)
+  while start and not unit[start - 1].is_space: start -= 1 # where the last word begins
+  for k in range(len(unit) - 1, start - 1, -1):
+    lead = unit[:k]
+    lead_pt = _extent_pt(lead, prev)
+    split = _hyphen_split(unit[k], lambda width: fits(lead_pt + width), metrics)
+    if split is None: continue
+    head, rest = split
+    return [*lead, head], [rest, *unit[k + 1:]]
+  return None
 
 def _run_pad_pt(seg:RichSegment) -> float:
   """
@@ -513,7 +517,7 @@ def _wrap(
       taken, rest = split
       append(taken, _extent_pt(taken, prev))
       flush()
-      units.appendleft([rest]) # the rest of the word opens the next line
+      units.appendleft(rest) # the rest of the word opens the next line
       continue
     if current and not indent_only():
       fresh = lambda width: width <= limit # a line of its own
@@ -878,8 +882,8 @@ def flow_rich(pdf, text:RichText, x_mm:float=0, min_lines:int=1):
   moved = False # the lines from `i` on took their one step to the next frame
   while i < n:
     room = pdf.content_height - pdf.y
-    if room < sum(heights[i:i + min_lines]) and not pdf.at_top:
-      pdf.next_frame()
+    if room < sum(heights[i:i + min_lines]):
+      pdf.keep(_in_unit(pdf, sum(heights[i:i + min_lines])))
       room = pdf.content_height - pdf.y
     count, used = fit_lines(heights, i, room)
     short = min_lines - (n - i - count) # lines the next frame would lack

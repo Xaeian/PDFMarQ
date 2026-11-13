@@ -244,7 +244,7 @@ def md_to_signatures_share_arg_names():
   import inspect
   pdf_params = set(inspect.signature(md_to_pdf).parameters)
   doc_params = set(inspect.signature(md_to_docx).parameters)
-  shared = {"md_text", "output_path", "style", "page", "margin", "gutter",
+  shared = {"md_text", "output_path", "style", "page", "margin", "gutter", "two_sided",
     "base_dir", "font_dir", "metadata"}
   assert not (shared - pdf_params), f"md_to_pdf missing: {shared - pdf_params}"
   assert not (shared - doc_params), f"md_to_docx missing: {shared - doc_params}"
@@ -350,8 +350,11 @@ def shared_helpers_are_identical():
   assert pdf_parts.LANG_LABELS == doc_parts.LANG_LABELS
   for name in ("lines_of", "_one_line"):
     same(pdf_header, doc_header, name)
-  for name in ("_clauses", "_kind", "_preview", "_pair"):
+  for name in ("_kind", "_preview", "_pair"):
     same(pdf_legal, doc_legal, name, ("md_html.is_", "is_"))
+  import pdfmarq.md.markdown as pdf_engine, docmarq.md.renderer as doc_engine
+  for name in ("first_section", "_runs", "closing_breaks"):
+    same(pdf_engine, doc_engine, name, ("md_html.", ""))
 
 def legal_styles_match():
   # the same fields and defaults on both sides, so a legal script switches by its import
@@ -494,11 +497,11 @@ def repeated_headings_number_alike():
 
 def page_number_reads_alike(tmp_path):
   # pdfmarq prints the numbers, Word shows its fields: the same label, digits and slash
-  fitz = pytest.importorskip("fitz")
+  pymupdf = pytest.importorskip("pymupdf")
   import re, zipfile
   md_to_pdf("Body.", str(tmp_path / "n.pdf"))
   md_to_docx("Body.", str(tmp_path / "n.docx"))
-  page = fitz.open(str(tmp_path / "n.pdf"))[0].get_text()
+  page = pymupdf.open(str(tmp_path / "n.pdf"))[0].get_text()
   footer = zipfile.ZipFile(tmp_path / "n.docx").read("word/footer1.xml").decode("utf-8")
   docx_text = "".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", footer))
   assert "Page 1/1" in page

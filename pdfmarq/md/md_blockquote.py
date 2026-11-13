@@ -26,6 +26,7 @@ CALLOUT_TYPES = {
   "CAUTION": ("🛑", "callout_label_caution"),
 }
 _CALLOUT_MARKER_RE = re.compile(rf"^\[!({'|'.join(CALLOUT_TYPES)})\]\s*")
+_SET_MM = 0.5 # a part of a quote the cursor moved less than this holds none of its text
 
 def _callout_palette(style, name:str) -> tuple[tuple, tuple]:
   """
@@ -87,12 +88,10 @@ class BlockquoteMixin:
     if callout:
       total_h += body_line_mm * 1.2 # title line
     total_h += body_line_mm * 0.5 # padding
-    page_avail = self.pdf.content_height
     # Inside a `<!-- group -->` the group keeps its blocks together:
     # a page break of the quote's own would leave the figure or code above it behind.
     if not self._in_group:
-      if total_h <= page_avail * 0.9 and total_h > (page_avail - self.pdf.y):
-        self.pdf.next_frame()
+      if total_h <= self.pdf.fresh_height * 0.9: self.pdf.keep(total_h)
     x_start = self._indent_mm
     y_start = self.pdf.y
     if callout: # wider bar + colored text
@@ -125,7 +124,16 @@ class BlockquoteMixin:
     # because `_render_paragraph` and `_render_list` already key off it.
     if callout:
       self._list_depth += 1
-    self._render_tokens(quote[1:last])
+    # A quote running over frames gets its bar on each part that holds some of it,
+    # drawn as the part ends.
+    part = {"top": y_start, "text": y_start + v_extra / 2} # where the bar and the text begin
+    def leave(pdf):
+      if pdf.y > part["text"] + _SET_MM:
+        self._quote_bar(x_start, part["top"], pdf.y, bar_width, bar_color)
+    def enter(pdf):
+      part["top"] = part["text"] = pdf.y
+    with self.pdf.frames(enter=enter, leave=leave):
+      self._render_tokens(quote[1:last])
     if callout:
       self._list_depth -= 1
     self._indent_mm = old_indent
@@ -133,13 +141,20 @@ class BlockquoteMixin:
     # The last child added `list_gap` (callout) or `para_gap` (plain),
     # taken off again so the bar ends flush with the last text line.
     trailing = s.list_gap if callout else s.para_gap
-    bar_h = max(y_after_content - trailing - y_start, s.body_size / MM_TO_PT)
-    self.pdf.cursor(x_start + 1, y_start)
-    self.pdf.color(*bar_color)
-    self.pdf.rect(bar_width, bar_h)
-    self._reset_stroke()
+    bottom = max(y_after_content - trailing, part["top"] + s.body_size / MM_TO_PT)
+    self._quote_bar(x_start, part["top"], bottom, bar_width, bar_color)
     # Restore para_gap after a callout: the interior used the tighter list_gap,
     # so the outer flow needs the difference back.
     final_y = y_after_content + (s.para_gap - s.list_gap) if callout else y_after_content
     self.pdf.cursor(x_start, final_y)
     return end + 1
+
+  def _quote_bar(self, x:float, top:float, bottom:float, width:float, color:tuple):
+    """The quote's bar from `top` to `bottom` mm of this frame, the cursor left where it stood."""
+    if bottom <= top: return # the quote moved on before setting anything here
+    x_was, y_was = self.pdf.x, self.pdf.y
+    self.pdf.cursor(x + 1, top)
+    self.pdf.color(*color)
+    self.pdf.rect(width, max(bottom - top, 0))
+    self._reset_stroke()
+    self.pdf.cursor(x_was, y_was)

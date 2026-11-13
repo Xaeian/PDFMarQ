@@ -6,13 +6,13 @@ words split at the hyphenation points of the text's language
 and one-letter words keep to the word after them.
 """
 
-import io, sys
+import io, re, sys
 import pytest
 from pdfmarq import PDF, Align, MM_TO_PT, RichSegment, RichText, render_rich
 from pdfmarq.inline import (_Word, _justify_ratio, _spaced_width, _stretches, _JUSTIFY_SHRINK,
   _tokenize, _wrap, measure_extent, wrap_line_heights)
 from pdfmarq.md import MarkdownStyle
-from conftest import needs_fitz, pdf_words, pdf_links, pdf_chars, pdf_text, render_md, tight_mm
+from conftest import needs_pymupdf, pdf_words, pdf_links, pdf_chars, pdf_text, render_md, tight_mm
 
 TEXT = "Justified text spreads its spaces until every line but the last meets the edge. " * 5
 PHRASE = "Tighter spaces fit"
@@ -67,7 +67,7 @@ def tight():
 
 #-------------------------------------------------------------------------------------------- Lines
 
-@needs_fitz
+@needs_pymupdf
 def lines_meet_the_right_edge(lines_of):
   lines = lines_of([RichSegment(TEXT)])
   right = LEFT_PT + WIDTH_MM * MM_TO_PT
@@ -77,21 +77,21 @@ def lines_meet_the_right_edge(lines_of):
     assert line[-1][2] == pytest.approx(right, abs=0.5)
   assert lines[-1][-1][2] < right - 5
 
-@needs_fitz
+@needs_pymupdf
 def hard_break_keeps_its_line_left(lines_of):
   lines = lines_of([RichSegment("Short line"), RichSegment("\n"), RichSegment(TEXT)])
   right = LEFT_PT + WIDTH_MM * MM_TO_PT
   assert lines[0][-1][2] < right - 50
   assert lines[1][-1][2] == pytest.approx(right, abs=0.5)
 
-@needs_fitz
+@needs_pymupdf
 def left_alignment_stays_ragged(lines_of):
   lines = lines_of([RichSegment(TEXT)], align=Align.LEFT)
   right = LEFT_PT + WIDTH_MM * MM_TO_PT
   assert all(line[-1][2] < right + 0.5 for line in lines)
   assert any(line[-1][2] < right - 2 for line in lines[:-1])
 
-@needs_fitz
+@needs_pymupdf
 def link_covers_the_stretched_spaces(tmp_path):
   path = str(tmp_path / "link.pdf")
   pdf = PDF(path)
@@ -112,7 +112,7 @@ def justified_line_tightens_to_take_a_word(tight):
   assert len(wrap_line_heights(pdf, RichText(segs, tight, Align.JUSTIFY))) == 1
   assert len(wrap_line_heights(pdf, RichText(segs, tight, Align.LEFT))) == 2
 
-@needs_fitz
+@needs_pymupdf
 def tightened_line_ends_at_the_edge(lines_of, tight):
   lines = lines_of([RichSegment(PHRASE)], width=tight)
   assert len(lines) == 1
@@ -147,6 +147,15 @@ def words_split_at_hyphenation_points(broken):
   joined = "".join(line[:-1] if line.endswith("-") else line + " " for line in lines)
   assert joined.strip() == POLISH
 
+def a_word_styled_apart_from_its_stop_splits_as_in_one_style(broken):
+  # `*Zleceniodawcy*,` as markdown sets it: the comma after the word stands in a segment of its own
+  pytest.importorskip("pyphen")
+  styled = ("Zleceniodawcy", "testów")
+  apart = [RichSegment(part, italic=part in styled, hyphenate="pl")
+    for part in re.split(f"({'|'.join(styled)})", POLISH)]
+  for width in range(25, 61):
+    assert broken(apart, width) == broken([RichSegment(POLISH, hyphenate="pl")], width), width
+
 def words_stay_whole_without_a_language(broken):
   assert not any(line.endswith("-") for line in broken([RichSegment(POLISH)]))
 
@@ -166,7 +175,7 @@ def code_and_links_never_split(broken):
       RichSegment(POLISH, hyphenate="pl", link_url="https://example.com")):
     assert not any(line.endswith("-") for line in broken([seg]))
 
-@needs_fitz
+@needs_pymupdf
 def hyphenated_line_meets_the_edge(lines_of):
   pytest.importorskip("pyphen")
   lines = lines_of([RichSegment(POLISH, hyphenate="pl")], width=40)
@@ -195,7 +204,7 @@ def letter_spacing_widens_the_text():
   spaced = measure_extent(pdf, [RichSegment("CAPS", char_space=2)])[1]
   assert spaced - plain == pytest.approx(4 * 2 / MM_TO_PT)
 
-@needs_fitz
+@needs_pymupdf
 def letter_spacing_is_drawn(tmp_path):
   def span(segment:RichSegment) -> float:
     """Distance (pt) from the first glyph to the last: spaced letters read as words apart."""
@@ -243,7 +252,7 @@ def binds_keeps_a_letter_of_the_language_and_a_number_to_its_unit():
   assert binds("x", "(W", "home", pl) and not binds("point", "a)", "and", pl)
   assert not binds("supply", "5", "V", "") # nothing binds without letters
 
-@needs_fitz
+@needs_pymupdf
 def a_unit_keeps_one_plain_space_from_its_number(lines_of):
   # justifying stretches the other spaces of a line, never the one before a unit
   text = "The loss falls by 15 % at 5 V while the board draws 50 mA from a small cell. " * 3
@@ -271,7 +280,7 @@ def binding_changes_only_lines_a_letter_would_end(broken):
     bound = broken([RichSegment(POLISH, hyphenate="pl", bind_single_letters="aiouwz")], width)
     assert bound == free, width
 
-@needs_fitz
+@needs_pymupdf
 def markdown_binds_single_letters(tmp_path, line_ends):
   # paragraphs follow the style, and copy out with their plain spaces
   def ends(bind:bool) -> list[str]:
@@ -283,7 +292,7 @@ def markdown_binds_single_letters(tmp_path, line_ends):
   copied = pdf_text(str(tmp_path / "bindTrue.pdf"))
   assert "a car" in copied and "\u00a0" not in copied
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("part", ["title", "heading", "cell"])
 def a_heading_a_table_cell_and_the_banner_title_bind_single_letters(line_ends, part):
   from pdfmarq.paper import md_to_pdf, PaperStyle
@@ -301,7 +310,7 @@ def a_heading_a_table_cell_and_the_banner_title_bind_single_letters(line_ends, p
   assert "a" in ends(False)
   assert "a" not in ends(True)
 
-@needs_fitz
+@needs_pymupdf
 def the_title_of_a_letter_binds_single_letters(line_ends):
   from pdfmarq.legal import md_to_pdf, LegalStyle
   md = f"---\ntitle: {ARTICLES[:200].strip()}\n---\n\nBody.\n"

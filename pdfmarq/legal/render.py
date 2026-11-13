@@ -11,14 +11,12 @@ from ..core import PDF
 from ..constants import PageSize, A4
 from ..inline import RichSegment
 from ..parts import signatures, signatures_height, page_number
-from ..md import (MarkdownRenderer, split_frontmatter, pdf_metadata, top_blocks,
-  is_pagebreak_directive, is_group_open_directive)
+from ..md import (MarkdownRenderer, split_frontmatter, pdf_metadata, top_blocks, first_section,
+  is_pagebreak_directive, is_group_open_directive, closing_breaks)
 from .style import LegalStyle
 from .header import Side, draw_header, draw_attachments, attachments_height, lines_of
-from .measure import Probe, Region, balanced_height, balanced_pages
+from .measure import Probe
 
-# With fewer body lines than this left on the page, the columns start on the next one.
-_MIN_REGION_LINES = 3
 _DOTTED = (1, 2) # signing lines, as on a form: dash on and off (pt)
 
 #--------------------------------------------------------------------------------------------- Page
@@ -31,6 +29,7 @@ def md_to_pdf(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -43,7 +42,7 @@ def md_to_pdf(
   """
   style = _checked(style or LegalStyle())
   fm, _ = split_frontmatter(md_text)
-  pdf = _new_pdf(output_path, page, margin, gutter, font_dir, fm, metadata)
+  pdf = _new_pdf(output_path, page, margin, gutter, two_sided, font_dir, fm, metadata)
   renderer = MarkdownRenderer(pdf, style, base_dir)
   _footer(pdf, style)
   side = draw_header(pdf, style, fm, renderer.frontmatter_file(fm, "logo"))
@@ -51,13 +50,12 @@ def md_to_pdf(
   renderer.index(tokens)
   labels = style.sign_lines()
   items = lines_of(fm.get("attachments"))
-  first = _clauses(tokens)
+  first = first_section(tokens) # the clauses begin at the first `##`
   _preamble(pdf, renderer, style, tokens[:first], side)
-  if style.columns > 1:
-    probe = Probe(pdf, style, tokens, base_dir)
-    _columns(pdf, renderer, probe, style, tokens[first:], _tail_height(pdf, style, labels, items))
-  else:
-    renderer.render_tokens(tokens[first:])
+  clauses = tokens[first:]
+  if not labels and not items: clauses = clauses[:closing_breaks(clauses)] # nothing follows them
+  # In columns the end of the document stays under their last page when it fits there
+  renderer.render_tokens(clauses, below=_tail_height(pdf, style, labels, items))
   _tail(pdf, style, labels, items)
   pdf.save()
   return pdf
@@ -70,17 +68,15 @@ def _checked(style) -> LegalStyle:
     raise ValueError(f"logo_align must be L, C or R, got {style.logo_align!r}")
   if style.to_align not in ("L", "R"):
     raise ValueError(f"to_align must be L or R, got {style.to_align!r}")
-  if not isinstance(style.columns, int) or style.columns < 1:
-    raise ValueError(f"columns must be a whole number from 1 up, got {style.columns!r}")
   return style
 
 def _new_pdf(
-  output_path:str, page:PageSize, margin:float|tuple, gutter:float,
+  output_path:str, page:PageSize, margin:float|tuple, gutter:float, two_sided:bool,
   font_dir:str|None, fm:dict, metadata:dict|None,
 ) -> PDF:
   """The output `PDF`, its metadata from frontmatter, which `metadata=` overrides per key."""
   pdf = PDF(output_path, width=page.width, height=page.height,
-    margin=margin, gutter=gutter, font_dir=font_dir or "./fonts")
+    margin=margin, gutter=gutter, two_sided=two_sided, font_dir=font_dir or "./fonts")
   meta = pdf_metadata(fm, metadata)
   if meta: pdf.metadata(**meta)
   return pdf
@@ -97,11 +93,6 @@ def _footer(pdf:PDF, style:LegalStyle):
 
 #----------------------------------------------------------------------------------------- Preamble
 
-def _clauses(tokens:list[Token]) -> int:
-  """Start of the first top-level `##`, where the clauses begin. Without one it is `0`."""
-  return next((start for start, _ in top_blocks(tokens)
-    if tokens[start].type == "heading_open" and tokens[start].tag == "h2"), 0)
-
 def _preamble(
   pdf:PDF, renderer:MarkdownRenderer, style:LegalStyle, tokens:list[Token], side:Side|None,
 ):
@@ -112,7 +103,7 @@ def _preamble(
   """
   if not tokens and side is None: return
   page = pdf.page_num
-  look = replace(style, font_body=style.page_font,
+  look = replace(style, font_body=style.page_font, columns=1, # the preamble spans the page
     body_size=style.preamble_size or style.body_size,
     para_gap=style.para_gap if style.preamble_para_gap is None else style.preamble_para_gap)
   done = _beside(pdf, renderer, look, tokens, side) if side else 0
@@ -144,30 +135,6 @@ def _beside(
     done = end
   pdf.inset()
   return done
-
-#------------------------------------------------------------------------------------------ Columns
-
-def _columns(
-  pdf:PDF, renderer:MarkdownRenderer, probe:Probe,
-  style:LegalStyle, clauses:list[Token], tail_h:float,
-):
-  """
-  The clauses in columns from the cursor, the preamble already above them.
-
-  A text that fits the page with the end of the document below it gets balanced columns.
-  A longer one flows, its last page balanced when the end of the document still fits below it.
-  """
-  line = style.line_mm(style.body_size)
-  if pdf.content_height - pdf.y < _MIN_REGION_LINES * line and not pdf.at_top:
-    pdf.new_page()
-  region = Region(clauses, pdf.content_width, style.columns, style.column_gap)
-  page = pdf.content_height
-  height = balanced_height(probe, region, page - pdf.y - tail_h, line)
-  if height is None:
-    height = balanced_pages(probe, region, pdf.y, page, page - tail_h, line)
-  pdf.columns(region.count, gap=region.gap, height=height)
-  renderer.render_tokens(clauses)
-  pdf.columns(1)
 
 #---------------------------------------------------------------------------------------------- End
 
@@ -217,6 +184,7 @@ def md_parallel_to_pdf(
   page:PageSize = A4,
   margin:float|tuple = 20,
   gutter:float = 0,
+  two_sided:bool = False,
   base_dir:str|None = None,
   font_dir:str|None = None,
   metadata:dict|None = None,
@@ -239,8 +207,10 @@ def md_parallel_to_pdf(
   for i, style in enumerate(styles, 1):
     if style.h1_page_break:
       raise ValueError(f"style {i}: h1_page_break would break a page in the middle of a row")
+    if style.columns > 1:
+      raise ValueError(f"style {i}: columns would split the column of a version")
   fronts = [split_frontmatter(text)[0] for text in md_texts]
-  pdf = _new_pdf(output_path, page, margin, gutter, font_dir, fronts[0], metadata)
+  pdf = _new_pdf(output_path, page, margin, gutter, two_sided, font_dir, fronts[0], metadata)
   versions = [_version(pdf, style, text, fm, base_dir, i)
     for i, (style, text, fm) in enumerate(zip(styles, md_texts, fronts))]
   rows = _pair([v.tokens for v in versions])

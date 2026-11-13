@@ -5,7 +5,8 @@
 import warnings
 from pathlib import Path
 import pytest
-from conftest import assert_valid_pdf, needs_fitz, pdf_pages, pdf_text, pdf_words
+from conftest import (assert_valid_pdf, needs_pymupdf, pdf_pages, pdf_spans, pdf_text,
+  pdf_words)
 from pdfmarq import GlyphWarning
 from pdfmarq.paper import md_to_pdf, PaperStyle, lang_style
 from pdfmarq.constants import A4
@@ -66,7 +67,7 @@ def md_custom_style_applies(tmp_path):
   md_to_pdf("# H\n\nbody", str(path), style=style)
   assert_valid_pdf(path)
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("label, title", [
   (None, None), ("Bibliografia", "Bibliografia"), (True, "Literatura"),
 ], ids=["rule", "own word", "language word"])
@@ -80,7 +81,7 @@ def md_footnote_label_titles_the_bibliography(tmp_path, label, title):
   assert titles == ({title} if title else set())
   assert pdf_pages(path) == 1
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("src, title", [
   ("Body[^1].\n\n[^1]: footnote text.", "Literatura"),
   ("Body[^1].\n\n### Bibliografia\n\n[^1]: footnote text.", "Bibliografia"),
@@ -92,7 +93,7 @@ def md_paper_titles_the_bibliography_unasked(tmp_path, src, title):
   words = pdf_text(path).split()
   assert [w for w in words if w in {"Literatura", "Bibliografia"}] == [title]
 
-@needs_fitz
+@needs_pymupdf
 def md_paper_bibliography_title_sits_where_an_authors_would(tmp_path):
   # the title a paper adds is drawn as an author's `## Literatura` is, at the same height
   tops = []
@@ -175,7 +176,7 @@ def inline_code_keeps_its_backslashes():
 def tagged_block_renders_with_its_own_label(tmp_path):
   # `\tag{...}` must never reach the engine:
   # MathJax draws it as a giant glyph across the page, mathtext falls back to a code block
-  pytest.importorskip("fitz", reason="PyMuPDF not installed")
+  pytest.importorskip("pymupdf", reason="PyMuPDF not installed")
   from conftest import pdf_text
   src = "$$\nE = I R\n" + r"\tag{X1.1}" + "\n$$"
   path = tmp_path / "tag.pdf"
@@ -225,13 +226,13 @@ def default_fonts_draw_polish(tmp_path):
   # DejaVu comes from the system or from matplotlib.
   # Vera and Courier would draw ą ę ś ź ż ń as boxes.
   pytest.importorskip("matplotlib")
-  fitz = pytest.importorskip("fitz")
+  pymupdf = pytest.importorskip("pymupdf")
   path = tmp_path / "pl.pdf"
   with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     md_to_pdf("Letters ą ę ś ź ż ń, `code: ą ę ś`\n\n```\nblock: ź ż ń\n```\n", str(path))
   assert not [w for w in caught if issubclass(w.category, GlyphWarning)]
-  page = fitz.open(str(path))[0]
+  page = pymupdf.open(str(path))[0]
   text = page.get_text()
   assert "Letters ą ę ś ź ż ń" in text and "block: ź ż ń" in text and "\x00" not in text
   assert {font[3].split("+")[-1] for font in page.get_fonts()} >= {"DejaVuSans", "DejaVuSansMono"}
@@ -258,3 +259,33 @@ def fonts_are_read_once_per_process(tmp_path, monkeypatch):
   for i in range(3):
     md_to_pdf("Letters ą ę `code`.\n", str(tmp_path / f"{i}.pdf"))
   assert read and len(read) == len(set(read))
+
+@needs_pymupdf
+def a_table_takes_a_face_of_its_own(tmp_path):
+  # A journal sets its tables in a narrower face than its text
+  path = tmp_path / "table.pdf"
+  md_to_pdf("Words before.\n\n| Name | Value |\n|---|---|\n| one | 1 |\n", str(path),
+    style=PaperStyle(font_body="Helvetica", font_table="Courier"))
+  fonts = {text.strip(): font for text, font, _, _ in pdf_spans(str(path))[0]}
+  assert fonts["Name"] == "Courier-Bold" and fonts["one"] == "Courier"
+  assert fonts["Words before."] == "Helvetica"
+
+@needs_pymupdf
+@pytest.mark.parametrize("left", [False, True])
+def an_equation_number_stands_at_the_side_the_style_sets(tmp_path, left):
+  path = tmp_path / "equation.pdf"
+  md_to_pdf("$$\nE = I R\n$$\n", str(path), style=PaperStyle(math_number_left=left))
+  number = next(w for w in pdf_words(str(path)) if w[4] == "(1)")
+  middle = 210 / 2 * 72 / 25.4 # pt, of an A4 page
+  assert (number[2] < middle) == left # on its own side of the formula
+
+@needs_pymupdf
+def a_paragraph_going_on_under_a_formula_keeps_flush(tmp_path):
+  # `where ...` goes on with the sentence the formula stands in, as books and journals set it
+  path = tmp_path / "flush.pdf"
+  md_to_pdf("Text above it.\n\n$$\nE = I R\n$$\n\nwhere I is the current.\n\nNew paragraph.\n",
+    str(path), style=PaperStyle(first_indent=5))
+  left = {w[4]: w[0] for w in pdf_words(str(path))}
+  assert left["where"] < left["Text"] - 4 * 72 / 25.4 # flush with the column
+  assert left["New"] == pytest.approx(left["Text"]) # a new one set in again
+

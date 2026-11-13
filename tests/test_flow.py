@@ -11,7 +11,7 @@ from pdfmarq import PDF, MM_TO_PT, Align
 from pdfmarq.inline import (RichSegment, RichText, render_rich, wrap_line_heights, flow_rich,
   split_rich, drop_cap)
 from pdfmarq.md import MarkdownRenderer, MarkdownStyle, top_blocks
-from conftest import (needs_fitz, pdf_words, pdf_page_words, pdf_faces, pdf_pages, pdf_spans,
+from conftest import (needs_pymupdf, pdf_words, pdf_page_words, pdf_faces, pdf_pages, pdf_spans,
   tight_mm)
 
 # A4, 20mm margins, 10mm gap: column 0 spans 20..100mm, column 1 110..190mm.
@@ -65,18 +65,18 @@ def body_lines():
 def body_is_five_lines_in_a_column_and_in_a_list_item(lines):
   assert lines(BODY) == 5 and lines(BODY, 80 - MarkdownStyle().list_indent) == 5
 
-@needs_fitz
+@needs_pymupdf
 def paragraph_moves_whole_when_kept(columns, word):
   left, right = columns(BODY, 7, 3.6)
   assert word(right, "Startmark") and not word(left, "Startmark")
 
-@needs_fitz
+@needs_pymupdf
 def paragraph_splits_when_flowing(columns, word, body_lines):
   left, right = columns(BODY, 7, 3.6, keep_together=False)
   assert word(left, "Startmark") and word(right, "Endmark")
   assert body_lines(left) >= 2 and body_lines(right) >= 2
 
-@needs_fitz
+@needs_pymupdf
 def list_flows_item_by_item(columns, word):
   items = "\n".join(f"- Item{i} short" for i in range(4))
   kept_left, _ = columns(items, 7, 3.6)
@@ -84,7 +84,7 @@ def list_flows_item_by_item(columns, word):
   assert not word(kept_left, "Item0")
   assert word(flow_left, "Item0") and word(flow_right, "Item3")
 
-@needs_fitz
+@needs_pymupdf
 def heading_stays_with_three_lines_of_text(columns, word):
   md = "## Headmark\n\n" + BODY
   kept_left, _ = columns(md, 10, 5.9)
@@ -94,18 +94,18 @@ def heading_stays_with_three_lines_of_text(columns, word):
   assert word(flow_left, "Headmark")
   assert not word(short_left, "Headmark")
 
-@needs_fitz
+@needs_pymupdf
 def heading_before_table_moves_with_it(columns, word):
   md = "## Tablemark\n\n| a | b |\n|---|---|\n" + "".join(f"| r{i} | v |\n" for i in range(5))
   left, right = columns(md, 10, 5.9, keep_together=False)
   assert word(right, "Tablemark") and not word(left, "Tablemark")
 
-@needs_fitz
+@needs_pymupdf
 def marker_never_alone_at_column_bottom(columns, word):
   left, right = columns("1. " + BODY, 10, 1.5, keep_together=False)
   assert word(right, "1.") and not word(left, "1.")
 
-@needs_fitz
+@needs_pymupdf
 def justified_paragraph_is_measured_as_drawn(tmp_path):
   # four words a line only with tightened spaces: 4 lines justified, 6 ragged, room for 5
   path = str(tmp_path / "tight.pdf")
@@ -121,7 +121,7 @@ def justified_paragraph_is_measured_as_drawn(tmp_path):
   pdf.save()
   assert pdf_pages(path) == 1 and len(pdf_words(path)) == 16
 
-@needs_fitz
+@needs_pymupdf
 def marker_stays_with_two_lines_of_its_text(columns, word, body_lines):
   left, right = columns("1. " + BODY, 10, 3.6, keep_together=False)
   assert word(left, "1.") and body_lines(left) >= 2 and body_lines(right) >= 2
@@ -136,7 +136,7 @@ def heading_size_none_follows_body(tmp_path):
 
 #-------------------------------------------------------------------------------------------- Parts
 
-@needs_fitz
+@needs_pymupdf
 def part_takes_its_own_style_and_state_runs_on(tmp_path):
   path = str(tmp_path / "parts.pdf")
   style = MarkdownStyle()
@@ -184,7 +184,7 @@ def bold_in_bold_heading_escalates(bold_mode):
 
 #------------------------------------------------------------------------------------------ Markers
 
-@needs_fitz
+@needs_pymupdf
 def paren_marker_printed_as_typed(tmp_path, word):
   path = str(tmp_path / "paren.pdf")
   pdf = PDF(path)
@@ -195,7 +195,7 @@ def paren_marker_printed_as_typed(tmp_path, word):
 
 #-------------------------------------------------------------------------------------- Hyphenation
 
-@needs_fitz
+@needs_pymupdf
 def paragraphs_hyphenate_headings_stay_whole(tmp_path):
   pytest.importorskip("pyphen")
   text = "Zleceniodawca przekazuje Zleceniobiorcy dokumentację programistyczną " * 4
@@ -238,7 +238,7 @@ def image_over_a_line_stays_a_figure(tmp_path, monkeypatch, line, rules):
 
 #------------------------------------------------------------------------------ Journal typesetting
 
-@needs_fitz
+@needs_pymupdf
 def first_indent_sets_the_first_line_of_a_body_paragraph_in(tmp_path):
   path = str(tmp_path / "indent.pdf")
   pdf = PDF(path)
@@ -262,34 +262,34 @@ def first_indent_takes_room_on_the_first_line_but_never_stands_alone(tmp_path):
   one = [RichSegment("Startmark", family="Helvetica", size=11)]
   assert len(wrap_line_heights(pdf, RichText(one, 60, indent_mm=59))) == 1
 
-@needs_fitz
+@needs_pymupdf
 @pytest.mark.parametrize("rules, double, verticals, rows", [
   ("grid", False, True, 4), ("rows", False, False, 4), ("head", True, False, 5)])
 def table_rules_draw_the_lines_they_name(tmp_path, rules, double, verticals, rows):
-  import fitz
+  import pymupdf
   path = str(tmp_path / f"{rules}.pdf")
   pdf = PDF(path)
   MarkdownRenderer(pdf, MarkdownStyle(table_rules=rules, table_double=double)).render(
     "| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n")
   pdf.save()
-  with fitz.open(path) as doc:
+  with pymupdf.open(path) as doc:
     lines = [item for d in doc[0].get_drawings() for item in d["items"] if item[0] == "l"]
   upright = [l for l in lines if abs(l[1].x - l[2].x) < 0.01]
   across = {round(l[1].y, 1) for l in lines if abs(l[1].y - l[2].y) < 0.01}
   assert bool(upright) == verticals
   assert len(across) == rows
 
-@needs_fitz
+@needs_pymupdf
 def a_double_rule_leaves_the_rows_their_padding(tmp_path):
   # its second line stands outside the rows, so text keeps the gaps a single rule leaves it
-  import fitz
+  import pymupdf
   def gaps(double:bool) -> tuple[float, float]:
     path = str(tmp_path / f"double{double}.pdf")
     pdf = PDF(path)
     MarkdownRenderer(pdf, MarkdownStyle(table_rules="head", table_double=double)).render(
       "| Head | b |\n| - | - |\n| 1 | 2 |\n| last | 4 |\n")
     pdf.save()
-    with fitz.open(path) as doc:
+    with pymupdf.open(path) as doc:
       lines = [item for d in doc[0].get_drawings() for item in d["items"] if item[0] == "l"]
       words = {w[4]: w for w in doc[0].get_text("words")}
     across = {line[1].y for line in lines if abs(line[1].y - line[2].y) < 0.01}
@@ -371,7 +371,7 @@ def split_rich_keeps_an_empty_line_before_a_cut_word(tmp_path):
   rest = split_rich(pdf, RichText(segs, width), 1)
   assert rest[0].break_line and "".join(s.text for s in rest) == word
 
-@needs_fitz
+@needs_pymupdf
 def drop_cap_sets_its_letter_beside_two_lines_and_the_rest_under_it(tmp_path):
   path = str(tmp_path / "d.pdf")
   pdf = PDF(path)
@@ -424,7 +424,7 @@ def code_keeps_its_words_whole(tmp_path):
   whole = RichText([RichSegment("aaa ", **face), RichSegment(word, code=True, **face)], width)
   assert "".join(s.text for s in split_rich(pdf, whole, 1)) == word # moved on, not hyphenated
 
-@needs_fitz
+@needs_pymupdf
 def code_keeps_its_spaces_unstretched(tmp_path):
   path = str(tmp_path / "code.pdf")
   pdf = PDF(path)

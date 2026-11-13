@@ -2,6 +2,7 @@
 
 """Layout system - cursor positioning, alignment, page geometry."""
 from dataclasses import dataclass, field, replace
+from typing import Callable
 from .constants import Align
 
 #------------------------------------------------------------------------------------------- Cursor
@@ -69,6 +70,8 @@ class Cursor:
 
 #------------------------------------------------------------------------------------- PageGeometry
 
+_DIGITS = 9 # places of mm a size keeps: far below a dot, above the noise of float sums
+
 @dataclass
 class PageGeometry:
   """
@@ -88,13 +91,16 @@ class PageGeometry:
 
   @property
   def content_width(self) -> float:
-    """Available width for content."""
-    return self.width - self.margin_left - self.margin_right
+    """
+    Available width for content, to `_DIGITS` places: a box `box` cuts out of a sheet
+    is as wide on any sheet, so measuring off the page and drawing on it agree.
+    """
+    return round(self.width - self.margin_left - self.margin_right, _DIGITS)
 
   @property
   def content_height(self) -> float:
-    """Available height for content."""
-    return self.height - self.margin_top - self.margin_bot
+    """Available height for content, to `_DIGITS` places, as `content_width`."""
+    return round(self.height - self.margin_top - self.margin_bot, _DIGITS)
 
   def box(self, left:float, top:float, width:float, height:float) -> "PageGeometry":
     """
@@ -148,7 +154,8 @@ class Columns:
   `height` caps the columns on the current page, and `later` on each page after it in turn,
   `None` leaving a page uncapped and a tuple capping each column of it on its own.
   `left` and `right` narrow the region inside the page margins (mm).
-  `bottom` is the lowest point any column reached, measured from `top`.
+  `bottom` is the lowest point any column reached, measured from `top`,
+  and `ends` how far down each column of the current page reached, by the time it was left.
   """
   count: int
   gap: float
@@ -159,12 +166,30 @@ class Columns:
   right: float = 0
   index: int = 0
   bottom: float = 0
+  ends: list = field(default_factory=list)
   later: list = field(default_factory=list)
 
   def column_width(self, content_width:float) -> float:
     """Width (mm) of each column on a page whose content is `content_width` mm wide."""
     inner = content_width - self.left - self.right
     return (inner - self.gap * (self.count - 1)) / self.count
+
+def lowest_fit(fits:Callable[[float], bool], low:float, high:float, step:float) -> float|None:
+  """
+  The lowest of `low`, `low + step`, `low + 2 * step` and on up to `high` that `fits`,
+  `None` when none does.
+
+  Balanced columns ask it for the height of their last page, `fits` drawing them off the page.
+  The heights go one by one from `low`, the even share, near which the answer most often lies,
+  since `fits` need not hold above a height that fits:
+  a block that does not split, as a bibliography entry, misses a little higher again.
+  No height below a block held whole is ruled out: in a lower column it may split.
+  """
+  height = low
+  while not fits(height):
+    if height >= high: return None
+    height = min(height + step, high)
+  return height
 
 #-------------------------------------------------------------------------------------------- Frame
 

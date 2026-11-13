@@ -4,7 +4,7 @@
 
 import pytest
 from pathlib import Path
-from conftest import assert_valid_pdf, needs_fitz
+from conftest import assert_valid_pdf, needs_pymupdf
 from pdfmarq import (
   PDF, A4, Align, Styles, TableStyle, TableBuilder, RichSegment, RichText, render_rich,
   GlyphWarning,
@@ -125,17 +125,17 @@ def shapes_all_render(tmp_path):
     pdf.line(80, 0, 1, dash=(3, 2))
   assert_valid_pdf(path)
 
-@needs_fitz
+@needs_pymupdf
 def dashed_outline_leaves_later_strokes_solid(tmp_path):
   # a line drawn straight on the canvas after a dashed shape must not inherit its dash
-  import fitz
+  import pymupdf
   path = str(tmp_path / "dash.pdf")
   with PDF(path) as pdf:
     pdf.round_rect(40, 20, radius=3, thickness=0.5, fill=False, dash=(3, 2)).enter(25)
     pdf.c.line(10, 10, 100, 10)
     pdf.rect(40, 20, thickness=0.5, fill=False, dash=(4, 1)).enter(25)
     pdf.c.line(10, 20, 100, 20)
-  dashes = [drawing["dashes"] for drawing in fitz.open(path)[0].get_drawings()]
+  dashes = [drawing["dashes"] for drawing in pymupdf.open(path)[0].get_drawings()]
   assert dashes == ["[ 3 2 ] 0", "[] 0", "[ 4 1 ] 0", "[] 0"]
 
 def core_font_warns_about_a_letter_it_lacks(tmp_path):
@@ -187,13 +187,13 @@ def table_without_header(tmp_path):
     pdf.table([["a", "b"], ["c", "d"]])
   assert_valid_pdf(path)
 
-@needs_fitz
+@needs_pymupdf
 def table_header_bg_none_leaves_the_header_unshaded(tmp_path):
-  import fitz
+  import pymupdf
   path = tmp_path / "unshaded.pdf"
   with PDF(str(path)) as pdf:
     pdf.table([["a", "b"]], header=["A", "B"], style=TableStyle(header_bg=None, row_bg_odd=None))
-  with fitz.open(path) as doc:
+  with pymupdf.open(path) as doc:
     assert not [d for d in doc[0].get_drawings() if d.get("fill")]
 
 def table_builder_drives_draw_table(tmp_path):
@@ -237,6 +237,17 @@ def on_final_page_knows_real_total(tmp_path):
   totals = {t for _, t in seen}
   assert totals == {3}, f"expected total=3 on every page, got {seen}"
 
+def final_page_links_take_names_of_their_own(tmp_path):
+  # A table of contents drawn as the file is saved links to parts of later pages
+  path = tmp_path / "contents.pdf"
+  def contents(p, n, total):
+    if n == 1: render_rich(p, RichText([RichSegment("Part", link_target="part")], 50), 0, 0)
+  with PDF(str(path)) as pdf:
+    pdf.on_final_page(contents)
+    pdf.new_page().anchor("part")
+    render_rich(pdf, RichText([RichSegment("Site", link_url="https://example.com")], 50), 0, 0)
+  assert_valid_pdf(path)
+
 def bookmarks_render(tmp_path):
   path = tmp_path / "bm.pdf"
   with PDF(str(path)) as pdf:
@@ -252,13 +263,13 @@ def metadata_render(tmp_path):
     pdf.text("body")
   assert_valid_pdf(path)
 
-@needs_fitz
+@needs_pymupdf
 def pdf_without_metadata_holds_no_placeholders(tmp_path):
-  import fitz
+  import pymupdf
   path = tmp_path / "bare.pdf"
   with PDF(str(path)) as pdf:
     pdf.text("body")
-  with fitz.open(path) as doc:
+  with pymupdf.open(path) as doc:
     assert (doc.metadata["title"], doc.metadata["author"], doc.metadata["subject"]) == ("", "", "")
 
 #------------------------------------------------------------------------------------------- Inline

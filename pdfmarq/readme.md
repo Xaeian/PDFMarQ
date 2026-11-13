@@ -15,6 +15,8 @@ with PDF("out.pdf", width=A4.width, height=A4.height, margin=20) as pdf:
   pdf.margin(20, 25, 15) # lr, top, bot in mm
 # Binding margin, added to the left one (PDF has no native gutter)
 PDF("out.pdf", margin=20, gutter=8)
+# Printed on both sides: even pages mirror the margins, the gutter at the bound edge
+PDF("out.pdf", margin=25, gutter=10, two_sided=True)
 # Units (default mm)
 PDF("out.pdf", unit="pt") # or "cm", "in", "px"
 ```
@@ -64,13 +66,23 @@ pdf.enter()            # newline: reset x, advance y by line height
 pdf.enter(10)          # newline with explicit 10mm gap
 pdf.move(5, 3)         # relative shift dx=5, dy=3
 pdf.new_page()         # page break, cursor reset
+pdf.page_break()       # new page, unless nothing is set on this one yet
 pdf.next_frame()       # next column, or a new page after the last one
+pdf.keep(40)           # move on until a frame holds 40mm: a short column hands it to the next page
+pdf.headroom = 8       # new pages start their text 8mm down, under a running header drawn there
+# Calls as the block moves on to the next frame
+with pdf.frames(enter=on_top, leave=at_foot): ...
 # Read current position
 pdf.x, pdf.y           # cursor mm
 pdf.at_top             # whether the cursor stands at the top of its frame
-pdf.content_width, pdf.content_height # frame area: the page minus margins, or the open column
+# Frame area: the page minus margins, or the open column
+pdf.content_width, pdf.content_height
 pdf.margin_left        # and margin_right, margin_top, margin_bot: the frame's, mm
 pdf.column_index       # column the cursor is in, from 0
+pdf.column_ends        # how far down each column of the page reached, mm
+pdf.in_columns         # whether a column region or an inset is open
+pdf.page_top           # mm where the text of this page begins, under `headroom`
+pdf.fresh_height       # mm a new page's frame offers: more than a short column
 pdf.page_num           # current page number
 pdf.output_path        # destination file path
 ```
@@ -101,6 +113,9 @@ pdf.text("The cursor is back where it was")
 ```
 
 `new_page()` always starts a new page; an open region carries on there from its first column.
+`Floats(pdf, height, draw)` keeps blocks waiting for the top of a frame, in order: `defer()` one that misses the rest of a column, `defer_wide()` one for the top of the next page, with the flow inside `pdf.frames(enter=floats.opened)`; where the flow ends `flush()` sets those whose turn it is and `take()` hands back the rest.
+`pdf.on_page_top(callback)` sets what belongs to the top of one page, as such a block: the text still begins where it began, so `keep()` moves on from the shorter frame under it.
+A page cannot turn while it opens, so what such callbacks set stays on it.
 A frame holds one page: what does not fit, a page break among it, runs past its bottom and warns.
 Header and footer callbacks always see the whole page.
 
@@ -222,6 +237,7 @@ color_hex((0.03, 0.41, 0.85))  # → "0869D9" (uppercase, no '#')
 ```py
 pdf.image("photo.png", 60, 40)  # PNG/JPG at width=60mm height=40mm
 pdf.svg("icon.svg", 15, 15)     # SVG via svglib (aspect preserved)
+image_aspect("icon.svg")        # width over height, as either is drawn
 ```
 
 ## Pages and callbacks

@@ -35,7 +35,7 @@ needs_twin = pytest.mark.skipif(not _twin_installed(), reason="docmarq not insta
 #--------------------------------------------------------------------------------------- PDF reader
 
 # Reading a PDF back takes PyMuPDF, which the wheel under test does not pull in.
-needs_fitz = pytest.mark.skipif(importlib.util.find_spec("fitz") is None,
+needs_pymupdf = pytest.mark.skipif(importlib.util.find_spec("pymupdf") is None,
   reason="PyMuPDF not installed")
 
 #--------------------------------------------------------------------------------------- Assertions
@@ -148,16 +148,16 @@ def small_caps_font(tmp_path) -> str:
 
 def pdf_text(path:str) -> str:
   """All extractable text of a PDF, pages concatenated."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return "".join(page.get_text() for page in doc)
   finally:
     doc.close()
 
 def pdf_pages(path:str) -> int:
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return doc.page_count
   finally:
@@ -169,8 +169,8 @@ def pdf_words(path:str) -> list:
 
 def pdf_page_words(path:str) -> list[list]:
   """Word boxes `(x0, y0, x1, y1, word, ...)` per page, in pt."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [page.get_text("words") for page in doc]
   finally:
@@ -178,8 +178,8 @@ def pdf_page_words(path:str) -> list[list]:
 
 def pdf_spans(path:str) -> list[list[tuple]]:
   """Text spans `(text, font, size, bbox)` per page: what each run of text is set in."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [[(s["text"], s["font"], s["size"], s["bbox"])
       for b in page.get_text("dict")["blocks"] for l in b.get("lines", []) for s in l["spans"]]
@@ -193,8 +193,8 @@ def pdf_faces(path:str, page:int=0) -> dict[str, tuple[str, float]]:
 
 def pdf_chars(path:str) -> list[tuple[str, float, float]]:
   """Glyphs `(char, x, y)` of every page, `x, y` being the origin of each in pt."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [(c["c"], *c["origin"]) for page in doc for b in page.get_text("rawdict")["blocks"]
       for line in b.get("lines", []) for s in line["spans"] for c in s["chars"]]
@@ -207,10 +207,10 @@ def pdf_ink(path:str, clip:tuple, page:int=0) -> tuple[float, float]|None:
   how far glyphs really reach, which no font metric tells.
   Drawn at four pixels a point, where light greys, as borders and backgrounds are, leave no ink.
   """
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
-    pix = doc[page].get_pixmap(dpi=288, clip=fitz.Rect(clip), colorspace=fitz.csGRAY)
+    pix = doc[page].get_pixmap(dpi=288, clip=pymupdf.Rect(clip), colorspace=pymupdf.csGRAY)
   finally:
     doc.close()
   samples = pix.samples # a copy on every read, so read once
@@ -221,8 +221,8 @@ def pdf_ink(path:str, clip:tuple, page:int=0) -> tuple[float, float]|None:
 
 def pdf_links(path:str) -> list[dict]:
   """Link annotations of every page, as PyMuPDF reads them."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [link for page in doc for link in page.get_links()]
   finally:
@@ -230,8 +230,8 @@ def pdf_links(path:str) -> list[dict]:
 
 def pdf_images(path:str) -> list[list[tuple]]:
   """Image boxes `(x0, y0, x1, y1)` per page, in pt."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [[tuple(info["bbox"]) for info in page.get_image_info()] for page in doc]
   finally:
@@ -239,8 +239,8 @@ def pdf_images(path:str) -> list[list[tuple]]:
 
 def pdf_strokes(path:str) -> list[list[dict]]:
   """Vector paths per page, as PyMuPDF reads them: `rect`, `width`, `dashes` and more."""
-  import fitz
-  doc = fitz.open(path)
+  import pymupdf
+  doc = pymupdf.open(path)
   try:
     return [page.get_drawings() for page in doc]
   finally:
@@ -248,10 +248,10 @@ def pdf_strokes(path:str) -> list[list[dict]]:
 
 def pdf_glyphs_past(path:str, right_pt:float) -> list[str]:
   """Glyphs whose box ends right of `right_pt`: text spilling over a margin or border."""
-  import fitz
+  import pymupdf
   right_pt += 0.3 # rounding slack: a glyph set flush to the edge still passes
   out = []
-  doc = fitz.open(path)
+  doc = pymupdf.open(path)
   try:
     for page in doc:
       for block in page.get_text("rawdict")["blocks"]:
@@ -264,9 +264,9 @@ def pdf_glyphs_past(path:str, right_pt:float) -> list[str]:
 
 def pdf_offpage_words(path:str) -> list:
   """Words drawn outside the page box - in the file, invisible in a viewer."""
-  import fitz
+  import pymupdf
   out = []
-  doc = fitz.open(path)
+  doc = pymupdf.open(path)
   try:
     for pno, page in enumerate(doc):
       box = page.rect

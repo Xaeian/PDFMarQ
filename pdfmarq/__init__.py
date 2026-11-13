@@ -19,7 +19,7 @@ Example:
 
 #--------------------------------------------------------------------------- Metadata for auto-toml
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 __repo__ = "Xaeian/PDFMarQ"
 __python__ = ">=3.10"
 __description__ = "PDF generation library with fluent API and optional markdown support"
@@ -39,7 +39,7 @@ from .constants import (
   A4, A3, A5, LETTER, LEGAL, SLIDE,
 )
 from .styles import Style, TableStyle, Styles
-from .layout import Cursor, PageGeometry
+from .layout import Cursor, PageGeometry, lowest_fit
 from .text import TextMetrics, BoxFitResult, centred_baseline
 from .tables import TableBuilder, TableData, Cell
 from .fonts import FontManager, register_fonts, GlyphWarning
@@ -50,14 +50,16 @@ from .utils import (
 )
 from .inline import (RichSegment, RichText, render_rich, measure_rich, wrap_line_heights,
   flow_rich, split_rich, drop_cap)
+from .graphics import image_aspect
 from .core import PDF
+from .floats import Floats
 
 __all__ = [
-  "PDF",
+  "PDF", "Floats",
   "Unit", "PageSize", "Align", "Colors", "Defaults", "MM_TO_PT",
   "A4", "A3", "A5", "LETTER", "LEGAL", "SLIDE",
   "Style", "TableStyle", "Styles",
-  "Cursor", "PageGeometry",
+  "Cursor", "PageGeometry", "lowest_fit",
   "TextMetrics", "BoxFitResult", "centred_baseline",
   "TableBuilder", "TableData", "Cell",
   "FontManager", "register_fonts", "GlyphWarning",
@@ -65,5 +67,5 @@ __all__ = [
   "to_mm", "to_pt", "mm_to_pt", "parse_color", "color_alpha", "color_hex", "parse_margin",
   "smaller_size",
   "RichSegment", "RichText", "render_rich", "measure_rich", "wrap_line_heights", "flow_rich",
-  "split_rich", "drop_cap",
+  "split_rich", "drop_cap", "image_aspect",
 ]

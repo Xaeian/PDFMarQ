@@ -3,6 +3,7 @@
 """Core PDF class - main facade for document generation."""
 import random, warnings
 from contextlib import contextmanager
+from dataclasses import replace
 from importlib.util import find_spec
 from typing import Callable
 from reportlab.pdfgen import canvas
@@ -82,6 +83,9 @@ class NumberedCanvas(canvas.Canvas):
     bookmarks_by_page: dict[int, list[tuple[str, str, dict]]] = {}
     for page_num, method, key, kwargs in self._deferred_bookmarks:
       bookmarks_by_page.setdefault(page_num, []).append((method, key, kwargs))
+    # Links are named by a running count: one a callback draws on a page now takes a number
+    # past every page buffered, not the count restored with its page, which a later page took
+    annotations = self._annotationCount
     self._replaying = True
     try:
       for state in self._saved_pages:
@@ -91,9 +95,11 @@ class NumberedCanvas(canvas.Canvas):
         # Re-assert it: a destination that reaches `bookmarkPage` again from inside reportlab
         # has to register now, not queue itself for a replay that already runs.
         self._replaying = True
+        self._annotationCount = annotations
         page_num = self._pageNumber
         for cb in self._final_page_callbacks:
           cb(self._pdf_ref, page_num, total)
+        annotations = self._annotationCount
         for method, key, kwargs in bookmarks_by_page.get(page_num, []):
           getattr(super(), method)(key, **kwargs)
         super().showPage()
@@ -123,9 +129,17 @@ class PDF:
     font_dir:str = "./fonts",
     debug:bool = False,
     gutter:float = 0,
+    pictures:bool = True,
+    two_sided:bool = False,
   ):
-    """`gutter` is a binding margin, added to the left one: PDF has no native gutter."""
+    """
+    `gutter` is a binding margin, added to the left one: PDF has no native gutter.
+    `two_sided` prints on both sides of the sheet: an even page mirrors the margins,
+    so the left one and the gutter stay at the bound edge, its right.
+    `pictures=False` leaves the room of each image and SVG empty, for a page drawn only to measure.
+    """
     self._path = path
+    self._pictures = pictures
     self.debug = debug
     self.unit = unit
     # Page setup
@@ -142,8 +156,13 @@ class PDF:
     )
     # `_page` is the frame content is drawn into: the whole page, or the open column.
     self._page_full = self._page
+    self._two_sided = two_sided
+    self._sides = (self._page.margin_left, self._page.margin_right) # of an odd page
     self._columns: Columns|None = None
     self._frame: Frame|None = None # the box `frame()` lays content out in, while it runs
+    self._flow_top = 0.0 # mm where the text of this page began, under what `on_new_page` set
+    self._headroom = 0.0 # mm a new page leaves empty above its text, see `headroom`
+    self._watchers: list[tuple] = [] # `(enter, leave)` pairs `frames()` holds while its block runs
     # Canvas - `NumberedCanvas` buffers pages
     # so deferred footer (with total page count) can be drawn at `save()` time.
     self._canvas = NumberedCanvas(path)
@@ -163,6 +182,8 @@ class PDF:
     self._saved = False # guards the save-once canvas, see save()
     self._page_callbacks: list[Callable] = [] # before showPage (header/footer)
     self._new_page_callbacks: list[Callable] = [] # after showPage + cursor reset
+    self._page_top_callbacks: list[Callable] = [] # after those, under where the text begins
+    self._opening = False # a new page runs its callbacks, so it cannot turn until they are done
 
   #-------------------------------------------------------------------------------- Context manager
 
@@ -187,8 +208,36 @@ class PDF:
 
   @property
   def at_top(self) -> bool:
-    """Whether the cursor stands at the top of its frame, where a break would leave it empty."""
+    """
+    Whether the cursor stands at the top of its frame, the page or the open column,
+    where a block skips the gap above it.
+    Whether the page is still empty is `page_break()`'s question, and `keep()` asks
+    whether moving on gives more room.
+    """
     return self._cursor.y <= _AT_TOP_MM
+
+  @property
+  def page_top(self) -> float:
+    """
+    Where the text of this page begins, mm under the top margin:
+    under what `on_new_page` set there, `headroom` included.
+    A page drawn only to measure takes it over, so it starts as this one did.
+    """
+    return self._flow_top
+
+  @page_top.setter
+  def page_top(self, value:float):
+    self._flow_top = to_mm(value, self.unit)
+
+  @property
+  def fresh_height(self) -> float:
+    """
+    Height (mm) of the frame a new page opens, under its `headroom`:
+    the most room moving on can give, where a short column gives less.
+    In `frame()` it is the frame's, which holds one page.
+    """
+    if self._frame: return self._page_full.content_height
+    return self._page_full.content_height - self._headroom
 
   @property
   def page_width(self) -> float:
@@ -236,9 +285,39 @@ class PDF:
     return self._page_num
 
   @property
+  def headroom(self) -> float:
+    """
+    Room a new page leaves empty above its text, for a running header drawn there.
+    A page drawn only to measure takes it over, so its pages break where these do.
+    """
+    return self._headroom
+
+  @headroom.setter
+  def headroom(self, value:float):
+    self._headroom = to_mm(value, self.unit)
+
+  @property
+  def in_columns(self) -> bool:
+    """Whether a column region or an inset is open, which `columns(1)` and `inset()` close."""
+    return self._columns is not None
+
+  @property
   def column_index(self) -> int:
     """Column of the open region the cursor is in, counted from 0, or 0 without one."""
     return self._columns.index if self._columns else 0
+
+  @property
+  def column_ends(self) -> list[float]:
+    """
+    How far down each column of the open region reached on this page, mm from the region's top,
+    the one the cursor is in counted to the cursor: where the text of each stands so far.
+    Empty without a region.
+    """
+    region = self._columns
+    if not region: return []
+    ends = region.ends + [0] * (region.index + 1 - len(region.ends))
+    ends[region.index] = max(ends[region.index], self._cursor.y)
+    return ends
 
   @property
   def c(self):
@@ -291,20 +370,32 @@ class PDF:
     if self._frame:
       self._frame.overflow = True
       return self
+    if self._opening: return self # what its callbacks set stays on the page they open
+    self._leaving()
     self._finalize_page()
     self._canvas.showPage()
     self._page_num += 1
-    self._page = self._page_full
-    self._cursor.set(0, 0)
+    full = self._page_full
+    full.margin_left, full.margin_right = self.sides(self._page_num)
+    self._page = full
+    self._cursor.set(0, self._headroom)
     self._apply_font() # re-apply font after page break
-    for cb in self._new_page_callbacks:
-      cb(self, self._page_num)
+    self._opening = True
+    try:
+      for cb in self._new_page_callbacks:
+        cb(self, self._page_num)
+      self._flow_top = self._cursor.y
+      for cb in self._page_top_callbacks:
+        cb(self, self._page_num)
+    finally:
+      self._opening = False
     region = self._columns
     if region:
       region.top = self._cursor.y
       region.height = region.later.pop(0) if region.later else None
-      region.bottom = 0
+      region.bottom, region.ends = 0, []
       self._enter_column(0, 0)
+    self._entered()
     return self
 
   def margin(self, lr:float, top:float|None=None, bot:float|None=None) -> "PDF":
@@ -323,7 +414,17 @@ class PDF:
     page.margin_left += self._gutter
     page.margin_top = to_mm(top, self.unit)
     page.margin_bot = to_mm(bot, self.unit)
+    self._sides = (page.margin_left, page.margin_right)
+    page.margin_left, page.margin_right = self.sides(self._page_num)
     return self
+
+  def sides(self, page_num:int) -> tuple[float, float]:
+    """
+    `(left, right)` margins of page `page_num` in mm, the gutter in them:
+    an even page of a two-sided print mirrors those of an odd one.
+    """
+    left, right = self._sides
+    return (right, left) if self._two_sided and page_num % 2 == 0 else (left, right)
 
   #---------------------------------------------------------------------------------------- Columns
 
@@ -394,27 +495,85 @@ class PDF:
 
     Without a column region this is `new_page()`.
     Parallel columns (`flow=False`) belong to a caller that breaks pages itself,
-    so there it does nothing.
+    so there it does nothing, as it does while a new page runs its callbacks.
     Inside `frame()` there is no next page: the content stays and runs past the bottom.
     """
     region = self._columns
-    if region and not region.flow: return self
+    if self._opening or (region and not region.flow): return self
     if region and region.index + 1 < region.count:
       self._reach()
+      self._leaving()
       self._enter_column(region.index + 1, 0)
+      self._entered()
       return self
     return self.new_page()
 
+  @contextmanager
+  def frames(self, enter:Callable|None=None, leave:Callable|None=None):
+    """
+    While the block runs, call `leave(pdf)` as the cursor is about to leave a frame for the next,
+    still on it, and `enter(pdf)` once it stands at the top of the next one.
+    A frame is a column or a page, so a quote draws its bar on each part this way,
+    and columns place the blocks that wait for the top of one.
+    Callers inside callers nest: their `enter` runs after the outer one, their `leave` before it.
+    """
+    watcher = (enter, leave)
+    self._watchers.append(watcher)
+    try:
+      yield self
+    finally:
+      self._watchers.remove(watcher)
+
+  def _leaving(self):
+    """Tell the blocks `frames()` watches for that this frame ends, innermost first."""
+    for _, leave in reversed(list(self._watchers)):
+      if leave: leave(self)
+
+  def _entered(self):
+    """Tell the blocks `frames()` watches for that a new frame begins, outermost first."""
+    for enter, _ in list(self._watchers):
+      if enter: enter(self)
+
   def keep(self, height:float) -> "PDF":
     """
-    Make room for `height` here: move to the next frame unless it fits the rest of this one.
-    Something taller than a whole frame stays at the top of one,
-    since a fresh frame cannot hold it either and would only leave this one blank.
+    Make room for `height` here: move on frame by frame until the rest of one holds it.
+    Something taller than any frame stays at the top of one,
+    since moving on cannot give it more room and would only leave frames blank.
+    A short column moves it on: one opened low on the page, or one its page caps.
     """
     height = to_mm(height, self.unit)
-    if height <= self.content_height - self._cursor.y: return self
-    if height > self.content_height and self.at_top: return self
-    return self.next_frame()
+    while height > self.content_height - self._cursor.y and not self._fresh():
+      here = (self._page_num, self.column_index, self._cursor.y)
+      self.next_frame()
+      if (self._page_num, self.column_index, self._cursor.y) == here: break # nowhere to move on
+    return self
+
+  def page_break(self) -> "PDF":
+    """
+    Start a new page, unless nothing is set on this one yet: a break never leaves a page blank.
+    A page is empty while the cursor stands where its text began,
+    under what `on_new_page` set there and in the first column of columns opened there.
+    """
+    if not self._blank(): self.new_page()
+    return self
+
+  def _blank(self) -> bool:
+    """Whether nothing is set on this page yet: the cursor stands where its text began."""
+    region = self._columns
+    if region and region.index: return False
+    top = (region.top if region else 0) + self._cursor.y
+    return top <= self._flow_top + _AT_TOP_MM
+
+  def _fresh(self) -> bool:
+    """
+    Whether the cursor stands at the top of a frame as tall as any after it:
+    moving on gains nothing there.
+    Columns opened lower on the page, or capped on it, are shorter than those of the next page.
+    """
+    region = self._columns
+    if not region: return self._cursor.y <= self._flow_top + _AT_TOP_MM
+    return (self._cursor.y <= _AT_TOP_MM and region.top <= self._flow_top + _AT_TOP_MM
+      and region.height is None)
 
   def _open(self, region:Columns):
     """Open `region` at its first column. One whose columns get no width is refused."""
@@ -440,8 +599,11 @@ class PDF:
 
   def _reach(self):
     """Record how far down the current column went, text drawn without `enter()` included."""
-    cursor = self._cursor
-    self._columns.bottom = max(self._columns.bottom, cursor.y + cursor.last_height)
+    cursor, region = self._cursor, self._columns
+    depth = cursor.y + cursor.last_height
+    region.bottom = max(region.bottom, depth)
+    region.ends += [0] * (region.index + 1 - len(region.ends))
+    region.ends[region.index] = max(region.ends[region.index], depth)
 
   def _end_columns(self):
     """Close the column region: full width again, cursor below the lowest column."""
@@ -478,6 +640,7 @@ class PDF:
     box = page.box(page.margin_left + x, page.margin_top + y, width, height)
     self._page_full = self._page = box
     self._cursor = Cursor()
+    flow_top, self._flow_top = self._flow_top, 0
     try:
       yield self
     finally:
@@ -485,6 +648,7 @@ class PDF:
       frame, self._frame = self._frame, None
       self._page_full = self._page = frame.page
       self._cursor = frame.cursor
+      self._flow_top = flow_top
     if frame.overflow:
       warnings.warn(f"content asked for more room than its {width:.1f}x{height:.1f}mm frame holds",
         RuntimeWarning, stacklevel=caller_level())
@@ -736,7 +900,8 @@ class PDF:
       x_mm -= w_mm
     elif self._cursor.align == Align.CENTER:
       x_mm -= w_mm / 2
-    gfx.draw_image(self._canvas, path, x_mm * mm, (y_mm - h_mm) * mm, w_mm * mm, h_mm * mm)
+    if self._pictures:
+      gfx.draw_image(self._canvas, path, x_mm * mm, (y_mm - h_mm) * mm, w_mm * mm, h_mm * mm)
     self._cursor.record_height(h_mm)
     return self
 
@@ -749,7 +914,8 @@ class PDF:
       x_mm -= w_mm
     elif self._cursor.align == Align.CENTER:
       x_mm -= w_mm / 2
-    gfx.draw_svg(self._canvas, path, x_mm * mm, (y_mm - h_mm) * mm, w_mm * mm, h_mm * mm)
+    if self._pictures:
+      gfx.draw_svg(self._canvas, path, x_mm * mm, (y_mm - h_mm) * mm, w_mm * mm, h_mm * mm)
     self._cursor.record_height(h_mm)
     return self
 
@@ -925,11 +1091,27 @@ class PDF:
   def on_new_page(self, callback:Callable) -> "PDF":
     """
     Register callback to run after a new page is started (after cursor reset).
-    Use to advance the cursor past a top header before content begins.
+    Use to draw at the top of the page.
+    Room for a header there is `headroom`, which pages drawn only to measure know as well.
+    A cursor the callback moves on is honoured on the page, but measuring cannot see it.
 
     Callback receives (pdf, page_num) arguments.
     """
     self._new_page_callbacks.append(callback)
+    return self
+
+  def on_page_top(self, callback:Callable) -> "PDF":
+    """
+    Register callback to set what belongs at the top of one page, as a figure that waited for it.
+    It runs after the `on_new_page` callbacks, across the page, before columns open under it.
+    The room it takes is that page's own:
+    the text still begins where it began, so `keep()` moves on from the shorter frame under it.
+    What it sets must fit the page: while a page opens it cannot turn,
+    so `keep()` and `next_frame()` leave the cursor where it stands.
+
+    Callback receives (pdf, page_num) arguments.
+    """
+    self._page_top_callbacks.append(callback)
     return self
 
   def on_final_page(self, callback:Callable) -> "PDF":
@@ -951,7 +1133,8 @@ class PDF:
     cursor_backup = self._cursor.copy()
     page_backup = self._page_num
     frame = self._page
-    self._page = self._page_full
+    left, right = self.sides(page_num) # that page's own, mirrored when even
+    self._page = replace(self._page_full, margin_left=left, margin_right=right)
     self._page_num = page_num
     self._total_pages = total
     try:
