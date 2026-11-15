@@ -8,7 +8,7 @@ Letters, statements and contracts: the page around the markdown content.
 from dataclasses import dataclass, replace
 from markdown_it.token import Token
 from ..core import PDF
-from ..constants import PageSize, A4
+from ..constants import PageSize, A4, Defaults
 from ..inline import RichSegment
 from ..parts import signatures, signatures_height, page_number
 from ..md import (MarkdownRenderer, split_frontmatter, pdf_metadata, top_blocks, first_section,
@@ -27,7 +27,7 @@ def md_to_pdf(
   *,
   style:LegalStyle|None = None,
   page:PageSize = A4,
-  margin:float|tuple = 20,
+  margin:float|tuple = Defaults.MARGIN,
   gutter:float = 0,
   two_sided:bool = False,
   base_dir:str|None = None,
@@ -182,7 +182,7 @@ def md_parallel_to_pdf(
   *,
   styles:list[LegalStyle],
   page:PageSize = A4,
-  margin:float|tuple = 20,
+  margin:float|tuple = Defaults.MARGIN,
   gutter:float = 0,
   two_sided:bool = False,
   base_dir:str|None = None,

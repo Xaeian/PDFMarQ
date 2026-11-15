@@ -11,7 +11,7 @@ from pdfmarq.graphics import image_aspect
 from pdfmarq.legal import md_to_pdf, LegalStyle, lang_style
 from pdfmarq.legal.header import _title_segments
 from pdfmarq.md import MarkdownRenderer, MarkdownStyle, first_section
-from conftest import (needs_pymupdf, pdf_page_words, pdf_pages, pdf_faces, pdf_images,
+from conftest import (MARGIN, needs_pymupdf, pdf_page_words, pdf_pages, pdf_faces, pdf_images,
   pdf_strokes, pdf_chars)
 
 LETTER = """---
@@ -50,7 +50,7 @@ def render(tmp_path):
   """Render `md` with `LegalStyle(**style)`, return the PDF path."""
   def run(md:str, **style) -> str:
     path = str(tmp_path / "legal.pdf")
-    md_to_pdf(md, path, style=LegalStyle(**style), base_dir=str(tmp_path))
+    md_to_pdf(md, path, style=LegalStyle(**style), base_dir=str(tmp_path), margin=MARGIN)
     return path
   return run
 

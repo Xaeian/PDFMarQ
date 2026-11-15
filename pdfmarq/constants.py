@@ -82,7 +82,7 @@ class Defaults:
   """Default values for PDF generation."""
   PAGE_WIDTH = 210
   PAGE_HEIGHT = 297
-  MARGIN = 20
+  MARGIN = 18
   FONT_FAMILY = "Helvetica"
   FONT_SIZE = 11
   FONT_MODE = "Regular"

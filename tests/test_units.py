@@ -105,7 +105,7 @@ def rich_segment_superscript_subscript_fields():
 def defaults_match_docmarq():
   # cross-lib parity: same numeric defaults so PDF and DOCX land comparable
   from docmarq.constants import Defaults as DD
-  assert Defaults.MARGIN == DD.MARGIN == 20
+  assert Defaults.MARGIN == DD.MARGIN == 18
   assert Defaults.FONT_SIZE == DD.FONT_SIZE == 11
   assert Defaults.LINE_HEIGHT == DD.LINE_HEIGHT == 1.15
 

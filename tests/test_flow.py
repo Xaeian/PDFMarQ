@@ -11,8 +11,8 @@ from pdfmarq import PDF, MM_TO_PT, Align
 from pdfmarq.inline import (RichSegment, RichText, render_rich, wrap_line_heights, flow_rich,
   split_rich, drop_cap)
 from pdfmarq.md import MarkdownRenderer, MarkdownStyle, top_blocks
-from conftest import (needs_pymupdf, pdf_words, pdf_page_words, pdf_faces, pdf_pages, pdf_spans,
-  tight_mm)
+from conftest import (MARGIN, needs_pymupdf, pdf_words, pdf_page_words, pdf_faces, pdf_pages,
+  pdf_spans, tight_mm)
 
 # A4, 20mm margins, 10mm gap: column 0 spans 20..100mm, column 1 110..190mm.
 SPLIT_MM = 105
@@ -241,7 +241,7 @@ def image_over_a_line_stays_a_figure(tmp_path, monkeypatch, line, rules):
 @needs_pymupdf
 def first_indent_sets_the_first_line_of_a_body_paragraph_in(tmp_path):
   path = str(tmp_path / "indent.pdf")
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   MarkdownRenderer(pdf, MarkdownStyle(first_indent=10)).render(f"{BODY}\n\n- Itemmark\n")
   pdf.save()
   words = pdf_page_words(path)[0]

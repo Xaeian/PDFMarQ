@@ -11,7 +11,7 @@ from pdfmarq.parts import signatures, signatures_height, sign_labels, page_numbe
 from pdfmarq.paper import md_to_pdf, md_into, PaperStyle, lang_style
 from pdfmarq.md import (MarkdownRenderer, MarkdownStyle, top_blocks, metadata_from_frontmatter,
   people, byline)
-from conftest import needs_pymupdf, pdf_words, pdf_faces, pdf_page_words, pdf_text
+from conftest import MARGIN, needs_pymupdf, pdf_words, pdf_faces, pdf_page_words, pdf_text
 
 # Style fields md2paper sets by name from request options (its `_STYLE` and `pdf_style`).
 MD2PAPER_FIELDS = {
@@ -39,7 +39,7 @@ def md_to_pdf_signature_is_stable():
   assert list(params) == ["md_text", "output_path", "style", "page", "margin", "gutter",
     "two_sided", "base_dir", "font_dir", "metadata"]
   assert (params["page"].default, params["margin"].default, params["gutter"].default,
-    params["two_sided"].default) == (A4, 20, 0, False)
+    params["two_sided"].default) == (A4, 18, 0, False)
 
 def lang_style_layers_engine_and_document_labels():
   style = lang_style("de")
@@ -103,7 +103,7 @@ def slices_render_like_the_whole(tmp_path):
 @needs_pymupdf
 def one_signature_sits_at_the_right_margin(tmp_path):
   path = str(tmp_path / "sign.pdf")
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   signatures(pdf, ["Signed"], RichSegment("", mode="Oblique", size=9), gap=20, width=70, thick=0.3)
   pdf.save()
   word = next(w for w in pdf_words(path) if w[4] == "Signed")
@@ -274,7 +274,7 @@ def a_paper_in_columns_balances_its_last_page_under_the_banner(tmp_path):
   with warnings.catch_warnings():
     warnings.simplefilter("error", RuntimeWarning)
     path = str(tmp_path / "x.pdf")
-    md_to_pdf(md, path, style=PaperStyle(columns=2))
+    md_to_pdf(md, path, style=PaperStyle(columns=2), margin=MARGIN)
   pages = pdf_page_words(path)
   assert len(pages) == 4
   text = [w for w in pages[-1] if w[4] in sentence.split()]

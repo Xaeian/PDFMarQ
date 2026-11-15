@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pdfmarq import PDF, MM_TO_PT, Floats, lowest_fit
 from pdfmarq.md import MarkdownRenderer, MarkdownStyle
-from conftest import needs_pymupdf, pdf_page_words, pdf_links, pdf_strokes
+from conftest import MARGIN, needs_pymupdf, pdf_page_words, pdf_links, pdf_strokes
 
 LONG = "\n\n".join(
   f"Paragraph {i} " + "with words that keep the column busy for a while. " * 6 for i in range(30))
@@ -23,7 +23,7 @@ RIGHT_COL = (110, 190)
 
 @pytest.fixture
 def pdf(tmp_path):
-  return PDF(str(tmp_path / "columns.pdf"))
+  return PDF(str(tmp_path / "columns.pdf"), margin=MARGIN)
 
 @pytest.fixture
 def in_mm():
@@ -165,7 +165,7 @@ def region_restarts_below_new_page_header(pdf):
 @needs_pymupdf
 def markdown_flows_through_both_columns(tmp_path, in_mm):
   path = str(tmp_path / "flow.pdf")
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   pdf.columns(2, gap=10)
   MarkdownRenderer(pdf, MarkdownStyle()).render(LONG)
   pdf.columns(1)
@@ -202,7 +202,7 @@ def inset_carries_over_a_page_break(pdf):
 @needs_pymupdf
 def text_wraps_inside_the_inset(tmp_path, in_mm):
   path = str(tmp_path / "inset.pdf")
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   pdf.inset(left=30, right=50)
   MarkdownRenderer(pdf, MarkdownStyle()).render(LONG[:600])
   pdf.inset()
@@ -229,7 +229,7 @@ def cursor_comes_back_after_a_frame(pdf):
 @needs_pymupdf
 def markdown_fills_a_frame(tmp_path, in_mm):
   path = str(tmp_path / "frame.pdf")
-  with PDF(path) as pdf, pdf.frame(10, 30, 120, 60):
+  with PDF(path, margin=MARGIN) as pdf, pdf.frame(10, 30, 120, 60):
     MarkdownRenderer(pdf, MarkdownStyle()).render("# Title\n\n" + "Words fill the box. " * 20)
   words = pdf_page_words(path)[0]
   assert all(in_mm((30, 150), w[0], w[2]) for w in words)
@@ -256,7 +256,7 @@ def frame_refuses_nesting(pdf):
 #-------------------------------------------------------------------------------------- Page chrome
 
 def chrome_sees_the_whole_page(tmp_path):
-  pdf = PDF(str(tmp_path / "chrome.pdf"))
+  pdf = PDF(str(tmp_path / "chrome.pdf"), margin=MARGIN)
   seen = []
   pdf.on_page(lambda p, n: seen.append(("page", p.content_width)))
   pdf.on_final_page(lambda p, n, total: seen.append(("final", p.content_width)))
@@ -285,7 +285,7 @@ def column_outside_region_refused(pdf):
 @needs_pymupdf
 def link_rect_starts_at_the_margins(tmp_path):
   path = str(tmp_path / "link.pdf")
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   pdf.cursor(5, 10).link("https://example.com", 30, 6)
   pdf.text("Example") # a page with nothing drawn on it is never written
   pdf.save()

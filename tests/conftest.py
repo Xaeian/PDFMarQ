@@ -14,6 +14,10 @@ def pytest_pycollect_makeitem(collector, name, obj):
   if not inspect.isfunction(obj) or obj.__module__ != collector.obj.__name__:
     return [] # imported helpers, marks and constants are not tests
 
+# The page the tests' positions and breaks were measured on, whatever margin the library
+# takes by default: a test of the default reads `Defaults.MARGIN` instead
+MARGIN = 20
+
 #------------------------------------------------------------------------------------- Twin package
 
 # `docmarq` renders the same markdown to DOCX, but it ships on its own.
@@ -80,7 +84,7 @@ def render_md(path:str, md:str, style=None):
   """Render markdown to `path` and return the finished `PDF`."""
   from pdfmarq import PDF
   from pdfmarq.md import MarkdownRenderer, MarkdownStyle
-  pdf = PDF(path)
+  pdf = PDF(path, margin=MARGIN)
   MarkdownRenderer(pdf, style or MarkdownStyle()).render(md)
   pdf.save()
   return pdf

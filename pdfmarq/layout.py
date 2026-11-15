@@ -3,7 +3,7 @@
 """Layout system - cursor positioning, alignment, page geometry."""
 from dataclasses import dataclass, field, replace
 from typing import Callable
-from .constants import Align
+from .constants import Align, Defaults
 
 #------------------------------------------------------------------------------------------- Cursor
 
@@ -83,10 +83,10 @@ class PageGeometry:
   """
   width: float
   height: float
-  margin_top: float = 20
-  margin_right: float = 20
-  margin_bot: float = 20
-  margin_left: float = 20
+  margin_top: float = Defaults.MARGIN
+  margin_right: float = Defaults.MARGIN
+  margin_bot: float = Defaults.MARGIN
+  margin_left: float = Defaults.MARGIN
   axis: float|None = None
 
   @property

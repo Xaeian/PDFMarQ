@@ -12,7 +12,8 @@ from pdfmarq import PDF, Align, MM_TO_PT, RichSegment, RichText, render_rich
 from pdfmarq.inline import (_Word, _justify_ratio, _spaced_width, _stretches, _JUSTIFY_SHRINK,
   _tokenize, _wrap, measure_extent, wrap_line_heights)
 from pdfmarq.md import MarkdownStyle
-from conftest import needs_pymupdf, pdf_words, pdf_links, pdf_chars, pdf_text, render_md, tight_mm
+from conftest import (MARGIN, needs_pymupdf, pdf_words, pdf_links, pdf_chars, pdf_text, render_md,
+  tight_mm)
 
 TEXT = "Justified text spreads its spaces until every line but the last meets the edge. " * 5
 PHRASE = "Tighter spaces fit"
@@ -28,7 +29,7 @@ def lines_of(tmp_path):
   """Draw `segments` at `width` mm, return the word boxes grouped per line, top to bottom."""
   def draw(segments:list, align:str=Align.JUSTIFY, width:float=WIDTH_MM) -> list[list]:
     path = str(tmp_path / "justify.pdf")
-    pdf = PDF(path)
+    pdf = PDF(path, margin=MARGIN)
     render_rich(pdf, RichText(segments, width, align, 1.4), 0, 0)
     pdf.save()
     rows: dict[float, list] = {}
@@ -305,7 +306,7 @@ def a_heading_a_table_cell_and_the_banner_title_bind_single_letters(line_ends, p
   def ends(bind:bool) -> list[str]:
     def write(path:str):
       md_to_pdf(md, path, style=PaperStyle(bind_single_letters="a" if bind else "",
-        page_number_label=None))
+        page_number_label=None), margin=MARGIN)
     return line_ends(write, f"{part}{bind}.pdf")
   assert "a" in ends(False)
   assert "a" not in ends(True)
